@@ -1,0 +1,19 @@
+{
+  "name": "@papyrus/core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check-types": "tsc --noEmit --pretty"
+  },
+  "dependencies": {
+    "y-indexeddb": "^9.0.12",
+    "yjs": "^13.6.29"
+  },
+  "exports": {
+    "./workbook-doc": "./src/workbook-doc.ts",
+    "./workbook-persistence": "./src/workbook-persistence.ts",
+    "./workbook-registry": "./src/workbook-registry.ts",
+    "./workbook-types": "./src/workbook-types.ts"
+  }
+}
