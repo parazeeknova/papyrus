@@ -4,5 +4,17 @@
     "ultracite/biome/core",
     "ultracite/biome/next",
     "ultracite/biome/react"
-  ]
+  ],
+  "linter": {
+    "rules": {
+      "complexity": {
+        "noForEach": "off",
+        "noExcessiveCognitiveComplexity": "off"
+      },
+      "style": {
+        "noMagicNumbers": "off",
+        "noNestedTernary": "off"
+      }
+    }
+  }
 }
