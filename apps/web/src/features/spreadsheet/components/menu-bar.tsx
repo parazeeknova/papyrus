@@ -3,7 +3,6 @@
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import {
   CloudCheckIcon,
-  LockIcon,
   SquaresFourIcon,
   StarIcon,
 } from "@phosphor-icons/react";
@@ -27,14 +26,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/web/components/ui/tooltip";
+import { AboutPapyrusDialog } from "@/web/features/spreadsheet/components/about-papyrus-dialog";
+import { FunctionListDialog } from "@/web/features/spreadsheet/components/function-list-dialog";
 import { DataMenu } from "@/web/features/spreadsheet/components/menu-bar/data-menu";
 import { EditMenu } from "@/web/features/spreadsheet/components/menu-bar/edit-menu";
 import { FileMenu } from "@/web/features/spreadsheet/components/menu-bar/file-menu";
 import { FormatMenu } from "@/web/features/spreadsheet/components/menu-bar/format-menu";
 import { HelpMenu } from "@/web/features/spreadsheet/components/menu-bar/help-menu";
 import { InsertMenu } from "@/web/features/spreadsheet/components/menu-bar/insert-menu";
-import { ToolsMenu } from "@/web/features/spreadsheet/components/menu-bar/tools-menu";
 import { ViewMenu } from "@/web/features/spreadsheet/components/menu-bar/view-menu";
+import { ShareDialog } from "@/web/features/spreadsheet/components/share-dialog";
 
 interface SpreadsheetMenuBarProps {
   isGalleryOpen: boolean;
@@ -90,6 +91,9 @@ export function SpreadsheetMenuBar({
 }: SpreadsheetMenuBarProps) {
   const [isRenamingWorkbook, setIsRenamingWorkbook] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
+  const [isFunctionListDialogOpen, setIsFunctionListDialogOpen] =
+    useState(false);
   const [workbookNameDraft, setWorkbookNameDraft] = useState(workbookName);
 
   useEffect(() => {
@@ -211,15 +215,7 @@ export function SpreadsheetMenuBar({
 
             <Separator className="mx-1 h-5" orientation="vertical" />
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button className="gap-1 text-xs" size="sm" variant="ghost">
-                  <LockIcon className="size-3.5" weight="bold" />
-                  <span className="hidden sm:inline">Share</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Share this document</TooltipContent>
-            </Tooltip>
+            <ShareDialog />
 
             <GoogleAuthDialog />
           </div>
@@ -244,10 +240,26 @@ export function SpreadsheetMenuBar({
           <InsertMenu />
           <FormatMenu />
           <DataMenu />
-          <ToolsMenu />
-          <HelpMenu />
+          <HelpMenu
+            onOpenAbout={() => {
+              setIsAboutDialogOpen(true);
+            }}
+            onOpenFunctionList={() => {
+              setIsFunctionListDialogOpen(true);
+            }}
+          />
         </Menubar>
       </div>
+
+      <AboutPapyrusDialog
+        onOpenChange={setIsAboutDialogOpen}
+        open={isAboutDialogOpen}
+      />
+
+      <FunctionListDialog
+        onOpenChange={setIsFunctionListDialogOpen}
+        open={isFunctionListDialogOpen}
+      />
 
       <Dialog onOpenChange={setIsDeleteDialogOpen} open={isDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">

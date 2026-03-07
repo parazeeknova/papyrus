@@ -21,14 +21,10 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/web/components/ui/badge";
 import { Button } from "@/web/components/ui/button";
 import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/web/components/ui/dialog";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/web/components/ui/dropdown-menu";
 import {
   firebaseAuth,
   googleAuthProvider,
@@ -171,8 +167,8 @@ export function GoogleAuthDialog() {
     : "Checking login";
 
   return (
-    <Dialog onOpenChange={setOpen} open={open}>
-      <DialogTrigger asChild>
+    <DropdownMenu onOpenChange={setOpen} open={open}>
+      <DropdownMenuTrigger asChild>
         <Button
           aria-label={
             currentUser
@@ -195,33 +191,38 @@ export function GoogleAuthDialog() {
             )}
           />
         </Button>
-      </DialogTrigger>
+      </DropdownMenuTrigger>
 
-      <DialogContent
-        className="gap-0 overflow-hidden p-0 sm:max-w-xs"
-        showCloseButton={false}
+      <DropdownMenuContent
+        align="end"
+        className="w-80 overflow-hidden p-0"
+        sideOffset={8}
       >
-        <DialogHeader className="border-border border-b px-4 py-3">
+        <div className="border-border border-b px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <DialogTitle>Google account</DialogTitle>
-              <DialogDescription>
+              <p className="font-medium text-sm">Google account</p>
+              <p className="text-muted-foreground text-xs/relaxed">
                 Login is optional for Papyrus.
-              </DialogDescription>
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={currentUser ? "secondary" : "outline"}>
                 {statusLabel}
               </Badge>
-              <DialogClose asChild>
-                <Button size="icon-sm" variant="ghost">
-                  <XIcon />
-                  <span className="sr-only">Close</span>
-                </Button>
-              </DialogClose>
+              <Button
+                onClick={() => {
+                  setOpen(false);
+                }}
+                size="icon-sm"
+                variant="ghost"
+              >
+                <XIcon />
+                <span className="sr-only">Close</span>
+              </Button>
             </div>
           </div>
-        </DialogHeader>
+        </div>
 
         <div className="space-y-4 px-4 py-4">
           {isAuthReady ? (
@@ -301,7 +302,7 @@ export function GoogleAuthDialog() {
             </div>
           ) : null}
         </div>
-      </DialogContent>
-    </Dialog>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

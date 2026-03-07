@@ -4,21 +4,33 @@ import {
   MenubarContent,
   MenubarItem,
   MenubarMenu,
-  MenubarSeparator,
   MenubarTrigger,
 } from "@/web/components/ui/menubar";
 
-export function HelpMenu() {
+interface HelpMenuProps {
+  onOpenAbout: () => void;
+  onOpenFunctionList: () => void;
+}
+
+export function HelpMenu({ onOpenAbout, onOpenFunctionList }: HelpMenuProps) {
   return (
     <MenubarMenu>
       <MenubarTrigger>Help</MenubarTrigger>
       <MenubarContent>
-        <MenubarItem>Search the menus</MenubarItem>
-        <MenubarSeparator />
-        <MenubarItem>Keyboard shortcuts</MenubarItem>
-        <MenubarItem>Function list</MenubarItem>
-        <MenubarSeparator />
-        <MenubarItem>About Papyrus</MenubarItem>
+        <MenubarItem
+          onSelect={() => {
+            onOpenFunctionList();
+          }}
+        >
+          Function list
+        </MenubarItem>
+        <MenubarItem
+          onSelect={() => {
+            onOpenAbout();
+          }}
+        >
+          About Papyrus
+        </MenubarItem>
       </MenubarContent>
     </MenubarMenu>
   );
