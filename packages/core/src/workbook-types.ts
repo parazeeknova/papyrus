@@ -12,6 +12,7 @@ export interface SheetMeta {
 export interface WorkbookMeta {
   createdAt: string;
   id: string;
+  isFavorite: boolean;
   lastOpenedAt: string;
   name: string;
   updatedAt: string;

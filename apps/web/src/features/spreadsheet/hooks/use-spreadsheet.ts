@@ -73,6 +73,9 @@ export function useSpreadsheet() {
   const setPersistedCellValue = useSpreadsheetStore(
     (state) => state.setCellValue
   );
+  const setWorkbookFavorite = useSpreadsheetStore(
+    (state) => state.setWorkbookFavorite
+  );
   const sheets = useSpreadsheetStore((state) => state.sheets);
   const workbooks = useSpreadsheetStore((state) => state.workbooks);
   const workerResetKey = useSpreadsheetStore((state) => state.workerResetKey);
@@ -286,6 +289,7 @@ export function useSpreadsheet() {
     setCellValue,
     selectCell,
     setActiveSheet,
+    setWorkbookFavorite,
     showAllRows,
     startEditing,
     stopEditing,

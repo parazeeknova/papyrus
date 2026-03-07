@@ -38,11 +38,13 @@ import { ViewMenu } from "@/web/features/spreadsheet/components/menu-bar/view-me
 import { ShareDialog } from "@/web/features/spreadsheet/components/share-dialog";
 
 interface SpreadsheetMenuBarProps {
+  isFavorite: boolean;
   isGalleryOpen: boolean;
   onCreateWorkbook: () => void;
   onDeleteWorkbook: () => void;
   onOpenWorkbook: (workbookId: string, workbookName: string) => void;
   onRenameWorkbook: (name: string) => void;
+  onToggleFavorite: (isFavorite: boolean) => void;
   onToggleGallery: () => void;
   recentWorkbooks: WorkbookMeta[];
   saveState: "error" | "saved" | "saving";
@@ -79,10 +81,12 @@ const GoogleAuthDialog = dynamic(
 
 export function SpreadsheetMenuBar({
   isGalleryOpen,
+  isFavorite,
   onCreateWorkbook,
   onDeleteWorkbook,
   onOpenWorkbook,
   onRenameWorkbook,
+  onToggleFavorite,
   onToggleGallery,
   recentWorkbooks,
   saveState,
@@ -161,15 +165,24 @@ export function SpreadsheetMenuBar({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  aria-label="Star"
-                  className="text-muted-foreground"
+                  aria-label={
+                    isFavorite ? "Remove from favorites" : "Add to favorites"
+                  }
+                  className={
+                    isFavorite ? "text-primary" : "text-muted-foreground"
+                  }
+                  onClick={() => {
+                    onToggleFavorite(!isFavorite);
+                  }}
                   size="icon-xs"
                   variant="ghost"
                 >
-                  <StarIcon weight="regular" />
+                  <StarIcon weight={isFavorite ? "fill" : "regular"} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Star</TooltipContent>
+              <TooltipContent side="bottom">
+                {isFavorite ? "Favorite spreadsheet" : "Add to favorites"}
+              </TooltipContent>
             </Tooltip>
           </div>
 

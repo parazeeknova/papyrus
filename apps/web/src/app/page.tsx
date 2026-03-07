@@ -27,6 +27,7 @@ export default function Home() {
     rowCount,
     saveState,
     setActiveSheet,
+    setWorkbookFavorite,
     sheets,
     selection,
     setSelectionRange,
@@ -66,6 +67,7 @@ export default function Home() {
   return (
     <div className="flex h-screen flex-col bg-background font-sans">
       <SpreadsheetMenuBar
+        isFavorite={activeWorkbook?.isFavorite ?? false}
         isGalleryOpen={isGalleryOpen}
         onCreateWorkbook={() => {
           createWorkbook().catch(() => undefined);
@@ -78,6 +80,9 @@ export default function Home() {
         }}
         onRenameWorkbook={(name) => {
           renameWorkbook(name).catch(() => undefined);
+        }}
+        onToggleFavorite={(isFavorite) => {
+          setWorkbookFavorite(isFavorite).catch(() => undefined);
         }}
         onToggleGallery={() => {
           setIsGalleryOpen((prev) => !prev);

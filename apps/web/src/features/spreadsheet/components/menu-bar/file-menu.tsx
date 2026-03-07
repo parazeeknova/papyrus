@@ -1,7 +1,7 @@
 "use client";
 
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
-import { DotOutlineIcon } from "@phosphor-icons/react";
+import { DotOutlineIcon, StarIcon } from "@phosphor-icons/react";
 import {
   MenubarContent,
   MenubarItem,
@@ -78,7 +78,15 @@ export function FileMenu({
                       />
                     ) : null}
                     <div className="min-w-0">
-                      <p className="truncate">{recentWorkbook.name}</p>
+                      <p className="flex items-center gap-1 truncate">
+                        <span className="truncate">{recentWorkbook.name}</span>
+                        {recentWorkbook.isFavorite ? (
+                          <StarIcon
+                            className="size-3.5 shrink-0 text-primary"
+                            weight="fill"
+                          />
+                        ) : null}
+                      </p>
                       <p className="truncate text-[11px] text-muted-foreground">
                         Last opened{" "}
                         {formatLastOpened(recentWorkbook.lastOpenedAt)}

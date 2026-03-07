@@ -10,6 +10,7 @@ import {
   renameWorkbook as renameWorkbookInDoc,
   setActiveSheet as setActiveSheetInDoc,
   setSheetCellRaw,
+  setWorkbookFavorite,
   touchWorkbook,
 } from "@papyrus/core/workbook-doc";
 import {
@@ -48,6 +49,7 @@ interface SpreadsheetStoreState {
   saveState: SaveState;
   setActiveSheet: (sheetId: string) => Promise<void>;
   setCellValue: (row: number, col: number, raw: string) => Promise<void>;
+  setWorkbookFavorite: (isFavorite: boolean) => Promise<void>;
   sheets: SheetMeta[];
   workbooks: WorkbookMeta[];
   workerResetKey: string;
@@ -273,6 +275,15 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       );
 
       return persistActiveWorkbookMeta(set);
+    },
+    setWorkbookFavorite: async (isFavorite) => {
+      if (!activeWorkbookSession) {
+        return;
+      }
+
+      set({ saveState: "saving" });
+      setWorkbookFavorite(activeWorkbookSession.doc, isFavorite);
+      await persistActiveWorkbookMeta(set);
     },
     sheets: [],
     workerResetKey: "initial",

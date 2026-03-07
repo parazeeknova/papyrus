@@ -56,6 +56,15 @@ function getStringValue(
   return typeof value === "string" ? value : fallback;
 }
 
+function getBooleanValue(
+  map: YMap<unknown>,
+  key: string,
+  fallback = false
+): boolean {
+  const value = map.get(key);
+  return typeof value === "boolean" ? value : fallback;
+}
+
 function ensureSheet(doc: Doc, sheetId: string, name: string): void {
   const sheets = getSheetsMap(doc);
   if (sheets.has(sheetId)) {
@@ -116,6 +125,9 @@ export function ensureWorkbookInitialized(
     if (!meta.has("lastOpenedAt")) {
       meta.set("lastOpenedAt", now);
     }
+    if (!meta.has("isFavorite")) {
+      meta.set("isFavorite", false);
+    }
 
     if (sheetOrder.length === 0 || sheets.size === 0) {
       const firstSheetId = createSheetId();
@@ -154,6 +166,18 @@ export function renameWorkbook(doc: Doc, nextName: string): string {
   });
 
   return trimmedName;
+}
+
+export function setWorkbookFavorite(doc: Doc, isFavorite: boolean): boolean {
+  const meta = getMetaMap(doc);
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    meta.set("isFavorite", isFavorite);
+    meta.set("updatedAt", now);
+  });
+
+  return isFavorite;
 }
 
 export function createSheet(doc: Doc, name?: string): SheetMeta {
@@ -249,6 +273,7 @@ export function getWorkbookMeta(doc: Doc): WorkbookMeta {
   return {
     createdAt: getStringValue(meta, "createdAt"),
     id: getStringValue(meta, "id"),
+    isFavorite: getBooleanValue(meta, "isFavorite"),
     lastOpenedAt: getStringValue(meta, "lastOpenedAt"),
     name: getStringValue(meta, "name", DEFAULT_WORKBOOK_NAME),
     updatedAt: getStringValue(meta, "updatedAt"),
