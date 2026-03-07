@@ -12,9 +12,12 @@ import { useSpreadsheet } from "@/web/features/spreadsheet/hooks/use-spreadsheet
 export default function Home() {
   const {
     activeCell,
+    canExpandRows,
     editingCell,
     columnCount,
+    expandRowCount,
     rowCount,
+    showAllRows,
     getCellData,
     setCellValue,
     selectCell,
@@ -64,13 +67,16 @@ export default function Home() {
       />
       <SpreadsheetGrid
         activeCell={activeCell}
+        canExpandRows={canExpandRows}
         columnCount={columnCount}
         editingCell={editingCell}
+        expandRowCount={expandRowCount}
         getCellData={getCellData}
         navigateFromActive={navigateFromActive}
         rowCount={rowCount}
         selectCell={selectCell}
         setCellValue={setCellValue}
+        showAllRows={showAllRows}
         startEditing={startEditing}
         stopEditing={stopEditing}
       />

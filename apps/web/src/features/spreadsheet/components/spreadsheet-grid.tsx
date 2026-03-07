@@ -2,6 +2,7 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { Button } from "@/web/components/ui/button";
 import {
   type CellData,
   type CellPosition,
@@ -16,6 +17,7 @@ const DEFAULT_ROW_HEIGHT = 20;
 const COL_HEADER_HEIGHT = 24;
 const ROW_OVERSCAN = 20;
 const COL_OVERSCAN = 4;
+const EXPANSION_PROMPT_HEIGHT = 56;
 
 interface CellComponentProps {
   col: number;
@@ -110,8 +112,10 @@ const CellComponent = memo(function CellComponent({
 
 interface SpreadsheetGridProps {
   activeCell: CellPosition | null;
+  canExpandRows: boolean;
   columnCount: number;
   editingCell: CellPosition | null;
+  expandRowCount: () => void;
   getCellData: (row: number, col: number) => CellData;
   navigateFromActive: (
     direction: "up" | "down" | "left" | "right"
@@ -119,18 +123,22 @@ interface SpreadsheetGridProps {
   rowCount: number;
   selectCell: (pos: CellPosition | null) => void;
   setCellValue: (row: number, col: number, value: string) => void;
+  showAllRows: () => void;
   startEditing: (pos: CellPosition) => void;
   stopEditing: () => void;
 }
 
 export function SpreadsheetGrid({
   activeCell,
+  canExpandRows,
   editingCell,
   columnCount,
+  expandRowCount,
   rowCount,
   getCellData,
   setCellValue,
   selectCell,
+  showAllRows,
   startEditing,
   stopEditing,
   navigateFromActive,
@@ -199,7 +207,10 @@ export function SpreadsheetGrid({
   const totalColWidth = colVirtualizer.getTotalSize();
   const totalGridWidth = ROW_HEADER_WIDTH + totalColWidth;
   const totalRowHeight = rowVirtualizer.getTotalSize();
-  const totalGridHeight = COL_HEADER_HEIGHT + totalRowHeight;
+  const totalGridHeight =
+    COL_HEADER_HEIGHT +
+    totalRowHeight +
+    (canExpandRows ? EXPANSION_PROMPT_HEIGHT : 0);
 
   useEffect(() => {
     if (activeCell) {
@@ -343,6 +354,36 @@ export function SpreadsheetGrid({
               height: visibleRowHeight,
             }}
           />
+        ) : null}
+
+        {canExpandRows ? (
+          <div
+            className="absolute left-0 flex items-center justify-start border-border border-t bg-background/95 backdrop-blur-sm"
+            style={{
+              top: COL_HEADER_HEIGHT + totalRowHeight,
+              width: totalGridWidth,
+              height: EXPANSION_PROMPT_HEIGHT,
+            }}
+          >
+            <div className="flex w-full max-w-xl items-center justify-between gap-3 border-border border-r bg-muted/60 px-4 py-2">
+              <div>
+                <p className="font-medium text-sm">
+                  Showing first {rowCount.toLocaleString()} rows
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  Load more rows or expand to the full sheet.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button onClick={expandRowCount} size="sm" variant="outline">
+                  +1,000 rows
+                </Button>
+                <Button onClick={showAllRows} size="sm" variant="ghost">
+                  Show all
+                </Button>
+              </div>
+            </div>
+          </div>
         ) : null}
       </div>
     </div>

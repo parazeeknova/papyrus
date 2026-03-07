@@ -26,6 +26,8 @@ export type {
 
 const DEFAULT_COLS = 100;
 const DEFAULT_ROWS = 100_000;
+const DEFAULT_VISIBLE_ROWS = 1000;
+const ROW_EXPANSION_STEP = 1000;
 const EMPTY_CELL: CellData = { raw: "", computed: "" };
 
 const applySpreadsheetPatch = (
@@ -54,7 +56,8 @@ export function useSpreadsheet() {
   const [editingCell, setEditingCell] = useState<CellPosition | null>(null);
   const [selection, setSelection] = useState<SelectionRange | null>(null);
   const [columnCount] = useState(DEFAULT_COLS);
-  const [rowCount] = useState(DEFAULT_ROWS);
+  const [totalRowCount] = useState(DEFAULT_ROWS);
+  const [rowCount, setRowCount] = useState(DEFAULT_VISIBLE_ROWS);
 
   const workerRef = useRef<Worker | null>(null);
 
@@ -129,6 +132,16 @@ export function useSpreadsheet() {
     setEditingCell(null);
   }, []);
 
+  const expandRowCount = useCallback(() => {
+    setRowCount((prev) => Math.min(totalRowCount, prev + ROW_EXPANSION_STEP));
+  }, [totalRowCount]);
+
+  const showAllRows = useCallback(() => {
+    setRowCount(totalRowCount);
+  }, [totalRowCount]);
+
+  const canExpandRows = rowCount < totalRowCount;
+
   const navigateFromActive = useCallback(
     (direction: "up" | "down" | "left" | "right"): CellPosition | null => {
       if (!activeCell) {
@@ -163,11 +176,15 @@ export function useSpreadsheet() {
     activeCell,
     editingCell,
     selection,
+    canExpandRows,
     columnCount,
+    expandRowCount,
     rowCount,
+    totalRowCount,
     getCellData,
     setCellValue,
     selectCell,
+    showAllRows,
     startEditing,
     stopEditing,
     navigateFromActive,
