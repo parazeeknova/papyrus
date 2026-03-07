@@ -29,6 +29,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@papyrus/core": "workspace:*",
+        "@papyrus/logs": "workspace:*",
         "@phosphor-icons/react": "^2.1.10",
         "@t3-oss/env-nextjs": "^0.13.10",
         "@tanstack/react-virtual": "^3.13.21",
@@ -63,6 +64,10 @@
         "y-indexeddb": "^9.0.12",
         "yjs": "^13.6.29",
       },
+    },
+    "packages/logs": {
+      "name": "@papyrus/logs",
+      "version": "0.0.1",
     },
   },
   "trustedDependencies": [
@@ -372,6 +377,8 @@
     "@open-draft/until": ["@open-draft/until@2.1.0", "", {}, "sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg=="],
 
     "@papyrus/core": ["@papyrus/core@workspace:packages/core"],
+
+    "@papyrus/logs": ["@papyrus/logs@workspace:packages/logs"],
 
     "@papyrus/sync": ["@papyrus/sync@workspace:apps/sync"],
 
