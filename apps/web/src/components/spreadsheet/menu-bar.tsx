@@ -1,6 +1,11 @@
 "use client";
 
-import { CloudCheckIcon, LockIcon, StarIcon } from "@phosphor-icons/react";
+import {
+  CloudCheckIcon,
+  LockIcon,
+  SquaresFourIcon,
+  StarIcon,
+} from "@phosphor-icons/react";
 import Image from "next/image";
 import { Button } from "@/web/components/ui/button";
 import {
@@ -22,7 +27,15 @@ import {
   TooltipTrigger,
 } from "@/web/components/ui/tooltip";
 
-export function SpreadsheetMenuBar() {
+interface SpreadsheetMenuBarProps {
+  isGalleryOpen: boolean;
+  onToggleGallery: () => void;
+}
+
+export function SpreadsheetMenuBar({
+  isGalleryOpen,
+  onToggleGallery,
+}: SpreadsheetMenuBarProps) {
   return (
     <div
       className="flex shrink-0 flex-col border-border border-b bg-background"
@@ -72,6 +85,26 @@ export function SpreadsheetMenuBar() {
               Y
             </div>
           </div>
+
+          <Separator className="mx-1 h-5" orientation="vertical" />
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                className={`gap-1 text-xs ${isGalleryOpen ? "bg-accent text-accent-foreground" : ""}`}
+                onClick={onToggleGallery}
+                size="sm"
+                variant="ghost"
+              >
+                <SquaresFourIcon
+                  className="size-3.5"
+                  weight={isGalleryOpen ? "fill" : "bold"}
+                />
+                <span className="hidden sm:inline">Templates</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Template gallery</TooltipContent>
+          </Tooltip>
 
           <Separator className="mx-1 h-5" orientation="vertical" />
 

@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { FormulaBar } from "@/web/components/spreadsheet/formula-bar";
 import { SpreadsheetMenuBar } from "@/web/components/spreadsheet/menu-bar";
 import { SheetTabs } from "@/web/components/spreadsheet/sheet-tabs";
 import { SpreadsheetGrid } from "@/web/components/spreadsheet/spreadsheet-grid";
+import { TemplateGalleryPanel } from "@/web/components/spreadsheet/template-gallery";
 import { Toolbar } from "@/web/components/spreadsheet/toolbar";
 import { useSpreadsheet } from "@/web/hooks/use-spreadsheet";
 
@@ -44,9 +45,17 @@ export default function Home() {
     }
   }, [stopEditing, activeCell, navigateFromActive]);
 
+  const [isGalleryOpen, setIsGalleryOpen] = useState(false);
+
   return (
     <div className="flex h-screen flex-col bg-background font-sans">
-      <SpreadsheetMenuBar />
+      <SpreadsheetMenuBar
+        isGalleryOpen={isGalleryOpen}
+        onToggleGallery={() => {
+          setIsGalleryOpen((prev) => !prev);
+        }}
+      />
+      {isGalleryOpen && <TemplateGalleryPanel />}
       <Toolbar />
       <FormulaBar
         activeCell={activeCell}
