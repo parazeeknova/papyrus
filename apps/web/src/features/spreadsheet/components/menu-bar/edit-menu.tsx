@@ -3,10 +3,12 @@
 import {
   ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
+  ClipboardTextIcon,
+  ColumnsIcon,
   CopyIcon,
   MagnifyingGlassIcon,
+  RowsIcon,
   ScissorsIcon,
-  TrashIcon,
 } from "@phosphor-icons/react";
 import {
   MenubarContent,
@@ -64,7 +66,7 @@ export function EditMenu({
           Copy <MenubarShortcut>Cmd+C</MenubarShortcut>
         </MenubarItem>
         <MenubarItem onClick={onPaste}>
-          <CopyIcon weight="bold" />
+          <ClipboardTextIcon weight="bold" />
           Paste <MenubarShortcut>Cmd+V</MenubarShortcut>
         </MenubarItem>
         <MenubarSeparator />
@@ -73,11 +75,11 @@ export function EditMenu({
           Find and replace <MenubarShortcut>Cmd+H</MenubarShortcut>
         </MenubarItem>
         <MenubarItem onClick={onDeleteRow}>
-          <TrashIcon weight="bold" />
+          <RowsIcon weight="bold" />
           Delete row
         </MenubarItem>
         <MenubarItem onClick={onDeleteColumn}>
-          <TrashIcon weight="bold" />
+          <ColumnsIcon weight="bold" />
           Delete column
         </MenubarItem>
       </MenubarContent>

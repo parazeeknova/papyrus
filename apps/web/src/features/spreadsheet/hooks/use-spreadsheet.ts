@@ -33,6 +33,10 @@ const DEFAULT_ROWS = 100_000;
 const DEFAULT_VISIBLE_ROWS = 1000;
 const ROW_EXPANSION_STEP = 1000;
 const EMPTY_CELL: CellData = { raw: "", computed: "" };
+const LAST_SYNC_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  hour: "numeric",
+  minute: "2-digit",
+});
 
 interface SelectionBounds {
   endCol: number;
@@ -213,6 +217,7 @@ export function useSpreadsheet() {
   const isRemoteSyncAuthenticated = useSpreadsheetStore(
     (state) => state.isRemoteSyncAuthenticated
   );
+  const lastSyncedAt = useSpreadsheetStore((state) => state.lastSyncedAt);
   const manualSyncCooldownUntil = useSpreadsheetStore(
     (state) => state.manualSyncCooldownUntil
   );
@@ -721,6 +726,9 @@ export function useSpreadsheet() {
   const canExpandRows = rowCount < totalRowCount;
   const canManualSync =
     isRemoteSyncAuthenticated && now >= manualSyncCooldownUntil;
+  const lastSyncedLabel = lastSyncedAt
+    ? LAST_SYNC_TIME_FORMATTER.format(new Date(lastSyncedAt))
+    : null;
 
   const navigateFromActive = useCallback(
     (direction: "up" | "down" | "left" | "right"): CellPosition | null => {
@@ -821,6 +829,7 @@ export function useSpreadsheet() {
     columnCount,
     expandRowCount,
     hydrationState,
+    lastSyncedLabel,
     findNext,
     openWorkbook,
     pasteSelection,

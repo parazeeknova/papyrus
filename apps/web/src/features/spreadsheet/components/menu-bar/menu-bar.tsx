@@ -44,6 +44,7 @@ interface SpreadsheetMenuBarProps {
   canUndo: boolean;
   isFavorite: boolean;
   isGalleryOpen: boolean;
+  lastSyncedLabel: string | null;
   onCopy: () => void;
   onCreateWorkbook: () => void;
   onCut: () => void;
@@ -98,6 +99,7 @@ export function SpreadsheetMenuBar({
   canUndo,
   isGalleryOpen,
   isFavorite,
+  lastSyncedLabel,
   onCopy,
   onCreateWorkbook,
   onCut,
@@ -240,6 +242,11 @@ export function SpreadsheetMenuBar({
                   ? "Save error"
                   : "Saved"}
             </span>
+            {lastSyncedLabel ? (
+              <span className="text-muted-foreground/80">
+                · Synced {lastSyncedLabel}
+              </span>
+            ) : null}
           </div>
 
           <div className="flex-1" />

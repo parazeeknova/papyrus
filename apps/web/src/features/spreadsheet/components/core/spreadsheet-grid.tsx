@@ -1,9 +1,14 @@
 "use client";
 
 import {
+  ArrowClockwiseIcon,
+  ArrowCounterClockwiseIcon,
+  ClipboardTextIcon,
+  ColumnsIcon,
   CopyIcon,
+  MagnifyingGlassIcon,
   PencilSimpleIcon,
-  PlusIcon,
+  RowsIcon,
   ScissorsIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
@@ -158,6 +163,8 @@ const CellComponent = memo(function CellComponent({
 interface SpreadsheetGridProps {
   activeCell: CellPosition | null;
   canExpandRows: boolean;
+  canRedo: boolean;
+  canUndo: boolean;
   columnCount: number;
   columnNames: string[];
   editingCell: CellPosition | null;
@@ -166,7 +173,15 @@ interface SpreadsheetGridProps {
   navigateFromActive: (
     direction: "up" | "down" | "left" | "right"
   ) => CellPosition | null;
+  onCopy: () => void;
+  onCut: () => void;
+  onDeleteColumn: () => void;
+  onDeleteRow: () => void;
+  onOpenFindReplace: () => void;
+  onPaste: () => void;
+  onRedo: () => void;
   onRenameColumn: (columnIndex: number, columnName: string) => Promise<boolean>;
+  onUndo: () => void;
   rowCount: number;
   selectCell: (pos: CellPosition | null) => void;
   selection: SelectionRange | null;
@@ -183,6 +198,8 @@ interface SpreadsheetGridProps {
 
 export function SpreadsheetGrid({
   activeCell,
+  canRedo,
+  canUndo,
   canExpandRows,
   columnNames,
   editingCell,
@@ -198,7 +215,15 @@ export function SpreadsheetGrid({
   startEditing,
   stopEditing,
   navigateFromActive,
+  onCopy,
+  onCut,
+  onDeleteColumn,
+  onDeleteRow,
+  onOpenFindReplace,
+  onPaste,
   onRenameColumn,
+  onRedo,
+  onUndo,
 }: SpreadsheetGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionDragRef = useRef<{
@@ -763,27 +788,61 @@ export function SpreadsheetGrid({
             }}
           >
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white/40 disabled:pointer-events-none"
-              disabled
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canUndo}
+              onClick={() => {
+                onUndo();
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              <ArrowCounterClockwiseIcon className="size-3.5" weight="bold" />
+              Undo
+            </button>
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canRedo}
+              onClick={() => {
+                onRedo();
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              <ArrowClockwiseIcon className="size-3.5" weight="bold" />
+              Redo
+            </button>
+            <div className="my-0.5 h-px bg-white/10" />
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              onClick={() => {
+                onCut();
+                setContextMenu(null);
+              }}
               type="button"
             >
               <ScissorsIcon className="size-3.5" weight="bold" />
               Cut
             </button>
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white/40 disabled:pointer-events-none"
-              disabled
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              onClick={() => {
+                onCopy();
+                setContextMenu(null);
+              }}
               type="button"
             >
               <CopyIcon className="size-3.5" weight="bold" />
               Copy
             </button>
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white/40 disabled:pointer-events-none"
-              disabled
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              onClick={() => {
+                onPaste();
+                setContextMenu(null);
+              }}
               type="button"
             >
-              <PlusIcon className="size-3.5" weight="bold" />
+              <ClipboardTextIcon className="size-3.5" weight="bold" />
               Paste
             </button>
             <div className="my-0.5 h-px bg-white/10" />
@@ -810,20 +869,37 @@ export function SpreadsheetGrid({
             </button>
             <div className="my-0.5 h-px bg-white/10" />
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white/40 disabled:pointer-events-none"
-              disabled
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              onClick={() => {
+                onDeleteRow();
+                setContextMenu(null);
+              }}
               type="button"
             >
-              <PlusIcon className="size-3.5" weight="bold" />
-              Insert row above
+              <RowsIcon className="size-3.5" weight="bold" />
+              Delete row
             </button>
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white/40 disabled:pointer-events-none"
-              disabled
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              onClick={() => {
+                onDeleteColumn();
+                setContextMenu(null);
+              }}
               type="button"
             >
-              <PlusIcon className="size-3.5" weight="bold" />
-              Insert column left
+              <ColumnsIcon className="size-3.5" weight="bold" />
+              Delete column
+            </button>
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              onClick={() => {
+                onOpenFindReplace();
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              <MagnifyingGlassIcon className="size-3.5" weight="bold" />
+              Find and replace
             </button>
           </div>
         ) : null}

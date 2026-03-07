@@ -32,6 +32,7 @@ export default function Home() {
     expandRowCount,
     findNext,
     hydrationState,
+    lastSyncedLabel,
     openWorkbook,
     pasteSelection,
     redo,
@@ -119,6 +120,7 @@ export default function Home() {
         canUndo={canUndo}
         isFavorite={activeWorkbook?.isFavorite ?? false}
         isGalleryOpen={isGalleryOpen}
+        lastSyncedLabel={lastSyncedLabel}
         onCopy={() => {
           copySelection().catch(() => undefined);
         }}
@@ -173,6 +175,24 @@ export default function Home() {
       <Toolbar
         canRedo={canRedo}
         canUndo={canUndo}
+        onCopy={() => {
+          copySelection().catch(() => undefined);
+        }}
+        onCut={() => {
+          cutSelection().catch(() => undefined);
+        }}
+        onDeleteColumn={() => {
+          deleteSelectedColumns().catch(() => undefined);
+        }}
+        onDeleteRow={() => {
+          deleteSelectedRows().catch(() => undefined);
+        }}
+        onOpenFindReplace={() => {
+          setIsFindReplaceOpen(true);
+        }}
+        onPaste={() => {
+          pasteSelection().catch(() => undefined);
+        }}
         onRedo={() => {
           redo().catch(() => undefined);
         }}
@@ -191,15 +211,41 @@ export default function Home() {
       <SpreadsheetGrid
         activeCell={activeCell}
         canExpandRows={canExpandRows}
+        canRedo={canRedo}
+        canUndo={canUndo}
         columnCount={columnCount}
         columnNames={activeSheetColumns.map((column) => column.name)}
         editingCell={editingCell}
         expandRowCount={expandRowCount}
         getCellData={getCellData}
         navigateFromActive={navigateFromActive}
+        onCopy={() => {
+          copySelection().catch(() => undefined);
+        }}
+        onCut={() => {
+          cutSelection().catch(() => undefined);
+        }}
+        onDeleteColumn={() => {
+          deleteSelectedColumns().catch(() => undefined);
+        }}
+        onDeleteRow={() => {
+          deleteSelectedRows().catch(() => undefined);
+        }}
+        onOpenFindReplace={() => {
+          setIsFindReplaceOpen(true);
+        }}
+        onPaste={() => {
+          pasteSelection().catch(() => undefined);
+        }}
+        onRedo={() => {
+          redo().catch(() => undefined);
+        }}
         onRenameColumn={(columnIndex, columnName) =>
           renameColumn(columnIndex, columnName)
         }
+        onUndo={() => {
+          undo().catch(() => undefined);
+        }}
         rowCount={rowCount}
         selectCell={selectCell}
         selection={selection}

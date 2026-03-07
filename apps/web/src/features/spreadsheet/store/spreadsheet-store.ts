@@ -75,6 +75,7 @@ interface SpreadsheetStoreState {
   hydrateWorkbookList: () => Promise<void>;
   hydrationState: HydrationState;
   isRemoteSyncAuthenticated: boolean;
+  lastSyncedAt: number | null;
   manualSyncCooldownUntil: number;
   openWorkbook: (workbookId: string, name?: string) => Promise<void>;
   redo: () => Promise<void>;
@@ -107,6 +108,7 @@ let currentAuthenticatedUser: User | null = null;
 let remoteSyncTimeout: ReturnType<typeof setTimeout> | null = null;
 let hasInitializedAuthSync = false;
 let hasResolvedInitialAuthState = false;
+let isActiveWorkbookDirty = false;
 
 const FIRESTORE_SYNC_DEBOUNCE_MS = 2500;
 const FIRESTORE_SYNC_ORIGIN = "firestore-sync";
@@ -250,6 +252,13 @@ async function flushRemoteWorkbookSync(
     return;
   }
 
+  if (!isActiveWorkbookDirty) {
+    syncLogger.debug(
+      "Skipped Firestore sync because there are no local workbook changes."
+    );
+    return;
+  }
+
   const localSnapshot = getWorkbookSnapshot(activeWorkbookSession.doc);
   const hasLease = await acquireWorkbookSyncLease(
     currentAuthenticatedUser.uid,
@@ -292,6 +301,8 @@ async function flushRemoteWorkbookSync(
   syncLogger.info(
     `Synced workbook ${mergedSnapshot.workbook.id} to Firestore for ${currentAuthenticatedUser.uid}.`
   );
+  isActiveWorkbookDirty = false;
+  set({ lastSyncedAt: Date.now() });
   await upsertWorkbookRegistryEntry(mergedSnapshot.workbook);
   await refreshWorkbookRegistry(set);
 }
@@ -300,6 +311,10 @@ function scheduleRemoteWorkbookSync(
   set: (partial: Partial<SpreadsheetStoreState>) => void
 ) {
   if (!(currentAuthenticatedUser && activeWorkbookSession)) {
+    return;
+  }
+
+  if (!isActiveWorkbookDirty) {
     return;
   }
 
@@ -405,6 +420,12 @@ async function reconcileRemoteWorkbooks(
     syncLogger.info(
       `Uploaded local workbook ${localWorkbook.meta.id} to Firestore.`
     );
+
+    set({ lastSyncedAt: Date.now() });
+
+    if (get().activeWorkbook?.id === localWorkbook.meta.id) {
+      isActiveWorkbookDirty = false;
+    }
   }
 
   await refreshWorkbookRegistry(set);
@@ -504,6 +525,7 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       applySnapshot(doc);
 
       if (origin !== FIRESTORE_SYNC_ORIGIN) {
+        isActiveWorkbookDirty = true;
         scheduleRemoteWorkbookSync(set);
       }
     };
@@ -521,10 +543,10 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       undoManager: null,
     };
     syncUndoManager(doc);
+    isActiveWorkbookDirty = false;
 
     applySnapshot(doc, { forceWorkerReset: true });
     await persistActiveWorkbookMeta(set);
-    scheduleRemoteWorkbookSync(set);
   };
 
   if (!hasInitializedAuthSync) {
@@ -535,6 +557,7 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       set({ isRemoteSyncAuthenticated: user !== null });
 
       if (!user) {
+        set({ lastSyncedAt: null });
         if (hasResolvedInitialAuthState) {
           syncLogger.info("Signed out; paused Firestore workbook syncing.");
         }
@@ -750,6 +773,7 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     },
     hydrationState: "idle",
     isRemoteSyncAuthenticated: false,
+    lastSyncedAt: null,
     manualSyncCooldownUntil: 0,
     hydrateWorkbookList: async () => {
       if (get().hydrationState !== "idle") {
@@ -863,6 +887,13 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       if (!(currentAuthenticatedUser && activeWorkbookSession)) {
         syncLogger.warn(
           "Manual sync requested without an authenticated active workbook session."
+        );
+        return false;
+      }
+
+      if (!isActiveWorkbookDirty) {
+        syncLogger.debug(
+          "Manual sync skipped because there are no local workbook changes."
         );
         return false;
       }

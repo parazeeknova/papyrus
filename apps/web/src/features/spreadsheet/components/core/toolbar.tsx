@@ -4,10 +4,16 @@ import {
   ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
   CellSignalFullIcon,
+  ClipboardTextIcon,
+  ColumnsIcon,
+  CopyIcon,
+  MagnifyingGlassIcon,
   PaintBrushIcon,
   PaintBucketIcon,
   PrinterIcon,
   RectangleIcon,
+  RowsIcon,
+  ScissorsIcon,
   TextAaIcon,
   TextAlignCenterIcon,
   TextAlignLeftIcon,
@@ -53,6 +59,12 @@ interface ToolbarButtonProps {
 interface ToolbarProps {
   canRedo: boolean;
   canUndo: boolean;
+  onCopy: () => void;
+  onCut: () => void;
+  onDeleteColumn: () => void;
+  onDeleteRow: () => void;
+  onOpenFindReplace: () => void;
+  onPaste: () => void;
   onRedo: () => void;
   onUndo: () => void;
 }
@@ -83,7 +95,18 @@ function ToolbarButton({
   );
 }
 
-export function Toolbar({ canRedo, canUndo, onRedo, onUndo }: ToolbarProps) {
+export function Toolbar({
+  canRedo,
+  canUndo,
+  onCopy,
+  onCut,
+  onDeleteColumn,
+  onDeleteRow,
+  onOpenFindReplace,
+  onPaste,
+  onRedo,
+  onUndo,
+}: ToolbarProps) {
   return (
     <div
       className="flex h-9 shrink-0 items-center gap-0.5 border-border border-b bg-background px-2"
@@ -102,6 +125,37 @@ export function Toolbar({ canRedo, canUndo, onRedo, onUndo }: ToolbarProps) {
         label="Redo (Ctrl+Y)"
         onClick={onRedo}
       />
+      <ToolbarButton
+        icon={<ScissorsIcon weight="bold" />}
+        label="Cut (Ctrl+X)"
+        onClick={onCut}
+      />
+      <ToolbarButton
+        icon={<CopyIcon weight="bold" />}
+        label="Copy (Ctrl+C)"
+        onClick={onCopy}
+      />
+      <ToolbarButton
+        icon={<ClipboardTextIcon weight="bold" />}
+        label="Paste (Ctrl+V)"
+        onClick={onPaste}
+      />
+      <ToolbarButton
+        icon={<MagnifyingGlassIcon weight="bold" />}
+        label="Find and replace (Ctrl+H)"
+        onClick={onOpenFindReplace}
+      />
+      <ToolbarButton
+        icon={<RowsIcon weight="bold" />}
+        label="Delete row"
+        onClick={onDeleteRow}
+      />
+      <ToolbarButton
+        icon={<ColumnsIcon weight="bold" />}
+        label="Delete column"
+        onClick={onDeleteColumn}
+      />
+      <Separator className="mx-1 h-5" orientation="vertical" />
       <ToolbarButton
         icon={<PrinterIcon weight="bold" />}
         label="Print (Ctrl+P)"
