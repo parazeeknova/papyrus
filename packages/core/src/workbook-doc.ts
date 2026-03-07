@@ -1,6 +1,7 @@
 import { type Doc, type Array as YArray, Map as YMap } from "yjs";
 import type {
   PersistedCellRecord,
+  SheetColumn,
   SheetMeta,
   WorkbookMeta,
   WorkbookSnapshot,
@@ -10,8 +11,10 @@ const ROOT_META_KEY = "meta";
 const ROOT_SHEETS_KEY = "sheets";
 const ROOT_SHEET_ORDER_KEY = "sheetOrder";
 const SHEET_CELLS_KEY = "cells";
+const SHEET_COLUMNS_KEY = "columns";
 const DEFAULT_WORKBOOK_NAME = "Untitled spreadsheet";
 const DEFAULT_SHEET_NAME_PREFIX = "Sheet";
+const DEFAULT_COLUMN_COUNT = 100;
 
 function getNowIsoString(): string {
   return new Date().toISOString();
@@ -47,6 +50,20 @@ function getSheetCellsMap(doc: Doc, sheetId: string): YMap<string> | null {
   return null;
 }
 
+function getSheetColumnsMap(doc: Doc, sheetId: string): YMap<string> | null {
+  const sheet = getSheetMap(doc, sheetId);
+  if (!sheet) {
+    return null;
+  }
+
+  const columns = sheet.get(SHEET_COLUMNS_KEY);
+  if (columns instanceof YMap) {
+    return columns as YMap<string>;
+  }
+
+  return null;
+}
+
 function getStringValue(
   map: YMap<unknown>,
   key: string,
@@ -74,17 +91,31 @@ function ensureSheet(doc: Doc, sheetId: string, name: string): void {
   const now = getNowIsoString();
   const sheet = new YMap<unknown>();
   const cells = new YMap<string>();
+  const columns = new YMap<string>();
 
   sheet.set("id", sheetId);
   sheet.set("name", name);
   sheet.set("createdAt", now);
   sheet.set("updatedAt", now);
   sheet.set(SHEET_CELLS_KEY, cells);
+  sheet.set(SHEET_COLUMNS_KEY, columns);
   sheets.set(sheetId, sheet);
 }
 
 function getDefaultSheetName(sheetCount: number): string {
   return `${DEFAULT_SHEET_NAME_PREFIX}${sheetCount + 1}`;
+}
+
+function getDefaultColumnName(columnIndex: number): string {
+  let result = "";
+  let currentIndex = columnIndex;
+
+  while (currentIndex >= 0) {
+    result = String.fromCharCode((currentIndex % 26) + 65) + result;
+    currentIndex = Math.floor(currentIndex / 26) - 1;
+  }
+
+  return result;
 }
 
 export function createWorkbookId(): string {
@@ -202,6 +233,55 @@ export function createSheet(doc: Doc, name?: string): SheetMeta {
   };
 }
 
+export function getSheetColumns(
+  doc: Doc,
+  sheetId: string | null,
+  columnCount = DEFAULT_COLUMN_COUNT
+): SheetColumn[] {
+  if (!sheetId) {
+    return Array.from({ length: columnCount }, (_, index) => ({
+      index,
+      name: getDefaultColumnName(index),
+    }));
+  }
+
+  const columns = getSheetColumnsMap(doc, sheetId);
+  return Array.from({ length: columnCount }, (_, index) => ({
+    index,
+    name: columns?.get(String(index)) ?? getDefaultColumnName(index),
+  }));
+}
+
+export function renameSheetColumn(
+  doc: Doc,
+  sheetId: string,
+  columnIndex: number,
+  columnName: string
+): string | null {
+  const columns = getSheetColumnsMap(doc, sheetId);
+  const sheet = getSheetMap(doc, sheetId);
+  if (!(columns && sheet)) {
+    return null;
+  }
+
+  const normalizedName = columnName.trim();
+  const defaultName = getDefaultColumnName(columnIndex);
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    if (normalizedName === defaultName) {
+      columns.delete(String(columnIndex));
+    } else {
+      columns.set(String(columnIndex), normalizedName);
+    }
+
+    sheet.set("updatedAt", now);
+    getMetaMap(doc).set("updatedAt", now);
+  });
+
+  return normalizedName;
+}
+
 export function renameSheet(
   doc: Doc,
   sheetId: string,
@@ -263,6 +343,34 @@ export function setSheetCellRaw(
       sheet.set("updatedAt", now);
     }
 
+    getMetaMap(doc).set("updatedAt", now);
+  });
+}
+
+export function setSheetCellValues(
+  doc: Doc,
+  sheetId: string,
+  values: Record<string, string>
+): void {
+  const cells = getSheetCellsMap(doc, sheetId);
+  const sheet = getSheetMap(doc, sheetId);
+  if (!(cells && sheet)) {
+    return;
+  }
+
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    for (const [cellKey, raw] of Object.entries(values)) {
+      if (raw === "") {
+        cells.delete(cellKey);
+        continue;
+      }
+
+      cells.set(cellKey, raw);
+    }
+
+    sheet.set("updatedAt", now);
     getMetaMap(doc).set("updatedAt", now);
   });
 }
@@ -333,6 +441,7 @@ export function getWorkbookSnapshot(doc: Doc): WorkbookSnapshot {
 
   return {
     activeSheetCells: getSheetCells(doc, activeSheetId),
+    activeSheetColumns: getSheetColumns(doc, activeSheetId),
     activeSheetId,
     sheets: getSheets(doc),
     workbook,

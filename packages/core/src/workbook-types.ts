@@ -2,6 +2,11 @@ export interface PersistedCellRecord {
   raw: string;
 }
 
+export interface SheetColumn {
+  index: number;
+  name: string;
+}
+
 export interface SheetMeta {
   createdAt: string;
   id: string;
@@ -20,6 +25,7 @@ export interface WorkbookMeta {
 
 export interface WorkbookSnapshot {
   activeSheetCells: Record<string, PersistedCellRecord>;
+  activeSheetColumns: SheetColumn[];
   activeSheetId: string | null;
   sheets: SheetMeta[];
   workbook: WorkbookMeta;

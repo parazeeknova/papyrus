@@ -3,15 +3,23 @@ import type {
   CellPosition,
 } from "@/web/features/spreadsheet/lib/spreadsheet-types";
 
-const CELL_REF_REGEX = /^([A-Z]+)(\d+)$/i;
+const COLUMN_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_]*$/;
+const CELL_REF_REGEX = /^([A-Za-z][A-Za-z_]*)(\d+)$/;
 const SUM_REGEX = /^SUM\((.+)\)$/i;
 const AVERAGE_REGEX = /^AVERAGE\((.+)\)$/i;
 const MIN_REGEX = /^MIN\((.+)\)$/i;
 const MAX_REGEX = /^MAX\((.+)\)$/i;
 const COUNT_REGEX = /^COUNT\((.+)\)$/i;
 const SAFE_EXPRESSION_REGEX = /^[\d+\-*/().eE\s]+$/;
-const CELL_REFERENCE_REGEX = /[A-Z]+\d+/gi;
-const CELL_RANGE_REGEX = /([A-Z]+\d+):([A-Z]+\d+)/gi;
+const CELL_REFERENCE_REGEX = /[A-Za-z][A-Za-z_]*\d+/g;
+const CELL_RANGE_REGEX = /([A-Za-z][A-Za-z_]*\d+):([A-Za-z][A-Za-z_]*\d+)/g;
+const RESERVED_COLUMN_NAMES = new Set([
+  "AVERAGE",
+  "COUNT",
+  "MAX",
+  "MIN",
+  "SUM",
+]);
 
 export function colToLetter(col: number): string {
   let result = "";
@@ -23,38 +31,62 @@ export function colToLetter(col: number): string {
   return result;
 }
 
-export function letterToCol(letter: string): number {
-  let result = 0;
-  for (let i = 0; i < letter.length; i++) {
-    result = result * 26 + (letter.charCodeAt(i) - 64);
-  }
-  return result - 1;
-}
-
 export function cellId(row: number, col: number): string {
-  return `${colToLetter(col)}${row + 1}`;
+  return `C${col}R${row}`;
 }
 
 export function normalizeCellId(id: string): string {
   return id.trim().toUpperCase();
 }
 
-export function getFormulaDependencies(raw: string): string[] {
+export function normalizeColumnName(name: string): string {
+  return name.trim();
+}
+
+export function getColumnName(columnNames: string[], col: number): string {
+  return columnNames[col] ?? colToLetter(col);
+}
+
+function getColumnNameLookup(columnNames: string[]): Map<string, number> {
+  return new Map(
+    columnNames.map((columnName, index) => [columnName.toUpperCase(), index])
+  );
+}
+
+export function isValidColumnName(name: string): boolean {
+  const normalizedName = normalizeColumnName(name);
+  return (
+    COLUMN_NAME_REGEX.test(normalizedName) &&
+    !RESERVED_COLUMN_NAMES.has(normalizedName.toUpperCase())
+  );
+}
+
+export function getCellReferenceLabel(
+  row: number,
+  col: number,
+  columnNames: string[]
+): string {
+  return `${getColumnName(columnNames, col)}${row + 1}`;
+}
+
+export function getFormulaDependencies(
+  raw: string,
+  columnNames: string[]
+): string[] {
   if (!raw.startsWith("=")) {
     return [];
   }
 
   const dependencyIds = new Set<string>();
-  const normalizedRaw = raw.toUpperCase();
 
-  for (const match of normalizedRaw.matchAll(CELL_RANGE_REGEX)) {
+  for (const match of raw.matchAll(CELL_RANGE_REGEX)) {
     const startRef = match[1];
     const endRef = match[2];
     if (!(startRef && endRef)) {
       continue;
     }
 
-    const range = parseCellRange(`${startRef}:${endRef}`);
+    const range = parseCellRange(`${startRef}:${endRef}`, columnNames);
     if (!range) {
       continue;
     }
@@ -64,36 +96,51 @@ export function getFormulaDependencies(raw: string): string[] {
     }
   }
 
-  const singleReferences = normalizedRaw.match(CELL_REFERENCE_REGEX);
+  const singleReferences = raw.match(CELL_REFERENCE_REGEX);
   if (singleReferences) {
     for (const match of singleReferences) {
-      dependencyIds.add(normalizeCellId(match));
+      const position = parseCellRef(match, columnNames);
+      if (!position) {
+        continue;
+      }
+
+      dependencyIds.add(cellId(position.row, position.col));
     }
   }
 
   return [...dependencyIds];
 }
 
-export function parseCellRef(ref: string): CellPosition | null {
+export function parseCellRef(
+  ref: string,
+  columnNames: string[]
+): CellPosition | null {
   const match = CELL_REF_REGEX.exec(ref.trim());
   if (!(match?.[1] && match[2])) {
     return null;
   }
+
+  const col = getColumnNameLookup(columnNames).get(match[1].toUpperCase());
+  if (col === undefined) {
+    return null;
+  }
+
   return {
-    col: letterToCol(match[1].toUpperCase()),
+    col,
     row: Number.parseInt(match[2], 10) - 1,
   };
 }
 
 export function parseCellRange(
-  rangeStr: string
+  rangeStr: string,
+  columnNames: string[]
 ): { start: CellPosition; end: CellPosition } | null {
   const parts = rangeStr.split(":");
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
     return null;
   }
-  const start = parseCellRef(parts[0]);
-  const end = parseCellRef(parts[1]);
+  const start = parseCellRef(parts[0], columnNames);
+  const end = parseCellRef(parts[1], columnNames);
   if (!(start && end)) {
     return null;
   }
@@ -132,15 +179,16 @@ export function getCellValue(
 export function evaluateFormula(
   formula: string,
   cells: Record<string, CellData>,
+  columnNames: string[],
   visited: Set<string>
 ): string {
-  const upper = formula.slice(1).trim();
+  const expressionBody = formula.slice(1).trim();
 
   // SUM function
-  const sumMatch = SUM_REGEX.exec(upper);
+  const sumMatch = SUM_REGEX.exec(expressionBody);
   if (sumMatch?.[1]) {
     const arg = sumMatch[1].trim();
-    const range = parseCellRange(arg);
+    const range = parseCellRange(arg, columnNames);
     if (range) {
       const positions = getCellsInRange(range.start, range.end);
       let sum = 0;
@@ -157,10 +205,10 @@ export function evaluateFormula(
   }
 
   // AVERAGE function
-  const avgMatch = AVERAGE_REGEX.exec(upper);
+  const avgMatch = AVERAGE_REGEX.exec(expressionBody);
   if (avgMatch?.[1]) {
     const arg = avgMatch[1].trim();
-    const range = parseCellRange(arg);
+    const range = parseCellRange(arg, columnNames);
     if (range) {
       const positions = getCellsInRange(range.start, range.end);
       let sum = 0;
@@ -177,10 +225,10 @@ export function evaluateFormula(
   }
 
   // MIN function
-  const minMatch = MIN_REGEX.exec(upper);
+  const minMatch = MIN_REGEX.exec(expressionBody);
   if (minMatch?.[1]) {
     const arg = minMatch[1].trim();
-    const range = parseCellRange(arg);
+    const range = parseCellRange(arg, columnNames);
     if (range) {
       const positions = getCellsInRange(range.start, range.end);
       const values = positions.map((pos) =>
@@ -192,10 +240,10 @@ export function evaluateFormula(
   }
 
   // MAX function
-  const maxMatch = MAX_REGEX.exec(upper);
+  const maxMatch = MAX_REGEX.exec(expressionBody);
   if (maxMatch?.[1]) {
     const arg = maxMatch[1].trim();
-    const range = parseCellRange(arg);
+    const range = parseCellRange(arg, columnNames);
     if (range) {
       const positions = getCellsInRange(range.start, range.end);
       const values = positions.map((pos) =>
@@ -207,10 +255,10 @@ export function evaluateFormula(
   }
 
   // COUNT function
-  const countMatch = COUNT_REGEX.exec(upper);
+  const countMatch = COUNT_REGEX.exec(expressionBody);
   if (countMatch?.[1]) {
     const arg = countMatch[1].trim();
-    const range = parseCellRange(arg);
+    const range = parseCellRange(arg, columnNames);
     if (range) {
       const positions = getCellsInRange(range.start, range.end);
       let count = 0;
@@ -231,8 +279,13 @@ export function evaluateFormula(
   }
 
   try {
-    const expression = upper.replace(/[A-Z]+\d+/gi, (match) => {
-      const id = match.toUpperCase();
+    const expression = expressionBody.replace(CELL_REFERENCE_REGEX, (match) => {
+      const position = parseCellRef(match, columnNames);
+      if (!position) {
+        return match;
+      }
+
+      const id = cellId(position.row, position.col);
       if (visited.has(id)) {
         return "NaN";
       }
@@ -257,6 +310,7 @@ export function evaluateFormula(
 export function computeCell(
   raw: string,
   cells: Record<string, CellData>,
+  columnNames: string[],
   currentId: string
 ): string {
   if (!raw) {
@@ -266,5 +320,29 @@ export function computeCell(
     return raw;
   }
   const visited = new Set<string>([currentId]);
-  return evaluateFormula(raw, cells, visited);
+  return evaluateFormula(raw, cells, columnNames, visited);
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function rewriteFormulaColumnName(
+  raw: string,
+  previousName: string,
+  nextName: string
+): string {
+  if (!raw.startsWith("=")) {
+    return raw;
+  }
+
+  const safePreviousName = escapeRegex(previousName);
+  const referenceRegex = new RegExp(
+    `(^|[^A-Za-z_])(${safePreviousName})(\\d+)`,
+    "gi"
+  );
+
+  return raw.replace(referenceRegex, (_match, prefix, _name, rowNumber) => {
+    return `${prefix}${nextName}${rowNumber}`;
+  });
 }

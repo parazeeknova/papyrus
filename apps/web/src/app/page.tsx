@@ -1,17 +1,18 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { FormulaBar } from "@/web/features/spreadsheet/components/formula-bar";
-import { SpreadsheetMenuBar } from "@/web/features/spreadsheet/components/menu-bar";
-import { SheetTabs } from "@/web/features/spreadsheet/components/sheet-tabs";
-import { SpreadsheetGrid } from "@/web/features/spreadsheet/components/spreadsheet-grid";
+import { FormulaBar } from "@/web/features/spreadsheet/components/core/formula-bar";
+import { SheetTabs } from "@/web/features/spreadsheet/components/core/sheet-tabs";
+import { SpreadsheetGrid } from "@/web/features/spreadsheet/components/core/spreadsheet-grid";
+import { Toolbar } from "@/web/features/spreadsheet/components/core/toolbar";
+import { SpreadsheetMenuBar } from "@/web/features/spreadsheet/components/menu-bar/menu-bar";
 import { TemplateGalleryPanel } from "@/web/features/spreadsheet/components/template-gallery";
-import { Toolbar } from "@/web/features/spreadsheet/components/toolbar";
 import { useSpreadsheet } from "@/web/features/spreadsheet/hooks/use-spreadsheet";
 
 export default function Home() {
   const {
     activeCell,
+    activeSheetColumns,
     activeWorkbook,
     activeSheetId,
     canExpandRows,
@@ -23,6 +24,7 @@ export default function Home() {
     expandRowCount,
     hydrationState,
     openWorkbook,
+    renameColumn,
     renameWorkbook,
     rowCount,
     saveState,
@@ -33,6 +35,7 @@ export default function Home() {
     setSelectionRange,
     showAllRows,
     getCellData,
+    getCellReferenceLabel,
     setCellValue,
     selectCell,
     startEditing,
@@ -97,17 +100,23 @@ export default function Home() {
       <FormulaBar
         activeCell={activeCell}
         cellRaw={activeCellData.raw}
+        getCellReferenceLabel={getCellReferenceLabel}
         onCommit={handleFormulaCommit}
         onValueChange={handleFormulaChange}
+        primaryColumnName={activeSheetColumns[0]?.name ?? "A"}
       />
       <SpreadsheetGrid
         activeCell={activeCell}
         canExpandRows={canExpandRows}
         columnCount={columnCount}
+        columnNames={activeSheetColumns.map((column) => column.name)}
         editingCell={editingCell}
         expandRowCount={expandRowCount}
         getCellData={getCellData}
         navigateFromActive={navigateFromActive}
+        onRenameColumn={(columnIndex, columnName) =>
+          renameColumn(columnIndex, columnName)
+        }
         rowCount={rowCount}
         selectCell={selectCell}
         selection={selection}

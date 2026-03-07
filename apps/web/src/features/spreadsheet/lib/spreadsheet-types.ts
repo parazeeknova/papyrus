@@ -35,6 +35,7 @@ export type SpreadsheetWorkerMessage =
       type: "INIT";
       payload: {
         cells?: Record<string, CellData>;
+        columnNames?: string[];
       };
     }
   | {

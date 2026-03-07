@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cellId } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
+import {
+  getCellReferenceLabel as buildCellReferenceLabel,
+  cellId,
+  getColumnName as resolveColumnName,
+} from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 import type {
   CellData,
   CellPosition,
@@ -13,11 +17,7 @@ import type {
 import { useSpreadsheetStore } from "@/web/features/spreadsheet/store/spreadsheet-store";
 
 // biome-ignore lint/performance/noBarrelFile: skip re-exporting from index for better path clarity
-export {
-  cellId,
-  colToLetter,
-  parseCellRef,
-} from "@/web/features/spreadsheet/lib/spreadsheet-engine";
+export { cellId } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 
 export type {
   CellData,
@@ -57,6 +57,9 @@ export function useSpreadsheet() {
   const activeSheetCells = useSpreadsheetStore(
     (state) => state.activeSheetCells
   );
+  const activeSheetColumns = useSpreadsheetStore(
+    (state) => state.activeSheetColumns
+  );
   const activeSheetId = useSpreadsheetStore((state) => state.activeSheetId);
   const activeWorkbook = useSpreadsheetStore((state) => state.activeWorkbook);
   const createSheet = useSpreadsheetStore((state) => state.createSheet);
@@ -67,6 +70,7 @@ export function useSpreadsheet() {
     (state) => state.hydrateWorkbookList
   );
   const openWorkbook = useSpreadsheetStore((state) => state.openWorkbook);
+  const renameColumn = useSpreadsheetStore((state) => state.renameColumn);
   const renameWorkbook = useSpreadsheetStore((state) => state.renameWorkbook);
   const saveState = useSpreadsheetStore((state) => state.saveState);
   const setActiveSheet = useSpreadsheetStore((state) => state.setActiveSheet);
@@ -85,13 +89,17 @@ export function useSpreadsheet() {
   const [computedCells, setComputedCells] = useState<Record<string, CellData>>(
     {}
   );
-  const [columnCount] = useState(DEFAULT_COLS);
+  const activeColumnNames = useMemo(
+    () => activeSheetColumns.map((column) => column.name),
+    [activeSheetColumns]
+  );
+  const columnCount = activeColumnNames.length || DEFAULT_COLS;
   const [totalRowCount] = useState(DEFAULT_ROWS);
   const [rowCount, setRowCount] = useState(DEFAULT_VISIBLE_ROWS);
 
   const workerRef = useRef<Worker | null>(null);
   const workerCellsRef = useRef<Record<string, CellData>>({});
-  const workerResetKeyRef = useRef(workerResetKey);
+  const workerColumnNamesRef = useRef<string[]>([]);
   const activeSheetCellsForWorker = useMemo(
     () =>
       Object.fromEntries(
@@ -138,11 +146,21 @@ export function useSpreadsheet() {
   }, [activeSheetCellsForWorker]);
 
   useEffect(() => {
-    workerResetKeyRef.current = workerResetKey;
+    workerColumnNamesRef.current = activeColumnNames;
+  }, [activeColumnNames]);
+
+  useEffect(() => {
+    if (workerResetKey.length === 0) {
+      return;
+    }
+
     setComputedCells({});
     workerRef.current?.postMessage({
       type: "INIT",
-      payload: { cells: workerCellsRef.current },
+      payload: {
+        cells: workerCellsRef.current,
+        columnNames: workerColumnNamesRef.current,
+      },
     });
     setActiveCell(null);
     setEditingCell(null);
@@ -267,6 +285,7 @@ export function useSpreadsheet() {
 
   return {
     activeCell,
+    activeSheetColumns,
     activeSheetId,
     activeWorkbook,
     createSheet,
@@ -279,6 +298,7 @@ export function useSpreadsheet() {
     expandRowCount,
     hydrationState,
     openWorkbook,
+    renameColumn,
     renameWorkbook,
     rowCount,
     saveState,
@@ -295,5 +315,8 @@ export function useSpreadsheet() {
     stopEditing,
     navigateFromActive,
     workbooks,
+    getColumnName: (col: number) => resolveColumnName(activeColumnNames, col),
+    getCellReferenceLabel: (row: number, col: number) =>
+      buildCellReferenceLabel(row, col, activeColumnNames),
   };
 }

@@ -3,26 +3,27 @@
 import { Badge } from "@/web/components/ui/badge";
 import { Input } from "@/web/components/ui/input";
 import { Separator } from "@/web/components/ui/separator";
-import {
-  type CellPosition,
-  colToLetter,
-} from "@/web/features/spreadsheet/hooks/use-spreadsheet";
+import type { CellPosition } from "@/web/features/spreadsheet/hooks/use-spreadsheet";
 
 interface FormulaBarProps {
   activeCell: CellPosition | null;
   cellRaw: string;
+  getCellReferenceLabel: (row: number, col: number) => string;
   onCommit: () => void;
   onValueChange: (value: string) => void;
+  primaryColumnName: string;
 }
 
 export function FormulaBar({
   activeCell,
   cellRaw,
+  getCellReferenceLabel,
   onValueChange,
   onCommit,
+  primaryColumnName,
 }: FormulaBarProps) {
   const cellLabel = activeCell
-    ? `${colToLetter(activeCell.col)}${activeCell.row + 1}`
+    ? getCellReferenceLabel(activeCell.row, activeCell.col)
     : "";
 
   return (
@@ -58,7 +59,7 @@ export function FormulaBar({
             onCommit();
           }
         }}
-        placeholder="Enter value or formula (e.g. =SUM(A1:A5))"
+        placeholder={`Enter value or formula (e.g. =SUM(${primaryColumnName}1:${primaryColumnName}5))`}
         value={cellRaw}
       />
     </div>

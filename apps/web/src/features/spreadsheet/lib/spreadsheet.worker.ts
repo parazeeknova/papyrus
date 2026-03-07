@@ -14,6 +14,7 @@ import type {
 let cells = new Map<string, CellData>();
 let dependencies = new Map<string, Set<string>>();
 let dependents = new Map<string, Set<string>>();
+let columnNames: string[] = [];
 
 const recomputeAll = (): SpreadsheetPatch => {
   const patch: SpreadsheetPatch = { deletions: [], updates: {} };
@@ -33,7 +34,12 @@ const recomputeAll = (): SpreadsheetPatch => {
         continue;
       }
 
-      const nextComputed = computeCell(currentCell.raw, snapshot, cellKey);
+      const nextComputed = computeCell(
+        currentCell.raw,
+        snapshot,
+        columnNames,
+        cellKey
+      );
       const nextCell =
         nextComputed === currentCell.computed
           ? currentCell
@@ -77,7 +83,7 @@ const removeDependencyEdges = (cellKey: string) => {
 };
 
 const setDependencyEdges = (cellKey: string, raw: string) => {
-  const nextDependencies = new Set(getFormulaDependencies(raw));
+  const nextDependencies = new Set(getFormulaDependencies(raw, columnNames));
   if (nextDependencies.size === 0) {
     dependencies.delete(cellKey);
     return;
@@ -115,7 +121,12 @@ const recomputeFrom = (startKey: string): SpreadsheetPatch => {
 
     const currentCell = cells.get(currentKey);
     if (currentCell) {
-      const nextComputed = computeCell(currentCell.raw, snapshot, currentKey);
+      const nextComputed = computeCell(
+        currentCell.raw,
+        snapshot,
+        columnNames,
+        currentKey
+      );
       const nextCell =
         nextComputed === currentCell.computed
           ? currentCell
@@ -147,10 +158,14 @@ const recomputeFrom = (startKey: string): SpreadsheetPatch => {
   return patch;
 };
 
-const resetState = (initialCells: Record<string, CellData>) => {
+const resetState = (
+  initialCells: Record<string, CellData>,
+  nextColumnNames: string[]
+) => {
   cells = new Map<string, CellData>();
   dependencies = new Map<string, Set<string>>();
   dependents = new Map<string, Set<string>>();
+  columnNames = nextColumnNames;
 
   for (const [cellKey, cellData] of Object.entries(initialCells)) {
     const normalizedKey = normalizeCellId(cellKey);
@@ -164,7 +179,7 @@ const handleInit = (message: SpreadsheetWorkerMessage) => {
     return;
   }
 
-  resetState(message.payload.cells ?? {});
+  resetState(message.payload.cells ?? {}, message.payload.columnNames ?? []);
   const patch = recomputeAll();
   self.postMessage({
     type: "READY",

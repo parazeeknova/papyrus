@@ -26,8 +26,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/web/components/ui/tooltip";
-import { AboutPapyrusDialog } from "@/web/features/spreadsheet/components/about-papyrus-dialog";
-import { FunctionListDialog } from "@/web/features/spreadsheet/components/function-list-dialog";
+import { AboutPapyrusDialog } from "@/web/features/spreadsheet/components/dialogs/about-papyrus-dialog";
+import { FunctionListDialog } from "@/web/features/spreadsheet/components/dialogs/function-list-dialog";
+import { ShareDialog } from "@/web/features/spreadsheet/components/dialogs/share-dialog";
 import { DataMenu } from "@/web/features/spreadsheet/components/menu-bar/data-menu";
 import { EditMenu } from "@/web/features/spreadsheet/components/menu-bar/edit-menu";
 import { FileMenu } from "@/web/features/spreadsheet/components/menu-bar/file-menu";
@@ -35,7 +36,6 @@ import { FormatMenu } from "@/web/features/spreadsheet/components/menu-bar/forma
 import { HelpMenu } from "@/web/features/spreadsheet/components/menu-bar/help-menu";
 import { InsertMenu } from "@/web/features/spreadsheet/components/menu-bar/insert-menu";
 import { ViewMenu } from "@/web/features/spreadsheet/components/menu-bar/view-menu";
-import { ShareDialog } from "@/web/features/spreadsheet/components/share-dialog";
 
 interface SpreadsheetMenuBarProps {
   isFavorite: boolean;

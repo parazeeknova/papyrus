@@ -7,9 +7,11 @@ import {
   getActiveSheetId,
   getWorkbookMeta,
   getWorkbookSnapshot,
+  renameSheetColumn,
   renameWorkbook as renameWorkbookInDoc,
   setActiveSheet as setActiveSheetInDoc,
   setSheetCellRaw,
+  setSheetCellValues,
   setWorkbookFavorite,
   touchWorkbook,
 } from "@papyrus/core/workbook-doc";
@@ -25,18 +27,25 @@ import {
 } from "@papyrus/core/workbook-registry";
 import type {
   PersistedCellRecord,
+  SheetColumn,
   SheetMeta,
   WorkbookMeta,
 } from "@papyrus/core/workbook-types";
 import { Doc } from "yjs";
 import { create } from "zustand";
-import { cellId } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
+import {
+  cellId,
+  isValidColumnName,
+  normalizeColumnName,
+  rewriteFormulaColumnName,
+} from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 
 type HydrationState = "error" | "idle" | "loading" | "ready";
 type SaveState = "error" | "saved" | "saving";
 
 interface SpreadsheetStoreState {
   activeSheetCells: Record<string, PersistedCellRecord>;
+  activeSheetColumns: SheetColumn[];
   activeSheetId: string | null;
   activeWorkbook: WorkbookMeta | null;
   createSheet: () => Promise<void>;
@@ -45,6 +54,7 @@ interface SpreadsheetStoreState {
   hydrateWorkbookList: () => Promise<void>;
   hydrationState: HydrationState;
   openWorkbook: (workbookId: string, name?: string) => Promise<void>;
+  renameColumn: (columnIndex: number, columnName: string) => Promise<boolean>;
   renameWorkbook: (name: string) => Promise<void>;
   saveState: SaveState;
   setActiveSheet: (sheetId: string) => Promise<void>;
@@ -113,17 +123,26 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
         options?.forceWorkerReset ||
         state.activeWorkbook?.id !== snapshot.workbook.id ||
         state.activeSheetId !== snapshot.activeSheetId;
+      const didColumnsChange =
+        state.activeSheetColumns.length !==
+          snapshot.activeSheetColumns.length ||
+        state.activeSheetColumns.some(
+          (column, index) =>
+            column.name !== snapshot.activeSheetColumns[index]?.name
+        );
 
       return {
         activeSheetCells: snapshot.activeSheetCells,
+        activeSheetColumns: snapshot.activeSheetColumns,
         activeSheetId: snapshot.activeSheetId,
         activeWorkbook: snapshot.workbook,
         hydrationState: "ready",
         saveState: "saved",
         sheets: snapshot.sheets,
-        workerResetKey: shouldResetWorker
-          ? `${snapshot.workbook.id}:${snapshot.activeSheetId ?? "none"}:${snapshot.workbook.updatedAt}`
-          : state.workerResetKey,
+        workerResetKey:
+          shouldResetWorker || didColumnsChange
+            ? `${snapshot.workbook.id}:${snapshot.activeSheetId ?? "none"}:${snapshot.workbook.updatedAt}`
+            : state.workerResetKey,
       };
     });
   };
@@ -166,6 +185,7 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
 
   return {
     activeSheetCells: {},
+    activeSheetColumns: [],
     activeSheetId: null,
     activeWorkbook: null,
     createSheet: async () => {
@@ -239,6 +259,60 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     },
     openWorkbook: async (workbookId, name) => {
       await activateWorkbook(workbookId, name);
+    },
+    renameColumn: async (columnIndex, columnName) => {
+      const activeSheetId = get().activeSheetId;
+      const currentColumn = get().activeSheetColumns[columnIndex];
+      if (!(activeWorkbookSession && activeSheetId && currentColumn)) {
+        return false;
+      }
+
+      const normalizedName = normalizeColumnName(columnName);
+      const hasDuplicateName = get().activeSheetColumns.some(
+        (column) =>
+          column.index !== columnIndex &&
+          column.name.toUpperCase() === normalizedName.toUpperCase()
+      );
+
+      if (!isValidColumnName(normalizedName) || hasDuplicateName) {
+        return false;
+      }
+
+      if (normalizedName === currentColumn.name) {
+        return true;
+      }
+
+      set({ saveState: "saving" });
+      renameSheetColumn(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        columnIndex,
+        normalizedName
+      );
+
+      const rewrittenFormulas = Object.fromEntries(
+        Object.entries(get().activeSheetCells)
+          .map(([cellKey, cellValue]) => [
+            cellKey,
+            rewriteFormulaColumnName(
+              cellValue.raw,
+              currentColumn.name,
+              normalizedName
+            ),
+          ])
+          .filter(([_, nextRaw]) => nextRaw.startsWith("="))
+      );
+
+      if (Object.keys(rewrittenFormulas).length > 0) {
+        setSheetCellValues(
+          activeWorkbookSession.doc,
+          activeSheetId,
+          rewrittenFormulas
+        );
+      }
+
+      await persistActiveWorkbookMeta(set);
+      return true;
     },
     renameWorkbook: async (name) => {
       if (!activeWorkbookSession) {

@@ -1,13 +1,29 @@
 "use client";
 
+import {
+  CopyIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  ScissorsIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  memo,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/web/components/ui/button";
+import { Input } from "@/web/components/ui/input";
 import {
   type CellData,
   type CellPosition,
   cellId,
-  colToLetter,
   type SelectionMode,
   type SelectionRange,
 } from "@/web/features/spreadsheet/hooks/use-spreadsheet";
@@ -21,6 +37,13 @@ const ROW_OVERSCAN = 20;
 const COL_OVERSCAN = 4;
 const EXPANSION_PROMPT_HEIGHT = 56;
 
+interface ContextMenuState {
+  col: number;
+  row: number;
+  x: number;
+  y: number;
+}
+
 interface CellComponentProps {
   col: number;
   data: CellData;
@@ -28,11 +51,15 @@ interface CellComponentProps {
   isEditing: boolean;
   isSelected: boolean;
   onCommit: () => void;
+  onContextMenu: (
+    pos: CellPosition,
+    event: ReactMouseEvent<HTMLButtonElement>
+  ) => void;
   onDoubleClick: (pos: CellPosition) => void;
-  onKeyDown: (e: React.KeyboardEvent) => void;
+  onKeyDown: (e: ReactKeyboardEvent) => void;
   onSelect: (
     pos: CellPosition,
-    event: React.MouseEvent<HTMLButtonElement>
+    event: ReactMouseEvent<HTMLButtonElement>
   ) => void;
   onSelectHover: (pos: CellPosition) => void;
   onValueChange: (row: number, col: number, value: string) => void;
@@ -48,6 +75,7 @@ const CellComponent = memo(function CellComponent({
   isSelected,
   onSelect,
   onSelectHover,
+  onContextMenu,
   onDoubleClick,
   onValueChange,
   onCommit,
@@ -96,6 +124,10 @@ const CellComponent = memo(function CellComponent({
         isActive &&
           "z-5 border-2 border-primary bg-primary/5 shadow-[0_0_0_1px] shadow-primary/30"
       )}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onContextMenu({ row, col }, event);
+      }}
       onDoubleClick={() => {
         onDoubleClick({ row, col });
       }}
@@ -127,12 +159,14 @@ interface SpreadsheetGridProps {
   activeCell: CellPosition | null;
   canExpandRows: boolean;
   columnCount: number;
+  columnNames: string[];
   editingCell: CellPosition | null;
   expandRowCount: () => void;
   getCellData: (row: number, col: number) => CellData;
   navigateFromActive: (
     direction: "up" | "down" | "left" | "right"
   ) => CellPosition | null;
+  onRenameColumn: (columnIndex: number, columnName: string) => Promise<boolean>;
   rowCount: number;
   selectCell: (pos: CellPosition | null) => void;
   selection: SelectionRange | null;
@@ -150,6 +184,7 @@ interface SpreadsheetGridProps {
 export function SpreadsheetGrid({
   activeCell,
   canExpandRows,
+  columnNames,
   editingCell,
   columnCount,
   expandRowCount,
@@ -163,12 +198,18 @@ export function SpreadsheetGrid({
   startEditing,
   stopEditing,
   navigateFromActive,
+  onRenameColumn,
 }: SpreadsheetGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionDragRef = useRef<{
     mode: SelectionMode;
     start: CellPosition;
   } | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renamingColumnIndex, setRenamingColumnIndex] = useState<number | null>(
+    null
+  );
+  const [columnNameDraft, setColumnNameDraft] = useState("");
 
   const normalizedSelection = useMemo(() => {
     if (!selection) {
@@ -210,7 +251,7 @@ export function SpreadsheetGrid({
   }, [selection, columnCount, rowCount]);
 
   const handleCellKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+    (e: ReactKeyboardEvent) => {
       if (e.key === "ArrowUp") {
         e.preventDefault();
         navigateFromActive("up");
@@ -294,6 +335,26 @@ export function SpreadsheetGrid({
     };
   }, []);
 
+  useEffect(() => {
+    const handlePointerDown = () => {
+      setContextMenu(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+        setRenamingColumnIndex(null);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
   const isCellSelected = useCallback(
     (row: number, col: number) => {
       if (!normalizedSelection) {
@@ -357,7 +418,8 @@ export function SpreadsheetGrid({
   );
 
   const handleCellSelect = useCallback(
-    (pos: CellPosition, event: React.MouseEvent<HTMLButtonElement>) => {
+    (pos: CellPosition, event: ReactMouseEvent<HTMLButtonElement>) => {
+      setContextMenu(null);
       if (event.shiftKey && activeCell) {
         selectionDragRef.current = { start: activeCell, mode: "cells" };
         setSelectionRange(activeCell, pos, "cells");
@@ -369,6 +431,42 @@ export function SpreadsheetGrid({
     },
     [activeCell, selectCell, setSelectionRange]
   );
+
+  const handleCellContextMenu = useCallback(
+    (pos: CellPosition, event: ReactMouseEvent<HTMLButtonElement>) => {
+      selectCell(pos);
+      setContextMenu({
+        col: pos.col,
+        row: pos.row,
+        x: event.clientX,
+        y: event.clientY,
+      });
+    },
+    [selectCell]
+  );
+
+  const beginColumnRename = useCallback(
+    (columnIndex: number) => {
+      setContextMenu(null);
+      setRenamingColumnIndex(columnIndex);
+      setColumnNameDraft(columnNames[columnIndex] ?? "");
+    },
+    [columnNames]
+  );
+
+  const commitColumnRename = useCallback(async () => {
+    if (renamingColumnIndex === null) {
+      return;
+    }
+
+    const didRename = await onRenameColumn(
+      renamingColumnIndex,
+      columnNameDraft
+    );
+    if (didRename) {
+      setRenamingColumnIndex(null);
+    }
+  }, [columnNameDraft, onRenameColumn, renamingColumnIndex]);
 
   const visibleSelection = useMemo(() => {
     if (!(normalizedSelection && firstVirtualRow && firstVirtualCol)) {
@@ -450,36 +548,83 @@ export function SpreadsheetGrid({
                 height: COL_HEADER_HEIGHT,
               }}
             >
-              {virtualCols.map((vc) => (
-                <button
-                  className={cn(
-                    "absolute top-0 flex select-none items-center justify-center border-border border-r border-b bg-muted font-medium text-muted-foreground text-xs",
-                    isColumnHeaderSelected(vc.index) &&
-                      "z-10 bg-primary/12 font-semibold text-primary ring-1 ring-primary/30 ring-inset",
-                    activeCell?.col === vc.index &&
-                      "z-20 bg-primary/18 text-primary ring-1 ring-primary/50 ring-inset"
-                  )}
-                  key={`col-${vc.index}`}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    beginSelectionDrag({ row: 0, col: vc.index }, "columns");
-                  }}
-                  onMouseEnter={() => {
-                    updateDraggedSelection({
-                      row: rowCount - 1,
-                      col: vc.index,
-                    });
-                  }}
-                  style={{
-                    left: vc.start - colOffset,
-                    width: vc.size,
-                    height: COL_HEADER_HEIGHT,
-                  }}
-                  type="button"
-                >
-                  {colToLetter(vc.index)}
-                </button>
-              ))}
+              {virtualCols.map((vc) => {
+                const headerClassName = cn(
+                  "absolute top-0 flex select-none items-center justify-center border-border border-r border-b bg-muted font-medium text-muted-foreground text-xs",
+                  isColumnHeaderSelected(vc.index) &&
+                    "z-10 bg-primary/12 font-semibold text-primary ring-1 ring-primary/30 ring-inset",
+                  activeCell?.col === vc.index &&
+                    "z-20 bg-primary/18 text-primary ring-1 ring-primary/50 ring-inset"
+                );
+                const headerStyle = {
+                  left: vc.start - colOffset,
+                  width: vc.size,
+                  height: COL_HEADER_HEIGHT,
+                };
+
+                if (renamingColumnIndex === vc.index) {
+                  return (
+                    <div
+                      className={headerClassName}
+                      key={`col-${vc.index}`}
+                      style={headerStyle}
+                    >
+                      <Input
+                        autoFocus
+                        className="h-6 border-none bg-background px-1 text-center text-xs shadow-none focus-visible:ring-0"
+                        onBlur={() => {
+                          commitColumnRename().catch(() => undefined);
+                        }}
+                        onChange={(event) => {
+                          setColumnNameDraft(event.target.value);
+                        }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            commitColumnRename().catch(() => undefined);
+                          }
+
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setRenamingColumnIndex(null);
+                          }
+                        }}
+                        onMouseDown={(event) => {
+                          event.stopPropagation();
+                        }}
+                        value={columnNameDraft}
+                      />
+                    </div>
+                  );
+                }
+
+                return (
+                  <button
+                    className={headerClassName}
+                    key={`col-${vc.index}`}
+                    onDoubleClick={() => {
+                      beginColumnRename(vc.index);
+                    }}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      beginSelectionDrag({ row: 0, col: vc.index }, "columns");
+                    }}
+                    onMouseEnter={() => {
+                      updateDraggedSelection({
+                        row: rowCount - 1,
+                        col: vc.index,
+                      });
+                    }}
+                    style={headerStyle}
+                    type="button"
+                  >
+                    {columnNames[vc.index]}
+                  </button>
+                );
+              })}
             </div>
           ) : null}
         </div>
@@ -556,6 +701,7 @@ export function SpreadsheetGrid({
                           isEditing={isEditing}
                           isSelected={isSelected}
                           onCommit={stopEditing}
+                          onContextMenu={handleCellContextMenu}
                           onDoubleClick={startEditing}
                           onKeyDown={handleCellKeyDown}
                           onSelect={handleCellSelect}
@@ -597,6 +743,88 @@ export function SpreadsheetGrid({
             }}
           >
             <div className="absolute right-0 bottom-0 size-2 translate-x-1/2 translate-y-1/2 rounded-full bg-primary shadow-[0_0_0_1px] shadow-background" />
+          </div>
+        ) : null}
+
+        {contextMenu ? (
+          <div
+            aria-label="Cell actions"
+            className="fixed z-50 min-w-40 bg-[#30302E] p-0.5 text-[11px] text-white shadow-md ring-1 ring-white/10"
+            onContextMenu={(event) => {
+              event.preventDefault();
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            role="menu"
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+            }}
+          >
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white/40 disabled:pointer-events-none"
+              disabled
+              type="button"
+            >
+              <ScissorsIcon className="size-3.5" weight="bold" />
+              Cut
+            </button>
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white/40 disabled:pointer-events-none"
+              disabled
+              type="button"
+            >
+              <CopyIcon className="size-3.5" weight="bold" />
+              Copy
+            </button>
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white/40 disabled:pointer-events-none"
+              disabled
+              type="button"
+            >
+              <PlusIcon className="size-3.5" weight="bold" />
+              Paste
+            </button>
+            <div className="my-0.5 h-px bg-white/10" />
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              onClick={() => {
+                setCellValue(contextMenu.row, contextMenu.col, "");
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              <TrashIcon className="size-3.5" weight="bold" />
+              Delete contents
+            </button>
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              onClick={() => {
+                beginColumnRename(contextMenu.col);
+              }}
+              type="button"
+            >
+              <PencilSimpleIcon className="size-3.5" weight="bold" />
+              Rename column
+            </button>
+            <div className="my-0.5 h-px bg-white/10" />
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white/40 disabled:pointer-events-none"
+              disabled
+              type="button"
+            >
+              <PlusIcon className="size-3.5" weight="bold" />
+              Insert row above
+            </button>
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white/40 disabled:pointer-events-none"
+              disabled
+              type="button"
+            >
+              <PlusIcon className="size-3.5" weight="bold" />
+              Insert column left
+            </button>
           </div>
         ) : null}
 
