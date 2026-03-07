@@ -50,6 +50,13 @@ interface ToolbarButtonProps {
   onClick?: () => void;
 }
 
+interface ToolbarProps {
+  canRedo: boolean;
+  canUndo: boolean;
+  onRedo: () => void;
+  onUndo: () => void;
+}
+
 function ToolbarButton({
   icon,
   label,
@@ -76,7 +83,7 @@ function ToolbarButton({
   );
 }
 
-export function Toolbar() {
+export function Toolbar({ canRedo, canUndo, onRedo, onUndo }: ToolbarProps) {
   return (
     <div
       className="flex h-9 shrink-0 items-center gap-0.5 border-border border-b bg-background px-2"
@@ -84,12 +91,16 @@ export function Toolbar() {
     >
       {/* Undo / Redo */}
       <ToolbarButton
+        disabled={!canUndo}
         icon={<ArrowCounterClockwiseIcon weight="bold" />}
         label="Undo (Ctrl+Z)"
+        onClick={onUndo}
       />
       <ToolbarButton
+        disabled={!canRedo}
         icon={<ArrowClockwiseIcon weight="bold" />}
         label="Redo (Ctrl+Y)"
+        onClick={onRedo}
       />
       <ToolbarButton
         icon={<PrinterIcon weight="bold" />}

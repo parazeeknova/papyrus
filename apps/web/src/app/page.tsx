@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FormulaBar } from "@/web/features/spreadsheet/components/core/formula-bar";
 import { SheetTabs } from "@/web/features/spreadsheet/components/core/sheet-tabs";
 import { SpreadsheetGrid } from "@/web/features/spreadsheet/components/core/spreadsheet-grid";
 import { Toolbar } from "@/web/features/spreadsheet/components/core/toolbar";
+import { FindReplaceDialog } from "@/web/features/spreadsheet/components/dialogs/find-replace-dialog";
 import { SpreadsheetMenuBar } from "@/web/features/spreadsheet/components/menu-bar/menu-bar";
 import { TemplateGalleryPanel } from "@/web/features/spreadsheet/components/template-gallery";
 import { useSpreadsheet } from "@/web/features/spreadsheet/hooks/use-spreadsheet";
@@ -15,17 +16,28 @@ export default function Home() {
     activeSheetColumns,
     activeWorkbook,
     activeSheetId,
+    canRedo,
+    canUndo,
     canExpandRows,
+    copySelection,
     createSheet,
     createWorkbook,
+    cutSelection,
+    deleteSelectedColumns,
+    deleteSelectedRows,
     deleteWorkbook,
     editingCell,
     columnCount,
     expandRowCount,
+    findNext,
     hydrationState,
     openWorkbook,
+    pasteSelection,
+    redo,
     renameColumn,
     renameWorkbook,
+    replaceAll,
+    replaceCurrent,
     rowCount,
     saveState,
     setActiveSheet,
@@ -40,6 +52,7 @@ export default function Home() {
     selectCell,
     startEditing,
     stopEditing,
+    undo,
     navigateFromActive,
     workbooks,
   } = useSpreadsheet();
@@ -66,20 +79,72 @@ export default function Home() {
   }, [stopEditing, activeCell, navigateFromActive]);
 
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
+  const [isFindReplaceOpen, setIsFindReplaceOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof HTMLElement &&
+        (event.target.isContentEditable ||
+          event.target.tagName === "INPUT" ||
+          event.target.tagName === "TEXTAREA" ||
+          event.target.tagName === "SELECT")
+      ) {
+        return;
+      }
+
+      if (!(event.metaKey || event.ctrlKey)) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        setIsFindReplaceOpen(true);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   return (
     <div className="flex h-screen flex-col bg-background font-sans">
       <SpreadsheetMenuBar
+        canRedo={canRedo}
+        canUndo={canUndo}
         isFavorite={activeWorkbook?.isFavorite ?? false}
         isGalleryOpen={isGalleryOpen}
+        onCopy={() => {
+          copySelection().catch(() => undefined);
+        }}
         onCreateWorkbook={() => {
           createWorkbook().catch(() => undefined);
+        }}
+        onCut={() => {
+          cutSelection().catch(() => undefined);
+        }}
+        onDeleteColumn={() => {
+          deleteSelectedColumns().catch(() => undefined);
+        }}
+        onDeleteRow={() => {
+          deleteSelectedRows().catch(() => undefined);
         }}
         onDeleteWorkbook={() => {
           deleteWorkbook().catch(() => undefined);
         }}
+        onOpenFindReplace={() => {
+          setIsFindReplaceOpen(true);
+        }}
         onOpenWorkbook={(workbookId, workbookName) => {
           openWorkbook(workbookId, workbookName).catch(() => undefined);
+        }}
+        onPaste={() => {
+          pasteSelection().catch(() => undefined);
+        }}
+        onRedo={() => {
+          redo().catch(() => undefined);
         }}
         onRenameWorkbook={(name) => {
           renameWorkbook(name).catch(() => undefined);
@@ -90,13 +155,25 @@ export default function Home() {
         onToggleGallery={() => {
           setIsGalleryOpen((prev) => !prev);
         }}
+        onUndo={() => {
+          undo().catch(() => undefined);
+        }}
         recentWorkbooks={workbooks}
         saveState={saveState}
         workbookId={activeWorkbook?.id ?? null}
         workbookName={activeWorkbook?.name ?? "Untitled spreadsheet"}
       />
       {isGalleryOpen && <TemplateGalleryPanel />}
-      <Toolbar />
+      <Toolbar
+        canRedo={canRedo}
+        canUndo={canUndo}
+        onRedo={() => {
+          redo().catch(() => undefined);
+        }}
+        onUndo={() => {
+          undo().catch(() => undefined);
+        }}
+      />
       <FormulaBar
         activeCell={activeCell}
         cellRaw={activeCellData.raw}
@@ -136,6 +213,13 @@ export default function Home() {
           setActiveSheet(sheetId).catch(() => undefined);
         }}
         sheets={sheets}
+      />
+      <FindReplaceDialog
+        onFindNext={findNext}
+        onOpenChange={setIsFindReplaceOpen}
+        onReplace={replaceCurrent}
+        onReplaceAll={replaceAll}
+        open={isFindReplaceOpen}
       />
     </div>
   );

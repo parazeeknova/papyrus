@@ -100,9 +100,6 @@ export function FileMenu({
             )}
           </MenubarSubContent>
         </MenubarSub>
-        <MenubarItem>
-          Open <MenubarShortcut>Cmd+O</MenubarShortcut>
-        </MenubarItem>
         <MenubarSub>
           <MenubarSubTrigger>Download</MenubarSubTrigger>
           <MenubarSubContent>

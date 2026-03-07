@@ -1,4 +1,4 @@
-import { type Doc, type Array as YArray, Map as YMap } from "yjs";
+import { type Doc, UndoManager, type Array as YArray, Map as YMap } from "yjs";
 import type {
   PersistedCellRecord,
   SheetColumn,
@@ -373,6 +373,86 @@ export function setSheetCellValues(
     sheet.set("updatedAt", now);
     getMetaMap(doc).set("updatedAt", now);
   });
+}
+
+export function replaceSheetCells(
+  doc: Doc,
+  sheetId: string,
+  values: Record<string, string>
+): void {
+  const cells = getSheetCellsMap(doc, sheetId);
+  const sheet = getSheetMap(doc, sheetId);
+  if (!(cells && sheet)) {
+    return;
+  }
+
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    for (const cellKey of [...cells.keys()]) {
+      cells.delete(cellKey);
+    }
+
+    for (const [cellKey, raw] of Object.entries(values)) {
+      if (raw === "") {
+        continue;
+      }
+
+      cells.set(cellKey, raw);
+    }
+
+    sheet.set("updatedAt", now);
+    getMetaMap(doc).set("updatedAt", now);
+  });
+}
+
+export function replaceSheetColumns(
+  doc: Doc,
+  sheetId: string,
+  columnNames: string[]
+): void {
+  const columns = getSheetColumnsMap(doc, sheetId);
+  const sheet = getSheetMap(doc, sheetId);
+  if (!(columns && sheet)) {
+    return;
+  }
+
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    for (const columnKey of [...columns.keys()]) {
+      columns.delete(columnKey);
+    }
+
+    for (const [index, columnName] of columnNames.entries()) {
+      const defaultName = getDefaultColumnName(index);
+      if (columnName === defaultName) {
+        continue;
+      }
+
+      columns.set(String(index), columnName);
+    }
+
+    sheet.set("updatedAt", now);
+    getMetaMap(doc).set("updatedAt", now);
+  });
+}
+
+export function createSheetUndoManager(
+  doc: Doc,
+  sheetId: string | null
+): UndoManager | null {
+  if (!sheetId) {
+    return null;
+  }
+
+  const cells = getSheetCellsMap(doc, sheetId);
+  const columns = getSheetColumnsMap(doc, sheetId);
+  if (!(cells && columns)) {
+    return null;
+  }
+
+  return new UndoManager([cells, columns]);
 }
 
 export function getWorkbookMeta(doc: Doc): WorkbookMeta {

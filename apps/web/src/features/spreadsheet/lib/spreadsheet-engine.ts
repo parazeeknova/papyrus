@@ -5,6 +5,7 @@ import type {
 
 const COLUMN_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_]*$/;
 const CELL_REF_REGEX = /^([A-Za-z][A-Za-z_]*)(\d+)$/;
+const STORED_CELL_ID_REGEX = /^C(\d+)R(\d+)$/;
 const SUM_REGEX = /^SUM\((.+)\)$/i;
 const AVERAGE_REGEX = /^AVERAGE\((.+)\)$/i;
 const MIN_REGEX = /^MIN\((.+)\)$/i;
@@ -37,6 +38,18 @@ export function cellId(row: number, col: number): string {
 
 export function normalizeCellId(id: string): string {
   return id.trim().toUpperCase();
+}
+
+export function parseStoredCellId(id: string): CellPosition | null {
+  const match = STORED_CELL_ID_REGEX.exec(normalizeCellId(id));
+  if (!(match?.[1] && match[2])) {
+    return null;
+  }
+
+  return {
+    col: Number.parseInt(match[1], 10),
+    row: Number.parseInt(match[2], 10),
+  };
 }
 
 export function normalizeColumnName(name: string): string {
@@ -183,6 +196,10 @@ export function evaluateFormula(
   visited: Set<string>
 ): string {
   const expressionBody = formula.slice(1).trim();
+
+  if (expressionBody.includes("#REF!")) {
+    return "#REF!";
+  }
 
   // SUM function
   const sumMatch = SUM_REGEX.exec(expressionBody);
@@ -344,5 +361,40 @@ export function rewriteFormulaColumnName(
 
   return raw.replace(referenceRegex, (_match, prefix, _name, rowNumber) => {
     return `${prefix}${nextName}${rowNumber}`;
+  });
+}
+
+export function rewriteFormulaReferences(
+  raw: string,
+  currentColumnNames: string[],
+  nextColumnNames: string[],
+  transformReference: (
+    position: CellPosition
+  ) => CellPosition | "deleted" | null
+): string {
+  if (!raw.startsWith("=")) {
+    return raw;
+  }
+
+  return raw.replace(CELL_REFERENCE_REGEX, (match) => {
+    const position = parseCellRef(match, currentColumnNames);
+    if (!position) {
+      return match;
+    }
+
+    const nextPosition = transformReference(position);
+    if (nextPosition === null) {
+      return match;
+    }
+
+    if (nextPosition === "deleted") {
+      return "#REF!";
+    }
+
+    return getCellReferenceLabel(
+      nextPosition.row,
+      nextPosition.col,
+      nextColumnNames
+    );
   });
 }

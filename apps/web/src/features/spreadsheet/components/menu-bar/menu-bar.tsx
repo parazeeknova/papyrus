@@ -38,14 +38,24 @@ import { InsertMenu } from "@/web/features/spreadsheet/components/menu-bar/inser
 import { ViewMenu } from "@/web/features/spreadsheet/components/menu-bar/view-menu";
 
 interface SpreadsheetMenuBarProps {
+  canRedo: boolean;
+  canUndo: boolean;
   isFavorite: boolean;
   isGalleryOpen: boolean;
+  onCopy: () => void;
   onCreateWorkbook: () => void;
+  onCut: () => void;
+  onDeleteColumn: () => void;
+  onDeleteRow: () => void;
   onDeleteWorkbook: () => void;
+  onOpenFindReplace: () => void;
   onOpenWorkbook: (workbookId: string, workbookName: string) => void;
+  onPaste: () => void;
+  onRedo: () => void;
   onRenameWorkbook: (name: string) => void;
   onToggleFavorite: (isFavorite: boolean) => void;
   onToggleGallery: () => void;
+  onUndo: () => void;
   recentWorkbooks: WorkbookMeta[];
   saveState: "error" | "saved" | "saving";
   workbookId: string | null;
@@ -80,14 +90,24 @@ const GoogleAuthDialog = dynamic(
 );
 
 export function SpreadsheetMenuBar({
+  canRedo,
+  canUndo,
   isGalleryOpen,
   isFavorite,
+  onCopy,
   onCreateWorkbook,
+  onCut,
+  onDeleteColumn,
+  onDeleteRow,
   onDeleteWorkbook,
+  onOpenFindReplace,
   onOpenWorkbook,
+  onPaste,
+  onRedo,
   onRenameWorkbook,
   onToggleFavorite,
   onToggleGallery,
+  onUndo,
   recentWorkbooks,
   saveState,
   workbookId,
@@ -248,7 +268,18 @@ export function SpreadsheetMenuBar({
             recentWorkbooks={recentWorkbooks}
             workbookId={workbookId}
           />
-          <EditMenu />
+          <EditMenu
+            canRedo={canRedo}
+            canUndo={canUndo}
+            onCopy={onCopy}
+            onCut={onCut}
+            onDeleteColumn={onDeleteColumn}
+            onDeleteRow={onDeleteRow}
+            onOpenFindReplace={onOpenFindReplace}
+            onPaste={onPaste}
+            onRedo={onRedo}
+            onUndo={onUndo}
+          />
           <ViewMenu />
           <InsertMenu />
           <FormatMenu />
