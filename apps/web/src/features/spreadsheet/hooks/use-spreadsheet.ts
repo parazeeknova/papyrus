@@ -65,6 +65,7 @@ export function useSpreadsheet() {
   const hydrateWorkbookList = useSpreadsheetStore(
     (state) => state.hydrateWorkbookList
   );
+  const openWorkbook = useSpreadsheetStore((state) => state.openWorkbook);
   const renameWorkbook = useSpreadsheetStore((state) => state.renameWorkbook);
   const saveState = useSpreadsheetStore((state) => state.saveState);
   const setActiveSheet = useSpreadsheetStore((state) => state.setActiveSheet);
@@ -72,6 +73,7 @@ export function useSpreadsheet() {
     (state) => state.setCellValue
   );
   const sheets = useSpreadsheetStore((state) => state.sheets);
+  const workbooks = useSpreadsheetStore((state) => state.workbooks);
   const workerResetKey = useSpreadsheetStore((state) => state.workerResetKey);
   const [activeCell, setActiveCell] = useState<CellPosition | null>(null);
   const [editingCell, setEditingCell] = useState<CellPosition | null>(null);
@@ -271,6 +273,7 @@ export function useSpreadsheet() {
     columnCount,
     expandRowCount,
     hydrationState,
+    openWorkbook,
     renameWorkbook,
     rowCount,
     saveState,
@@ -285,5 +288,6 @@ export function useSpreadsheet() {
     startEditing,
     stopEditing,
     navigateFromActive,
+    workbooks,
   };
 }

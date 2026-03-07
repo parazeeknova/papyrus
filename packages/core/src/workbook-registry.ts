@@ -57,8 +57,9 @@ export function listWorkbookRegistryEntries(): Promise<WorkbookMeta[]> {
       const request = store.getAll();
 
       request.onsuccess = () => {
-        const result = (request.result as WorkbookMeta[]).toSorted((a, b) =>
-          b.lastOpenedAt.localeCompare(a.lastOpenedAt)
+        const result = [...(request.result as WorkbookMeta[])].sort(
+          (a: WorkbookMeta, b: WorkbookMeta) =>
+            b.lastOpenedAt.localeCompare(a.lastOpenedAt)
         );
         resolve(result);
       };

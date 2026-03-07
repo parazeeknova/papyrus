@@ -1,7 +1,9 @@
 "use client";
 
+import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import {
   CloudCheckIcon,
+  DotOutlineIcon,
   LockIcon,
   SquaresFourIcon,
   StarIcon,
@@ -33,10 +35,27 @@ import {
 interface SpreadsheetMenuBarProps {
   isGalleryOpen: boolean;
   onCreateWorkbook: () => void;
+  onOpenWorkbook: (workbookId: string, workbookName: string) => void;
   onRenameWorkbook: (name: string) => void;
   onToggleGallery: () => void;
+  recentWorkbooks: WorkbookMeta[];
   saveState: "error" | "saved" | "saving";
+  workbookId: string | null;
   workbookName: string;
+}
+
+const RECENT_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+function formatLastOpened(lastOpenedAt: string): string {
+  const timestamp = new Date(lastOpenedAt);
+  if (Number.isNaN(timestamp.getTime())) {
+    return "Unknown";
+  }
+
+  return RECENT_TIME_FORMATTER.format(timestamp);
 }
 
 function AccountButtonFallback() {
@@ -69,9 +88,12 @@ const GoogleAuthDialog = dynamic(
 export function SpreadsheetMenuBar({
   isGalleryOpen,
   onCreateWorkbook,
+  onOpenWorkbook,
   onRenameWorkbook,
   onToggleGallery,
+  recentWorkbooks,
   saveState,
+  workbookId,
   workbookName,
 }: SpreadsheetMenuBarProps) {
   const [isRenamingWorkbook, setIsRenamingWorkbook] = useState(false);
@@ -216,6 +238,40 @@ export function SpreadsheetMenuBar({
             >
               New <MenubarShortcut>⌘N</MenubarShortcut>
             </MenubarItem>
+            <MenubarSub>
+              <MenubarSubTrigger>Recent</MenubarSubTrigger>
+              <MenubarSubContent className="min-w-60">
+                {recentWorkbooks.length > 0 ? (
+                  recentWorkbooks.map((recentWorkbook) => (
+                    <MenubarItem
+                      className="items-start gap-1"
+                      key={recentWorkbook.id}
+                      onSelect={() => {
+                        onOpenWorkbook(recentWorkbook.id, recentWorkbook.name);
+                      }}
+                    >
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        {recentWorkbook.id === workbookId ? (
+                          <DotOutlineIcon
+                            className="size-4 text-primary"
+                            weight="fill"
+                          />
+                        ) : null}
+                        <div className="min-w-0">
+                          <p className="truncate">{recentWorkbook.name}</p>
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            Last opened{" "}
+                            {formatLastOpened(recentWorkbook.lastOpenedAt)}
+                          </p>
+                        </div>
+                      </div>
+                    </MenubarItem>
+                  ))
+                ) : (
+                  <MenubarItem disabled>No recent spreadsheets</MenubarItem>
+                )}
+              </MenubarSubContent>
+            </MenubarSub>
             <MenubarItem>
               Open <MenubarShortcut>⌘O</MenubarShortcut>
             </MenubarItem>

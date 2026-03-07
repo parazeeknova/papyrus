@@ -21,6 +21,7 @@ export default function Home() {
     columnCount,
     expandRowCount,
     hydrationState,
+    openWorkbook,
     renameWorkbook,
     rowCount,
     saveState,
@@ -35,6 +36,7 @@ export default function Home() {
     startEditing,
     stopEditing,
     navigateFromActive,
+    workbooks,
   } = useSpreadsheet();
 
   // Formula bar bindings
@@ -67,13 +69,18 @@ export default function Home() {
         onCreateWorkbook={() => {
           createWorkbook().catch(() => undefined);
         }}
+        onOpenWorkbook={(workbookId, workbookName) => {
+          openWorkbook(workbookId, workbookName).catch(() => undefined);
+        }}
         onRenameWorkbook={(name) => {
           renameWorkbook(name).catch(() => undefined);
         }}
         onToggleGallery={() => {
           setIsGalleryOpen((prev) => !prev);
         }}
+        recentWorkbooks={workbooks}
         saveState={saveState}
+        workbookId={activeWorkbook?.id ?? null}
         workbookName={activeWorkbook?.name ?? "Untitled spreadsheet"}
       />
       {isGalleryOpen && <TemplateGalleryPanel />}
