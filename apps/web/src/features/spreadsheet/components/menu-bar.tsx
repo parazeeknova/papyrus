@@ -3,7 +3,6 @@
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import {
   CloudCheckIcon,
-  DotOutlineIcon,
   LockIcon,
   SquaresFourIcon,
   StarIcon,
@@ -21,24 +20,21 @@ import {
   DialogTitle,
 } from "@/web/components/ui/dialog";
 import { Input } from "@/web/components/ui/input";
-import {
-  Menubar,
-  MenubarContent,
-  MenubarItem,
-  MenubarMenu,
-  MenubarSeparator,
-  MenubarShortcut,
-  MenubarSub,
-  MenubarSubContent,
-  MenubarSubTrigger,
-  MenubarTrigger,
-} from "@/web/components/ui/menubar";
+import { Menubar } from "@/web/components/ui/menubar";
 import { Separator } from "@/web/components/ui/separator";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/web/components/ui/tooltip";
+import { DataMenu } from "@/web/features/spreadsheet/components/menu-bar/data-menu";
+import { EditMenu } from "@/web/features/spreadsheet/components/menu-bar/edit-menu";
+import { FileMenu } from "@/web/features/spreadsheet/components/menu-bar/file-menu";
+import { FormatMenu } from "@/web/features/spreadsheet/components/menu-bar/format-menu";
+import { HelpMenu } from "@/web/features/spreadsheet/components/menu-bar/help-menu";
+import { InsertMenu } from "@/web/features/spreadsheet/components/menu-bar/insert-menu";
+import { ToolsMenu } from "@/web/features/spreadsheet/components/menu-bar/tools-menu";
+import { ViewMenu } from "@/web/features/spreadsheet/components/menu-bar/view-menu";
 
 interface SpreadsheetMenuBarProps {
   isGalleryOpen: boolean;
@@ -51,20 +47,6 @@ interface SpreadsheetMenuBarProps {
   saveState: "error" | "saved" | "saving";
   workbookId: string | null;
   workbookName: string;
-}
-
-const RECENT_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
-function formatLastOpened(lastOpenedAt: string): string {
-  const timestamp = new Date(lastOpenedAt);
-  if (Number.isNaN(timestamp.getTime())) {
-    return "Unknown";
-  }
-
-  return RECENT_TIME_FORMATTER.format(timestamp);
 }
 
 function AccountButtonFallback() {
@@ -117,6 +99,10 @@ export function SpreadsheetMenuBar({
   const commitWorkbookRename = () => {
     setIsRenamingWorkbook(false);
     onRenameWorkbook(workbookNameDraft);
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   return (
@@ -240,207 +226,26 @@ export function SpreadsheetMenuBar({
         </div>
 
         <Menubar className="h-7 border-0 bg-transparent px-2">
-          <MenubarMenu>
-            <MenubarTrigger>File</MenubarTrigger>
-            <MenubarContent>
-              <MenubarItem
-                onSelect={() => {
-                  onCreateWorkbook();
-                }}
-              >
-                New <MenubarShortcut>⌘N</MenubarShortcut>
-              </MenubarItem>
-              <MenubarSub>
-                <MenubarSubTrigger>Recent</MenubarSubTrigger>
-                <MenubarSubContent className="min-w-60">
-                  {recentWorkbooks.length > 0 ? (
-                    recentWorkbooks.map((recentWorkbook) => (
-                      <MenubarItem
-                        className="items-start gap-1"
-                        key={recentWorkbook.id}
-                        onSelect={() => {
-                          onOpenWorkbook(
-                            recentWorkbook.id,
-                            recentWorkbook.name
-                          );
-                        }}
-                      >
-                        <div className="flex min-w-0 flex-1 items-center gap-2">
-                          {recentWorkbook.id === workbookId ? (
-                            <DotOutlineIcon
-                              className="size-4 text-primary"
-                              weight="fill"
-                            />
-                          ) : null}
-                          <div className="min-w-0">
-                            <p className="truncate">{recentWorkbook.name}</p>
-                            <p className="truncate text-[11px] text-muted-foreground">
-                              Last opened{" "}
-                              {formatLastOpened(recentWorkbook.lastOpenedAt)}
-                            </p>
-                          </div>
-                        </div>
-                      </MenubarItem>
-                    ))
-                  ) : (
-                    <MenubarItem disabled>No recent spreadsheets</MenubarItem>
-                  )}
-                </MenubarSubContent>
-              </MenubarSub>
-              <MenubarItem>
-                Open <MenubarShortcut>⌘O</MenubarShortcut>
-              </MenubarItem>
-              <MenubarSub>
-                <MenubarSubTrigger>Download</MenubarSubTrigger>
-                <MenubarSubContent>
-                  <MenubarItem>CSV (.csv)</MenubarItem>
-                  <MenubarItem>Excel (.xlsx)</MenubarItem>
-                  <MenubarItem>PDF (.pdf)</MenubarItem>
-                  <MenubarItem>JSON (.json)</MenubarItem>
-                </MenubarSubContent>
-              </MenubarSub>
-              <MenubarSeparator />
-              <MenubarItem
-                onSelect={() => {
-                  setIsRenamingWorkbook(true);
-                }}
-              >
-                Rename
-              </MenubarItem>
-              <MenubarItem>
-                Print <MenubarShortcut>⌘P</MenubarShortcut>
-              </MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem
-                className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                disabled={!workbookId}
-                onSelect={() => {
-                  setIsDeleteDialogOpen(true);
-                }}
-              >
-                Delete spreadsheet
-              </MenubarItem>
-            </MenubarContent>
-          </MenubarMenu>
-
-          <MenubarMenu>
-            <MenubarTrigger>Edit</MenubarTrigger>
-            <MenubarContent>
-              <MenubarItem>
-                Undo <MenubarShortcut>⌘Z</MenubarShortcut>
-              </MenubarItem>
-              <MenubarItem>
-                Redo <MenubarShortcut>⌘Y</MenubarShortcut>
-              </MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>
-                Cut <MenubarShortcut>⌘X</MenubarShortcut>
-              </MenubarItem>
-              <MenubarItem>
-                Copy <MenubarShortcut>⌘C</MenubarShortcut>
-              </MenubarItem>
-              <MenubarItem>
-                Paste <MenubarShortcut>⌘V</MenubarShortcut>
-              </MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>
-                Find and replace <MenubarShortcut>⌘H</MenubarShortcut>
-              </MenubarItem>
-              <MenubarItem>Delete row</MenubarItem>
-              <MenubarItem>Delete column</MenubarItem>
-            </MenubarContent>
-          </MenubarMenu>
-
-          <MenubarMenu>
-            <MenubarTrigger>View</MenubarTrigger>
-            <MenubarContent>
-              <MenubarItem>Freeze rows</MenubarItem>
-              <MenubarItem>Freeze columns</MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>Gridlines</MenubarItem>
-              <MenubarItem>Formula bar</MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>Zoom in</MenubarItem>
-              <MenubarItem>Zoom out</MenubarItem>
-            </MenubarContent>
-          </MenubarMenu>
-
-          <MenubarMenu>
-            <MenubarTrigger>Insert</MenubarTrigger>
-            <MenubarContent>
-              <MenubarItem>Row above</MenubarItem>
-              <MenubarItem>Row below</MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>Column left</MenubarItem>
-              <MenubarItem>Column right</MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>Function</MenubarItem>
-              <MenubarItem>Chart</MenubarItem>
-            </MenubarContent>
-          </MenubarMenu>
-
-          <MenubarMenu>
-            <MenubarTrigger>Format</MenubarTrigger>
-            <MenubarContent>
-              <MenubarItem>
-                Bold <MenubarShortcut>⌘B</MenubarShortcut>
-              </MenubarItem>
-              <MenubarItem>
-                Italic <MenubarShortcut>⌘I</MenubarShortcut>
-              </MenubarItem>
-              <MenubarItem>
-                Underline <MenubarShortcut>⌘U</MenubarShortcut>
-              </MenubarItem>
-              <MenubarSeparator />
-              <MenubarSub>
-                <MenubarSubTrigger>Number</MenubarSubTrigger>
-                <MenubarSubContent>
-                  <MenubarItem>Automatic</MenubarItem>
-                  <MenubarItem>Plain text</MenubarItem>
-                  <MenubarItem>Number</MenubarItem>
-                  <MenubarItem>Percent</MenubarItem>
-                  <MenubarItem>Currency</MenubarItem>
-                  <MenubarItem>Date</MenubarItem>
-                </MenubarSubContent>
-              </MenubarSub>
-              <MenubarSeparator />
-              <MenubarItem>Conditional formatting</MenubarItem>
-              <MenubarItem>Alternating colors</MenubarItem>
-            </MenubarContent>
-          </MenubarMenu>
-
-          <MenubarMenu>
-            <MenubarTrigger>Data</MenubarTrigger>
-            <MenubarContent>
-              <MenubarItem>Sort range A → Z</MenubarItem>
-              <MenubarItem>Sort range Z → A</MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>Create filter</MenubarItem>
-              <MenubarItem>Data validation</MenubarItem>
-            </MenubarContent>
-          </MenubarMenu>
-
-          <MenubarMenu>
-            <MenubarTrigger>Tools</MenubarTrigger>
-            <MenubarContent>
-              <MenubarItem>Notifications</MenubarItem>
-              <MenubarItem>Macros</MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>Script editor</MenubarItem>
-            </MenubarContent>
-          </MenubarMenu>
-
-          <MenubarMenu>
-            <MenubarTrigger>Help</MenubarTrigger>
-            <MenubarContent>
-              <MenubarItem>Search the menus</MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>Keyboard shortcuts</MenubarItem>
-              <MenubarItem>Function list</MenubarItem>
-              <MenubarSeparator />
-              <MenubarItem>About Papyrus</MenubarItem>
-            </MenubarContent>
-          </MenubarMenu>
+          <FileMenu
+            onCreateWorkbook={onCreateWorkbook}
+            onOpenWorkbook={onOpenWorkbook}
+            onPrint={handlePrint}
+            onRequestDeleteWorkbook={() => {
+              setIsDeleteDialogOpen(true);
+            }}
+            onRequestRenameWorkbook={() => {
+              setIsRenamingWorkbook(true);
+            }}
+            recentWorkbooks={recentWorkbooks}
+            workbookId={workbookId}
+          />
+          <EditMenu />
+          <ViewMenu />
+          <InsertMenu />
+          <FormatMenu />
+          <DataMenu />
+          <ToolsMenu />
+          <HelpMenu />
         </Menubar>
       </div>
 
