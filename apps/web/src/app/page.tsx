@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { FormulaBar } from "@/web/components/spreadsheet/formula-bar";
-import { SpreadsheetMenuBar } from "@/web/components/spreadsheet/menu-bar";
-import { SheetTabs } from "@/web/components/spreadsheet/sheet-tabs";
-import { SpreadsheetGrid } from "@/web/components/spreadsheet/spreadsheet-grid";
-import { TemplateGalleryPanel } from "@/web/components/spreadsheet/template-gallery";
-import { Toolbar } from "@/web/components/spreadsheet/toolbar";
-import { useSpreadsheet } from "@/web/hooks/use-spreadsheet";
+import { FormulaBar } from "@/web/features/spreadsheet/components/formula-bar";
+import { SpreadsheetMenuBar } from "@/web/features/spreadsheet/components/menu-bar";
+import { SheetTabs } from "@/web/features/spreadsheet/components/sheet-tabs";
+import { SpreadsheetGrid } from "@/web/features/spreadsheet/components/spreadsheet-grid";
+import { TemplateGalleryPanel } from "@/web/features/spreadsheet/components/template-gallery";
+import { Toolbar } from "@/web/features/spreadsheet/components/toolbar";
+import { useSpreadsheet } from "@/web/features/spreadsheet/hooks/use-spreadsheet";
 
 export default function Home() {
   const {

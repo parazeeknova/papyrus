@@ -51,7 +51,7 @@ function AccountButtonFallback() {
 
 const GoogleAuthDialog = dynamic(
   async () =>
-    import("@/web/components/auth/google-auth-dialog").then(
+    import("@/web/features/auth/components/google-auth-dialog").then(
       (mod) => mod.GoogleAuthDialog
     ),
   {

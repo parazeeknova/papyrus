@@ -186,26 +186,26 @@
   }
 
   * {
-    scrollbar-color: var(--border) transparent;
-    scrollbar-width: thin;
+    scrollbar-color: var(--muted-foreground) var(--muted);
+    scrollbar-width: auto;
   }
 
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 20px;
+    height: 20px;
   }
 
   ::-webkit-scrollbar-track {
-    background: transparent;
+    background: var(--muted);
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
   }
 
   ::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border: 2px solid var(--background);
-    border-radius: 9999px;
+    background: var(--muted-foreground);
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--muted-foreground);
+    background: var(--foreground);
   }
 }

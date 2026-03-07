@@ -3,7 +3,10 @@
 import { Badge } from "@/web/components/ui/badge";
 import { Input } from "@/web/components/ui/input";
 import { Separator } from "@/web/components/ui/separator";
-import { type CellPosition, colToLetter } from "@/web/hooks/use-spreadsheet";
+import {
+  type CellPosition,
+  colToLetter,
+} from "@/web/features/spreadsheet/hooks/use-spreadsheet";
 
 interface FormulaBarProps {
   activeCell: CellPosition | null;

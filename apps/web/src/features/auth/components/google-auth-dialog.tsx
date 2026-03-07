@@ -7,6 +7,7 @@ import {
   SpinnerGapIcon,
   UserCircleIcon,
   WarningCircleIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 import { FirebaseError } from "firebase/app";
 import {
@@ -21,13 +22,17 @@ import { Badge } from "@/web/components/ui/badge";
 import { Button } from "@/web/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/web/components/ui/dialog";
-import { firebaseAuth, googleAuthProvider } from "@/web/lib/firebase-auth";
+import {
+  firebaseAuth,
+  googleAuthProvider,
+} from "@/web/features/auth/lib/firebase-auth";
 import { cn } from "@/web/lib/utils";
 
 type PendingAction = "idle" | "signing-in" | "signing-out";
@@ -192,18 +197,29 @@ export function GoogleAuthDialog() {
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-xs">
+      <DialogContent
+        className="gap-0 overflow-hidden p-0 sm:max-w-xs"
+        showCloseButton={false}
+      >
         <DialogHeader className="border-border border-b px-4 py-3">
-          <div className="flex items-center justify-between gap-3 pr-8">
+          <div className="flex items-start justify-between gap-3">
             <div>
               <DialogTitle>Google account</DialogTitle>
               <DialogDescription>
                 Login is optional for Papyrus.
               </DialogDescription>
             </div>
-            <Badge variant={currentUser ? "secondary" : "outline"}>
-              {statusLabel}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={currentUser ? "secondary" : "outline"}>
+                {statusLabel}
+              </Badge>
+              <DialogClose asChild>
+                <Button size="icon-sm" variant="ghost">
+                  <XIcon />
+                  <span className="sr-only">Close</span>
+                </Button>
+              </DialogClose>
+            </div>
           </div>
         </DialogHeader>
 

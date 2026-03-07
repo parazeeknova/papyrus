@@ -1,41 +1,52 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cellId } from "@/web/lib/spreadsheet-engine";
+import { cellId } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
+import type {
+  CellData,
+  CellPosition,
+  SelectionRange,
+  SpreadsheetPatch,
+  SpreadsheetWorkerResponse,
+} from "@/web/features/spreadsheet/lib/spreadsheet-types";
 
 // biome-ignore lint/performance/noBarrelFile: skip re-exporting from index for better path clarity
 export {
   cellId,
   colToLetter,
   parseCellRef,
-} from "@/web/lib/spreadsheet-engine";
+} from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 
-export interface CellData {
-  computed: string;
-  raw: string;
-}
+export type {
+  CellData,
+  CellPosition,
+  SelectionRange,
+  SpreadsheetState,
+} from "@/web/features/spreadsheet/lib/spreadsheet-types";
 
-export interface CellPosition {
-  col: number;
-  row: number;
-}
+const DEFAULT_COLS = 100;
+const DEFAULT_ROWS = 100_000;
+const EMPTY_CELL: CellData = { raw: "", computed: "" };
 
-export interface SelectionRange {
-  end: CellPosition;
-  start: CellPosition;
-}
+const applySpreadsheetPatch = (
+  prev: Record<string, CellData>,
+  patch: SpreadsheetPatch
+): Record<string, CellData> => {
+  if (patch.deletions.length === 0 && Object.keys(patch.updates).length === 0) {
+    return prev;
+  }
 
-export interface SpreadsheetState {
-  activeCell: CellPosition | null;
-  cells: Record<string, CellData>;
-  columnCount: number;
-  editingCell: CellPosition | null;
-  rowCount: number;
-  selection: SelectionRange | null;
-}
+  const next = { ...prev };
+  for (const cellKey of patch.deletions) {
+    delete next[cellKey];
+  }
 
-const DEFAULT_COLS = 26;
-const DEFAULT_ROWS = 1000;
+  for (const [cellKey, cellData] of Object.entries(patch.updates)) {
+    next[cellKey] = cellData;
+  }
+
+  return next;
+};
 
 export function useSpreadsheet() {
   const [cells, setCells] = useState<Record<string, CellData>>({});
@@ -50,15 +61,20 @@ export function useSpreadsheet() {
   // Initialize Worker
   useEffect(() => {
     workerRef.current = new Worker(
-      new URL("@/web/lib/spreadsheet.worker.ts", import.meta.url)
+      new URL(
+        "@/web/features/spreadsheet/lib/spreadsheet.worker.ts",
+        import.meta.url
+      )
     );
-    workerRef.current.onmessage = (e: MessageEvent) => {
-      if (e.data.type === "STATE_UPDATE") {
-        setCells(e.data.payload);
+    workerRef.current.onmessage = (
+      e: MessageEvent<SpreadsheetWorkerResponse>
+    ) => {
+      if (e.data.type === "READY" || e.data.type === "CELLS_PATCH") {
+        setCells((prev) => applySpreadsheetPatch(prev, e.data.payload.patch));
       }
     };
 
-    workerRef.current.postMessage({ type: "INIT", payload: {} });
+    workerRef.current.postMessage({ type: "INIT", payload: { cells: {} } });
 
     return () => {
       workerRef.current?.terminate();
@@ -68,22 +84,30 @@ export function useSpreadsheet() {
   const getCellData = useCallback(
     (row: number, col: number): CellData => {
       const id = cellId(row, col);
-      return cells[id] ?? { raw: "", computed: "" };
+      return cells[id] ?? EMPTY_CELL;
     },
     [cells]
   );
 
   const setCellValue = useCallback((row: number, col: number, raw: string) => {
-    // Optimistic local update so typing feels instant
     setCells((prev) => {
       const id = cellId(row, col);
+      if (raw === "") {
+        if (!(id in prev)) {
+          return prev;
+        }
+
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+
       return {
         ...prev,
         [id]: { raw, computed: raw.startsWith("=") ? "..." : raw },
       };
     });
 
-    // Offload true calculation to worker
     workerRef.current?.postMessage({
       type: "UPDATE_CELL",
       payload: { row, col, raw },

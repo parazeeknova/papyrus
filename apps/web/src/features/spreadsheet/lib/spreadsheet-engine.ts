@@ -1,4 +1,7 @@
-import type { CellData, CellPosition } from "@/web/hooks/use-spreadsheet";
+import type {
+  CellData,
+  CellPosition,
+} from "@/web/features/spreadsheet/lib/spreadsheet-types";
 
 const CELL_REF_REGEX = /^([A-Z]+)(\d+)$/i;
 const SUM_REGEX = /^SUM\((.+)\)$/i;
@@ -7,6 +10,8 @@ const MIN_REGEX = /^MIN\((.+)\)$/i;
 const MAX_REGEX = /^MAX\((.+)\)$/i;
 const COUNT_REGEX = /^COUNT\((.+)\)$/i;
 const SAFE_EXPRESSION_REGEX = /^[\d+\-*/().eE\s]+$/;
+const CELL_REFERENCE_REGEX = /[A-Z]+\d+/gi;
+const CELL_RANGE_REGEX = /([A-Z]+\d+):([A-Z]+\d+)/gi;
 
 export function colToLetter(col: number): string {
   let result = "";
@@ -28,6 +33,45 @@ export function letterToCol(letter: string): number {
 
 export function cellId(row: number, col: number): string {
   return `${colToLetter(col)}${row + 1}`;
+}
+
+export function normalizeCellId(id: string): string {
+  return id.trim().toUpperCase();
+}
+
+export function getFormulaDependencies(raw: string): string[] {
+  if (!raw.startsWith("=")) {
+    return [];
+  }
+
+  const dependencyIds = new Set<string>();
+  const normalizedRaw = raw.toUpperCase();
+
+  for (const match of normalizedRaw.matchAll(CELL_RANGE_REGEX)) {
+    const startRef = match[1];
+    const endRef = match[2];
+    if (!(startRef && endRef)) {
+      continue;
+    }
+
+    const range = parseCellRange(`${startRef}:${endRef}`);
+    if (!range) {
+      continue;
+    }
+
+    for (const position of getCellsInRange(range.start, range.end)) {
+      dependencyIds.add(cellId(position.row, position.col));
+    }
+  }
+
+  const singleReferences = normalizedRaw.match(CELL_REFERENCE_REGEX);
+  if (singleReferences) {
+    for (const match of singleReferences) {
+      dependencyIds.add(normalizeCellId(match));
+    }
+  }
+
+  return [...dependencyIds];
 }
 
 export function parseCellRef(ref: string): CellPosition | null {
