@@ -83,9 +83,10 @@ interface ClipboardPayload {
 }
 
 interface UseSpreadsheetOptions {
-  sharedAccessRole?: CollaborationAccessRole | null;
-  sharedWorkbookId?: string | null;
+  isSharedSession?: boolean;
+  requestedAccessRole?: CollaborationAccessRole | null;
   syncServerUrl?: string | null;
+  workbookId?: string | null;
 }
 
 function normalizeSelectionRange(
@@ -236,9 +237,10 @@ const applySpreadsheetPatch = (
 };
 
 export function useSpreadsheet({
-  sharedAccessRole = null,
-  sharedWorkbookId = null,
+  isSharedSession = false,
+  requestedAccessRole = null,
   syncServerUrl = null,
+  workbookId = null,
 }: UseSpreadsheetOptions = {}) {
   const activeSheetCells = useSpreadsheetStore(
     (state) => state.activeSheetCells
@@ -341,14 +343,13 @@ export function useSpreadsheet({
   const workerCellsRef = useRef<Record<string, CellData>>({});
   const clipboardRef = useRef<ClipboardPayload | null>(null);
   const workerColumnNamesRef = useRef<string[]>([]);
-  const isSharedSession = sharedWorkbookId !== null;
-  const requestedAccessRole = sharedAccessRole ?? "editor";
+  const resolvedRequestedAccessRole = requestedAccessRole ?? "editor";
   const effectiveCollaborationAccessRole = isSharedSession
     ? collaborationAccessRole
-    : (collaborationAccessRole ?? requestedAccessRole);
+    : (collaborationAccessRole ?? resolvedRequestedAccessRole);
   const canEdit = isSharedSession
     ? effectiveCollaborationAccessRole === "editor"
-    : requestedAccessRole === "editor";
+    : resolvedRequestedAccessRole === "editor";
   const canManageSharing = currentUser !== null && !isSharedSession && canEdit;
   const remoteCollaborationPeers = useMemo(() => {
     if (!collaborationIdentity) {
@@ -406,13 +407,15 @@ export function useSpreadsheet({
   }, []);
 
   useEffect(() => {
-    if (sharedWorkbookId) {
-      openWorkbook(sharedWorkbookId, undefined, true).catch(() => undefined);
+    if (workbookId) {
+      openWorkbook(workbookId, undefined, isSharedSession).catch(
+        () => undefined
+      );
       return;
     }
 
     hydrateWorkbookList().catch(() => undefined);
-  }, [hydrateWorkbookList, openWorkbook, sharedWorkbookId]);
+  }, [hydrateWorkbookList, isSharedSession, openWorkbook, workbookId]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -439,12 +442,12 @@ export function useSpreadsheet({
   }, []);
 
   useEffect(() => {
-    if (!(collaborationIdentity && syncServerUrl)) {
+    if (!(workbookId && collaborationIdentity && syncServerUrl)) {
       return;
     }
 
     connectRealtime(
-      requestedAccessRole,
+      resolvedRequestedAccessRole,
       collaborationIdentity,
       syncServerUrl,
       isSharedSession
@@ -457,9 +460,10 @@ export function useSpreadsheet({
     collaborationIdentity,
     connectRealtime,
     isSharedSession,
-    requestedAccessRole,
+    resolvedRequestedAccessRole,
     stopRealtime,
     syncServerUrl,
+    workbookId,
   ]);
 
   useEffect(() => {

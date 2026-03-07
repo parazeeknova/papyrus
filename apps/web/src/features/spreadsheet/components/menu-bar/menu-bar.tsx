@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Badge } from "@/web/components/ui/badge";
 import { Button } from "@/web/components/ui/button";
@@ -232,13 +233,19 @@ export function SpreadsheetMenuBar({
         data-slot="menu-bar"
       >
         <div className="flex h-10 items-center gap-2 px-3">
-          <Image
-            alt="Papyrus logo"
-            className="size-6 rounded-md"
-            height={28}
-            src="/apple-touch-icon.png"
-            width={28}
-          />
+          <Link
+            aria-label="Back to home page"
+            className="inline-flex items-center justify-center"
+            href="/"
+          >
+            <Image
+              alt="Papyrus logo"
+              className="size-6"
+              height={28}
+              src="/apple-touch-icon.png"
+              width={28}
+            />
+          </Link>
 
           <div className="flex items-center gap-1">
             {isRenamingWorkbook ? (

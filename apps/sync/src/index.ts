@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type {
+  CollaborationClientMessage,
   CollaborationServerMessage,
   CollaboratorPresence,
 } from "@papyrus/core/collaboration-types";
-import { Elysia, t } from "elysia";
+import { type ServerWebSocket, serve } from "bun";
 import { applyUpdate, Doc, encodeStateAsUpdate } from "yjs";
 
 interface RoomPeer {
@@ -457,252 +458,358 @@ function broadcastSync(
   }
 }
 
-const accessRoleSchema = t.Union([t.Literal("editor"), t.Literal("viewer")]);
+type AccessRole = CollaboratorPresence["accessRole"];
 
-const collaborationMessageSchema = t.Union([
-  t.Object({
-    type: t.Literal("presence"),
-    payload: t.Object({
-      activeCell: t.Nullable(
-        t.Object({
-          col: t.Number(),
-          row: t.Number(),
-        })
-      ),
-    }),
-  }),
-  t.Object({
-    type: t.Literal("typing"),
-    payload: t.Object({
-      cell: t.Nullable(
-        t.Object({
-          col: t.Number(),
-          row: t.Number(),
-        })
-      ),
-      draft: t.Nullable(t.String()),
-      sheetId: t.Nullable(t.String()),
-    }),
-  }),
-  t.Object({
-    type: t.Literal("sync"),
-    payload: t.Object({
-      update: t.String(),
-    }),
-  }),
-]);
+interface ParsedUpgradeQuery {
+  accessRole: AccessRole;
+  authToken?: string;
+  clientId: string;
+  color: string;
+  icon: string;
+  isAnonymous: boolean;
+  name: string;
+  photoURL: string | null;
+}
 
-const collaborationResponseSchema = t.Union([
-  t.Object({
-    type: t.Literal("presence"),
-    payload: t.Object({
-      peers: t.Array(
-        t.Object({
-          accessRole: accessRoleSchema,
-          activeCell: t.Nullable(
-            t.Object({
-              col: t.Number(),
-              row: t.Number(),
-            })
-          ),
-          identity: t.Object({
-            clientId: t.String(),
-            color: t.String(),
-            icon: t.String(),
-            isAnonymous: t.Boolean(),
-            name: t.String(),
-            photoURL: t.Nullable(t.String()),
-          }),
-          typing: t.Nullable(
-            t.Object({
-              cell: t.Object({
-                col: t.Number(),
-                row: t.Number(),
-              }),
-              draft: t.String(),
-              sheetId: t.String(),
-            })
-          ),
-          updatedAt: t.Number(),
-        })
-      ),
-    }),
-  }),
-  t.Object({
-    type: t.Literal("snapshot"),
-    payload: t.Object({
-      peers: t.Array(
-        t.Object({
-          accessRole: accessRoleSchema,
-          activeCell: t.Nullable(
-            t.Object({
-              col: t.Number(),
-              row: t.Number(),
-            })
-          ),
-          identity: t.Object({
-            clientId: t.String(),
-            color: t.String(),
-            icon: t.String(),
-            isAnonymous: t.Boolean(),
-            name: t.String(),
-            photoURL: t.Nullable(t.String()),
-          }),
-          typing: t.Nullable(
-            t.Object({
-              cell: t.Object({
-                col: t.Number(),
-                row: t.Number(),
-              }),
-              draft: t.String(),
-              sheetId: t.String(),
-            })
-          ),
-          updatedAt: t.Number(),
-        })
-      ),
-      shouldInitializeFromClient: t.Boolean(),
-      update: t.String(),
-    }),
-  }),
-  t.Object({
-    type: t.Literal("sync"),
-    payload: t.Object({
-      update: t.String(),
-    }),
-  }),
-]);
+interface AuthorizedSocketData {
+  accessRole: AccessRole;
+  clientId: string;
+  color: string;
+  icon: string;
+  isAnonymous: boolean;
+  isOwner: boolean;
+  name: string;
+  photoURL: string | null;
+  type: "authorized";
+  workbookId: string;
+}
 
-export const app = new Elysia()
-  .get("/", () => ({ status: "ok" }))
-  .ws("/collab/:workbookId", {
-    body: collaborationMessageSchema,
-    params: t.Object({
-      workbookId: t.String(),
-    }),
-    query: t.Object({
-      accessRole: accessRoleSchema,
-      authToken: t.Optional(t.String()),
-      clientId: t.String(),
-      color: t.String(),
-      icon: t.String(),
-      isAnonymous: t.Union([t.Literal("true"), t.Literal("false")]),
-      name: t.String(),
-      photoURL: t.Optional(t.String()),
-    }),
-    response: collaborationResponseSchema,
-    async open(ws) {
-      const {
-        params: { workbookId },
-        query,
-      } = ws.data;
-      let resolvedAccessRole: CollaboratorPresence["accessRole"];
-      let isOwner = false;
+interface DeniedSocketData {
+  reason: string;
+  type: "denied";
+}
 
-      try {
-        const accessResolution = await resolveAccessRole(
-          workbookId,
-          query.authToken
-        );
-        resolvedAccessRole = accessResolution.accessRole;
-        isOwner = accessResolution.isOwner;
-      } catch (error) {
-        ws.close(
-          4403,
-          error instanceof Error ? error.message : "sharing-disabled"
-        );
-        return;
-      }
+type SocketData = AuthorizedSocketData | DeniedSocketData;
 
-      const room = getRoom(workbookId);
-      const shouldInitializeFromClient = isOwner;
-      ensureRoomPolicyRefresh(workbookId, room);
+function isAccessRole(value: string | null): value is AccessRole {
+  return value === "editor" || value === "viewer";
+}
 
-      const peer: RoomPeer = {
-        accessRole: resolvedAccessRole,
-        activeCell: null,
-        clientId: query.clientId,
-        color: query.color,
-        icon: query.icon,
-        isOwner,
-        isAnonymous: query.isAnonymous === "true",
-        name: query.name,
-        photoURL: query.photoURL ?? null,
-        typing: null,
-        updatedAt: Date.now(),
-        ws,
+function isCellPosition(value: unknown): value is { col: number; row: number } {
+  if (!(typeof value === "object" && value !== null)) {
+    return false;
+  }
+
+  const candidate = value as { col?: unknown; row?: unknown };
+  return typeof candidate.col === "number" && typeof candidate.row === "number";
+}
+
+function parseUpgradeQuery(url: URL): ParsedUpgradeQuery | null {
+  const accessRole = url.searchParams.get("accessRole");
+  const clientId = url.searchParams.get("clientId");
+  const color = url.searchParams.get("color");
+  const icon = url.searchParams.get("icon");
+  const isAnonymous = url.searchParams.get("isAnonymous");
+  const name = url.searchParams.get("name");
+  const authToken = url.searchParams.get("authToken");
+  const photoURL = url.searchParams.get("photoURL");
+
+  if (
+    !(
+      isAccessRole(accessRole) &&
+      clientId &&
+      color &&
+      icon &&
+      (isAnonymous === "true" || isAnonymous === "false") &&
+      name
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    accessRole,
+    authToken: authToken || undefined,
+    clientId,
+    color,
+    icon,
+    isAnonymous: isAnonymous === "true",
+    name,
+    photoURL: photoURL || null,
+  };
+}
+
+function getWorkbookIdFromPath(pathname: string): string | null {
+  if (!pathname.startsWith("/collab/")) {
+    return null;
+  }
+
+  const encodedWorkbookId = pathname.slice("/collab/".length);
+  if (!encodedWorkbookId) {
+    return null;
+  }
+
+  return decodeURIComponent(encodedWorkbookId);
+}
+
+function sendSocketMessage(
+  ws: ServerWebSocket<SocketData>,
+  message: CollaborationServerMessage
+): void {
+  ws.send(JSON.stringify(message));
+}
+
+function parseClientMessage(
+  rawMessage: string
+): CollaborationClientMessage | null {
+  try {
+    const payload = JSON.parse(rawMessage) as Record<string, unknown>;
+
+    if (payload.type === "presence") {
+      const presencePayload = payload.payload as {
+        activeCell?: unknown;
       };
+      return presencePayload?.activeCell === null ||
+        isCellPosition(presencePayload?.activeCell)
+        ? {
+            payload: {
+              activeCell:
+                (presencePayload?.activeCell as {
+                  col: number;
+                  row: number;
+                } | null) ?? null,
+            },
+            type: "presence",
+          }
+        : null;
+    }
 
-      room.peers.set(peer.clientId, peer);
-      ws.send({
-        type: "snapshot",
+    if (payload.type === "typing") {
+      const typingPayload = payload.payload as {
+        cell?: unknown;
+        draft?: unknown;
+        sheetId?: unknown;
+      };
+      const hasValidCell =
+        typingPayload?.cell === null || isCellPosition(typingPayload?.cell);
+      const hasValidDraft =
+        typingPayload?.draft === null ||
+        typeof typingPayload?.draft === "string";
+      const hasValidSheetId =
+        typingPayload?.sheetId === null ||
+        typeof typingPayload?.sheetId === "string";
+
+      return hasValidCell && hasValidDraft && hasValidSheetId
+        ? {
+            payload: {
+              cell:
+                (typingPayload?.cell as { col: number; row: number } | null) ??
+                null,
+              draft: (typingPayload?.draft as string | null) ?? null,
+              sheetId: (typingPayload?.sheetId as string | null) ?? null,
+            },
+            type: "typing",
+          }
+        : null;
+    }
+
+    if (
+      payload.type === "sync" &&
+      typeof (payload.payload as { update?: unknown })?.update === "string"
+    ) {
+      return {
         payload: {
-          peers: getRoomPresence(room),
-          shouldInitializeFromClient,
-          update: encodeUpdate(encodeStateAsUpdate(room.doc)),
+          update: (payload.payload as { update: string }).update,
         },
-      });
-      broadcastPresence(room);
+        type: "sync",
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function normalizeIncomingMessage(
+  message: string | Buffer | Uint8Array
+): string {
+  return typeof message === "string"
+    ? message
+    : Buffer.from(message).toString();
+}
+
+async function createSocketData(request: Request): Promise<SocketData | null> {
+  const url = new URL(request.url);
+  const workbookId = getWorkbookIdFromPath(url.pathname);
+  const query = parseUpgradeQuery(url);
+  if (!(workbookId && query)) {
+    return null;
+  }
+
+  try {
+    const accessResolution = await resolveAccessRole(
+      workbookId,
+      query.authToken
+    );
+
+    return {
+      accessRole: accessResolution.accessRole,
+      clientId: query.clientId,
+      color: query.color,
+      icon: query.icon,
+      isAnonymous: query.isAnonymous,
+      isOwner: accessResolution.isOwner,
+      name: query.name,
+      photoURL: query.photoURL,
+      type: "authorized",
+      workbookId,
+    };
+  } catch (error) {
+    return {
+      reason: error instanceof Error ? error.message : "sharing-disabled",
+      type: "denied",
+    };
+  }
+}
+
+function handleSocketOpen(ws: ServerWebSocket<SocketData>): void {
+  if (ws.data.type === "denied") {
+    ws.close(4403, ws.data.reason);
+    return;
+  }
+
+  const room = getRoom(ws.data.workbookId);
+  const shouldInitializeFromClient = ws.data.isOwner;
+  ensureRoomPolicyRefresh(ws.data.workbookId, room);
+
+  const peer: RoomPeer = {
+    accessRole: ws.data.accessRole,
+    activeCell: null,
+    clientId: ws.data.clientId,
+    color: ws.data.color,
+    icon: ws.data.icon,
+    isAnonymous: ws.data.isAnonymous,
+    isOwner: ws.data.isOwner,
+    name: ws.data.name,
+    photoURL: ws.data.photoURL,
+    typing: null,
+    updatedAt: Date.now(),
+    ws: {
+      close: (code, reason) => ws.close(code, reason),
+      send: (message) => sendSocketMessage(ws, message),
     },
-    message(ws, message) {
-      const {
-        params: { workbookId },
-        query: { clientId },
-      } = ws.data;
-      const room = getRoom(workbookId);
-      const peer = room.peers.get(clientId);
-      if (!peer) {
-        return;
-      }
+  };
 
-      if (message.type === "presence") {
-        peer.activeCell = message.payload.activeCell;
-        peer.updatedAt = Date.now();
-        broadcastPresence(room);
-        return;
-      }
-
-      if (message.type === "typing") {
-        peer.typing =
-          message.payload.cell &&
-          message.payload.draft &&
-          message.payload.sheetId
-            ? {
-                cell: message.payload.cell,
-                draft: message.payload.draft,
-                sheetId: message.payload.sheetId,
-              }
-            : null;
-        peer.updatedAt = Date.now();
-        broadcastPresence(room);
-        return;
-      }
-
-      if (peer.accessRole === "viewer") {
-        return;
-      }
-
-      applyUpdate(room.doc, decodeUpdate(message.payload.update), clientId);
-      broadcastSync(room, message.payload.update, clientId);
+  room.peers.set(peer.clientId, peer);
+  sendSocketMessage(ws, {
+    type: "snapshot",
+    payload: {
+      peers: getRoomPresence(room),
+      shouldInitializeFromClient,
+      update: encodeUpdate(encodeStateAsUpdate(room.doc)),
     },
-    close(ws) {
-      const {
-        params: { workbookId },
-        query: { clientId },
-      } = ws.data;
-      const room = getRoom(workbookId);
+  });
+  broadcastPresence(room);
+}
 
-      room.peers.delete(clientId);
-      broadcastPresence(room);
-      if (room.peers.size === 0) {
-        disposeRoom(workbookId, room);
-      }
+function handleSocketMessage(
+  ws: ServerWebSocket<SocketData>,
+  rawMessage: string | Buffer | Uint8Array
+): void {
+  if (ws.data.type === "denied") {
+    return;
+  }
+
+  const message = parseClientMessage(normalizeIncomingMessage(rawMessage));
+  if (!message) {
+    return;
+  }
+
+  const room = getRoom(ws.data.workbookId);
+  const peer = room.peers.get(ws.data.clientId);
+  if (!peer) {
+    return;
+  }
+
+  if (message.type === "presence") {
+    peer.activeCell = message.payload.activeCell;
+    peer.updatedAt = Date.now();
+    broadcastPresence(room);
+    return;
+  }
+
+  if (message.type === "typing") {
+    peer.typing =
+      message.payload.cell && message.payload.draft && message.payload.sheetId
+        ? {
+            cell: message.payload.cell,
+            draft: message.payload.draft,
+            sheetId: message.payload.sheetId,
+          }
+        : null;
+    peer.updatedAt = Date.now();
+    broadcastPresence(room);
+    return;
+  }
+
+  if (peer.accessRole === "viewer") {
+    return;
+  }
+
+  applyUpdate(room.doc, decodeUpdate(message.payload.update), peer.clientId);
+  broadcastSync(room, message.payload.update, peer.clientId);
+}
+
+function handleSocketClose(ws: ServerWebSocket<SocketData>): void {
+  if (ws.data.type === "denied") {
+    return;
+  }
+
+  const room = getRoom(ws.data.workbookId);
+  room.peers.delete(ws.data.clientId);
+  broadcastPresence(room);
+  if (room.peers.size === 0) {
+    disposeRoom(ws.data.workbookId, room);
+  }
+}
+
+export const server = serve<SocketData>({
+  fetch: async (request, serverInstance) => {
+    const url = new URL(request.url);
+
+    if (request.method === "GET" && url.pathname === "/") {
+      return Response.json({ status: "ok" });
+    }
+
+    if (!url.pathname.startsWith("/collab/")) {
+      return new Response("Not Found", { status: 404 });
+    }
+
+    const socketData = await createSocketData(request);
+    if (!socketData) {
+      return new Response("Invalid collaboration request", { status: 400 });
+    }
+
+    const didUpgrade = serverInstance.upgrade(request, {
+      data: socketData,
+    });
+    return didUpgrade
+      ? undefined
+      : new Response("Failed to upgrade websocket", { status: 500 });
+  },
+  port: 3001,
+  websocket: {
+    close: (ws) => {
+      handleSocketClose(ws);
     },
-  })
-  .listen(3001);
+    message: (ws, message) => {
+      handleSocketMessage(ws, message);
+    },
+    open: (ws) => {
+      handleSocketOpen(ws);
+    },
+  },
+});
 
-export type SyncApp = typeof app;
-
-console.log(
-  `Sync server running at ${app.server?.hostname}:${app.server?.port}`
-);
+console.log(`Sync server running at ${server.hostname}:${server.port}`);
