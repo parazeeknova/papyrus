@@ -1,5 +1,6 @@
 "use client";
 
+import type { CollaboratorPresence } from "@papyrus/core/collaboration-types";
 import {
   ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
@@ -50,6 +51,7 @@ interface ContextMenuState {
 }
 
 interface CellComponentProps {
+  canEdit: boolean;
   col: number;
   data: CellData;
   isActive: boolean;
@@ -72,6 +74,7 @@ interface CellComponentProps {
 }
 
 const CellComponent = memo(function CellComponent({
+  canEdit,
   row,
   col,
   data,
@@ -137,7 +140,11 @@ const CellComponent = memo(function CellComponent({
         onDoubleClick({ row, col });
       }}
       onKeyDown={(e) => {
-        if (!(e.ctrlKey || e.metaKey || e.altKey) && e.key.length === 1) {
+        if (
+          canEdit &&
+          !(e.ctrlKey || e.metaKey || e.altKey) &&
+          e.key.length === 1
+        ) {
           e.preventDefault();
           onValueChange(row, col, e.key);
           onDoubleClick({ row, col });
@@ -162,9 +169,11 @@ const CellComponent = memo(function CellComponent({
 
 interface SpreadsheetGridProps {
   activeCell: CellPosition | null;
+  canEdit: boolean;
   canExpandRows: boolean;
   canRedo: boolean;
   canUndo: boolean;
+  collaborationPeers: CollaboratorPresence[];
   columnCount: number;
   columnNames: string[];
   editingCell: CellPosition | null;
@@ -198,9 +207,11 @@ interface SpreadsheetGridProps {
 
 export function SpreadsheetGrid({
   activeCell,
+  canEdit,
   canRedo,
   canUndo,
   canExpandRows,
+  collaborationPeers,
   columnNames,
   editingCell,
   columnCount,
@@ -290,16 +301,16 @@ export function SpreadsheetGrid({
         e.preventDefault();
         navigateFromActive("right");
       } else if (e.key === "Delete" || e.key === "Backspace") {
-        if (activeCell) {
+        if (canEdit && activeCell) {
           e.preventDefault();
           setCellValue(activeCell.row, activeCell.col, "");
         }
-      } else if (e.key === "F2" && activeCell) {
+      } else if (canEdit && e.key === "F2" && activeCell) {
         e.preventDefault();
         startEditing(activeCell);
       }
     },
-    [navigateFromActive, activeCell, setCellValue, startEditing]
+    [activeCell, canEdit, navigateFromActive, setCellValue, startEditing]
   );
 
   const rowVirtualizer = useVirtualizer({
@@ -472,15 +483,19 @@ export function SpreadsheetGrid({
 
   const beginColumnRename = useCallback(
     (columnIndex: number) => {
+      if (!canEdit) {
+        return;
+      }
+
       setContextMenu(null);
       setRenamingColumnIndex(columnIndex);
       setColumnNameDraft(columnNames[columnIndex] ?? "");
     },
-    [columnNames]
+    [canEdit, columnNames]
   );
 
   const commitColumnRename = useCallback(async () => {
-    if (renamingColumnIndex === null) {
+    if (!canEdit || renamingColumnIndex === null) {
       return;
     }
 
@@ -491,7 +506,7 @@ export function SpreadsheetGrid({
     if (didRename) {
       setRenamingColumnIndex(null);
     }
-  }, [columnNameDraft, onRenameColumn, renamingColumnIndex]);
+  }, [canEdit, columnNameDraft, onRenameColumn, renamingColumnIndex]);
 
   const visibleSelection = useMemo(() => {
     if (!(normalizedSelection && firstVirtualRow && firstVirtualCol)) {
@@ -538,6 +553,72 @@ export function SpreadsheetGrid({
     virtualRows,
     virtualCols,
   ]);
+
+  const visiblePresence = useMemo(() => {
+    const visibleRowsByIndex = new Map(
+      virtualRows.map((row) => [row.index, row])
+    );
+    const visibleColumnsByIndex = new Map(
+      virtualCols.map((column) => [column.index, column])
+    );
+    const presenceByCell = new Map<
+      string,
+      {
+        col: number;
+        peers: CollaboratorPresence[];
+        row: number;
+      }
+    >();
+
+    for (const peer of collaborationPeers) {
+      if (!peer.activeCell) {
+        continue;
+      }
+
+      const visibleRow = visibleRowsByIndex.get(peer.activeCell.row);
+      const visibleColumn = visibleColumnsByIndex.get(peer.activeCell.col);
+      if (!(visibleRow && visibleColumn)) {
+        continue;
+      }
+
+      const presenceKey = `${peer.activeCell.row}:${peer.activeCell.col}`;
+      const existingPresence = presenceByCell.get(presenceKey);
+
+      if (existingPresence) {
+        existingPresence.peers.push(peer);
+        continue;
+      }
+
+      presenceByCell.set(presenceKey, {
+        col: peer.activeCell.col,
+        peers: [peer],
+        row: peer.activeCell.row,
+      });
+    }
+
+    return [...presenceByCell.values()]
+      .map((presence) => {
+        const row = visibleRowsByIndex.get(presence.row);
+        const column = visibleColumnsByIndex.get(presence.col);
+        const [primaryPeer] = presence.peers;
+
+        if (!(row && column && primaryPeer)) {
+          return null;
+        }
+
+        return {
+          color: primaryPeer.identity.color,
+          count: presence.peers.length,
+          height: row.size,
+          key: `${presence.row}:${presence.col}`,
+          left: ROW_HEADER_WIDTH + column.start,
+          name: primaryPeer.identity.name,
+          top: COL_HEADER_HEIGHT + row.start,
+          width: column.size,
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  }, [collaborationPeers, virtualCols, virtualRows]);
 
   return (
     <div
@@ -720,6 +801,7 @@ export function SpreadsheetGrid({
                         }}
                       >
                         <CellComponent
+                          canEdit={canEdit}
                           col={col}
                           data={data}
                           isActive={isActive}
@@ -727,7 +809,11 @@ export function SpreadsheetGrid({
                           isSelected={isSelected}
                           onCommit={stopEditing}
                           onContextMenu={handleCellContextMenu}
-                          onDoubleClick={startEditing}
+                          onDoubleClick={(position) => {
+                            if (canEdit) {
+                              startEditing(position);
+                            }
+                          }}
                           onKeyDown={handleCellKeyDown}
                           onSelect={handleCellSelect}
                           onSelectHover={updateDraggedSelection}
@@ -771,6 +857,29 @@ export function SpreadsheetGrid({
           </div>
         ) : null}
 
+        {visiblePresence.map((presence) => (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute z-20 border-2"
+            key={presence.key}
+            style={{
+              borderColor: presence.color,
+              height: presence.height,
+              left: presence.left,
+              top: presence.top,
+              width: presence.width,
+            }}
+          >
+            <div
+              className="absolute top-0 left-0 -translate-y-[calc(100%+2px)] rounded-none px-1.5 py-0.5 font-medium text-[10px] text-white shadow-sm"
+              style={{ backgroundColor: presence.color }}
+            >
+              {presence.name}
+              {presence.count > 1 ? ` +${presence.count - 1}` : ""}
+            </div>
+          </div>
+        ))}
+
         {contextMenu ? (
           <div
             aria-label="Cell actions"
@@ -813,7 +922,8 @@ export function SpreadsheetGrid({
             </button>
             <div className="my-0.5 h-px bg-white/10" />
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
               onClick={() => {
                 onCut();
                 setContextMenu(null);
@@ -835,7 +945,8 @@ export function SpreadsheetGrid({
               Copy
             </button>
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
               onClick={() => {
                 onPaste();
                 setContextMenu(null);
@@ -847,7 +958,8 @@ export function SpreadsheetGrid({
             </button>
             <div className="my-0.5 h-px bg-white/10" />
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
               onClick={() => {
                 setCellValue(contextMenu.row, contextMenu.col, "");
                 setContextMenu(null);
@@ -858,7 +970,8 @@ export function SpreadsheetGrid({
               Delete contents
             </button>
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
               onClick={() => {
                 beginColumnRename(contextMenu.col);
               }}
@@ -869,7 +982,8 @@ export function SpreadsheetGrid({
             </button>
             <div className="my-0.5 h-px bg-white/10" />
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
               onClick={() => {
                 onDeleteRow();
                 setContextMenu(null);
@@ -880,7 +994,8 @@ export function SpreadsheetGrid({
               Delete row
             </button>
             <button
-              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10"
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
               onClick={() => {
                 onDeleteColumn();
                 setContextMenu(null);

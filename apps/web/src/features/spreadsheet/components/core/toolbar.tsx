@@ -57,6 +57,7 @@ interface ToolbarButtonProps {
 }
 
 interface ToolbarProps {
+  canEdit: boolean;
   canRedo: boolean;
   canUndo: boolean;
   onCopy: () => void;
@@ -96,6 +97,7 @@ function ToolbarButton({
 }
 
 export function Toolbar({
+  canEdit,
   canRedo,
   canUndo,
   onCopy,
@@ -126,6 +128,7 @@ export function Toolbar({
         onClick={onRedo}
       />
       <ToolbarButton
+        disabled={!canEdit}
         icon={<ScissorsIcon weight="bold" />}
         label="Cut (Ctrl+X)"
         onClick={onCut}
@@ -136,6 +139,7 @@ export function Toolbar({
         onClick={onCopy}
       />
       <ToolbarButton
+        disabled={!canEdit}
         icon={<ClipboardTextIcon weight="bold" />}
         label="Paste (Ctrl+V)"
         onClick={onPaste}
@@ -146,11 +150,13 @@ export function Toolbar({
         onClick={onOpenFindReplace}
       />
       <ToolbarButton
+        disabled={!canEdit}
         icon={<RowsIcon weight="bold" />}
         label="Delete row"
         onClick={onDeleteRow}
       />
       <ToolbarButton
+        disabled={!canEdit}
         icon={<ColumnsIcon weight="bold" />}
         label="Delete column"
         onClick={onDeleteColumn}

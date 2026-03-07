@@ -6,6 +6,7 @@ import { Button } from "@/web/components/ui/button";
 
 interface SheetTabsProps {
   activeSheetId: string | null;
+  disableCreation?: boolean;
   disabled?: boolean;
   onAddSheet: () => void;
   onSelectSheet: (sheetId: string) => void;
@@ -15,6 +16,7 @@ interface SheetTabsProps {
 export function SheetTabs({
   activeSheetId,
   disabled = false,
+  disableCreation = false,
   onAddSheet,
   onSelectSheet,
   sheets,
@@ -66,7 +68,7 @@ export function SheetTabs({
       <Button
         aria-label="Add sheet"
         className="ml-1 h-6 w-6"
-        disabled={disabled}
+        disabled={disabled || disableCreation}
         onClick={onAddSheet}
         size="icon-xs"
         variant="ghost"

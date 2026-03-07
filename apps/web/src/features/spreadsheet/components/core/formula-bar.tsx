@@ -8,6 +8,7 @@ import type { CellPosition } from "@/web/features/spreadsheet/hooks/use-spreadsh
 interface FormulaBarProps {
   activeCell: CellPosition | null;
   cellRaw: string;
+  disabled?: boolean;
   getCellReferenceLabel: (row: number, col: number) => string;
   onCommit: () => void;
   onValueChange: (value: string) => void;
@@ -17,6 +18,7 @@ interface FormulaBarProps {
 export function FormulaBar({
   activeCell,
   cellRaw,
+  disabled = false,
   getCellReferenceLabel,
   onValueChange,
   onCommit,
@@ -46,6 +48,7 @@ export function FormulaBar({
 
       <Input
         className="h-6 flex-1 border-none bg-transparent text-xs shadow-none focus-visible:ring-0"
+        disabled={disabled}
         onChange={(e) => {
           onValueChange(e.target.value);
         }}

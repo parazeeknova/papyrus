@@ -15,6 +15,7 @@ import {
 } from "@/web/components/ui/menubar";
 
 interface FileMenuProps {
+  canEdit: boolean;
   onCreateWorkbook: () => void;
   onOpenWorkbook: (workbookId: string, workbookName: string) => void;
   onPrint: () => void;
@@ -39,6 +40,7 @@ function formatLastOpened(lastOpenedAt: string): string {
 }
 
 export function FileMenu({
+  canEdit,
   onCreateWorkbook,
   onOpenWorkbook,
   onPrint,
@@ -111,6 +113,7 @@ export function FileMenu({
         </MenubarSub>
         <MenubarSeparator />
         <MenubarItem
+          disabled={!canEdit}
           onSelect={() => {
             onRequestRenameWorkbook();
           }}
@@ -127,7 +130,7 @@ export function FileMenu({
         <MenubarSeparator />
         <MenubarItem
           className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-          disabled={!workbookId}
+          disabled={!(canEdit && workbookId)}
           onSelect={() => {
             onRequestDeleteWorkbook();
           }}

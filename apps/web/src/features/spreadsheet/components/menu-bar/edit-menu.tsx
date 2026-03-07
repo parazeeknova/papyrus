@@ -20,6 +20,7 @@ import {
 } from "@/web/components/ui/menubar";
 
 interface EditMenuProps {
+  canEdit: boolean;
   canRedo: boolean;
   canUndo: boolean;
   onCopy: () => void;
@@ -33,6 +34,7 @@ interface EditMenuProps {
 }
 
 export function EditMenu({
+  canEdit,
   canRedo,
   canUndo,
   onCopy,
@@ -57,7 +59,7 @@ export function EditMenu({
           Redo <MenubarShortcut>Cmd+Y</MenubarShortcut>
         </MenubarItem>
         <MenubarSeparator />
-        <MenubarItem onClick={onCut}>
+        <MenubarItem disabled={!canEdit} onClick={onCut}>
           <ScissorsIcon weight="bold" />
           Cut <MenubarShortcut>Cmd+X</MenubarShortcut>
         </MenubarItem>
@@ -65,7 +67,7 @@ export function EditMenu({
           <CopyIcon weight="bold" />
           Copy <MenubarShortcut>Cmd+C</MenubarShortcut>
         </MenubarItem>
-        <MenubarItem onClick={onPaste}>
+        <MenubarItem disabled={!canEdit} onClick={onPaste}>
           <ClipboardTextIcon weight="bold" />
           Paste <MenubarShortcut>Cmd+V</MenubarShortcut>
         </MenubarItem>
@@ -74,11 +76,11 @@ export function EditMenu({
           <MagnifyingGlassIcon weight="bold" />
           Find and replace <MenubarShortcut>Cmd+H</MenubarShortcut>
         </MenubarItem>
-        <MenubarItem onClick={onDeleteRow}>
+        <MenubarItem disabled={!canEdit} onClick={onDeleteRow}>
           <RowsIcon weight="bold" />
           Delete row
         </MenubarItem>
-        <MenubarItem onClick={onDeleteColumn}>
+        <MenubarItem disabled={!canEdit} onClick={onDeleteColumn}>
           <ColumnsIcon weight="bold" />
           Delete column
         </MenubarItem>

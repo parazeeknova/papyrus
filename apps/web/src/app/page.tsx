@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { env } from "@/web/env";
 import { FormulaBar } from "@/web/features/spreadsheet/components/core/formula-bar";
 import { SheetTabs } from "@/web/features/spreadsheet/components/core/sheet-tabs";
 import { SpreadsheetGrid } from "@/web/features/spreadsheet/components/core/spreadsheet-grid";
@@ -9,17 +11,40 @@ import { FindReplaceDialog } from "@/web/features/spreadsheet/components/dialogs
 import { SpreadsheetMenuBar } from "@/web/features/spreadsheet/components/menu-bar/menu-bar";
 import { TemplateGalleryPanel } from "@/web/features/spreadsheet/components/template-gallery";
 import { useSpreadsheet } from "@/web/features/spreadsheet/hooks/use-spreadsheet";
+import { getDefaultSyncServerUrl } from "@/web/features/spreadsheet/lib/collaboration";
 
 export default function Home() {
+  const searchParams = useSearchParams();
+  const requestedAccessRole = useMemo(() => {
+    return searchParams.get("access") === "viewer" ? "viewer" : "editor";
+  }, [searchParams]);
+  const sharedWorkbookId = searchParams.get("workbook");
+  const syncServerUrl = useMemo(() => {
+    if (env.NEXT_PUBLIC_SYNC_SERVER_URL) {
+      return env.NEXT_PUBLIC_SYNC_SERVER_URL;
+    }
+
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    return getDefaultSyncServerUrl(window.location.origin);
+  }, []);
+
   const {
     activeCell,
     activeSheetColumns,
     activeWorkbook,
     activeSheetId,
+    canEdit,
     canRedo,
     canUndo,
     canExpandRows,
     canManualSync,
+    collaborationAccessRole,
+    collaborationIdentity,
+    collaborationPeers,
+    collaborationStatus,
     copySelection,
     createSheet,
     createWorkbook,
@@ -38,6 +63,7 @@ export default function Home() {
     redo,
     renameColumn,
     renameWorkbook,
+    remoteSyncStatus,
     replaceAll,
     replaceCurrent,
     rowCount,
@@ -58,7 +84,11 @@ export default function Home() {
     undo,
     navigateFromActive,
     workbooks,
-  } = useSpreadsheet();
+  } = useSpreadsheet({
+    sharedAccessRole: requestedAccessRole,
+    sharedWorkbookId,
+    syncServerUrl,
+  });
 
   // Formula bar bindings
   const activeCellData = activeCell
@@ -115,9 +145,14 @@ export default function Home() {
   return (
     <div className="flex h-screen flex-col bg-background font-sans">
       <SpreadsheetMenuBar
+        canEdit={canEdit}
         canManualSync={canManualSync}
         canRedo={canRedo}
         canUndo={canUndo}
+        collaborationAccessRole={collaborationAccessRole}
+        collaborationIdentity={collaborationIdentity}
+        collaborationPeers={collaborationPeers}
+        collaborationStatus={collaborationStatus}
         isFavorite={activeWorkbook?.isFavorite ?? false}
         isGalleryOpen={isGalleryOpen}
         lastSyncedLabel={lastSyncedLabel}
@@ -167,12 +202,15 @@ export default function Home() {
           undo().catch(() => undefined);
         }}
         recentWorkbooks={workbooks}
+        remoteSyncStatus={remoteSyncStatus}
         saveState={saveState}
+        syncServerUrl={syncServerUrl}
         workbookId={activeWorkbook?.id ?? null}
         workbookName={activeWorkbook?.name ?? "Untitled spreadsheet"}
       />
       {isGalleryOpen && <TemplateGalleryPanel />}
       <Toolbar
+        canEdit={canEdit}
         canRedo={canRedo}
         canUndo={canUndo}
         onCopy={() => {
@@ -203,6 +241,7 @@ export default function Home() {
       <FormulaBar
         activeCell={activeCell}
         cellRaw={activeCellData.raw}
+        disabled={!canEdit}
         getCellReferenceLabel={getCellReferenceLabel}
         onCommit={handleFormulaCommit}
         onValueChange={handleFormulaChange}
@@ -210,9 +249,11 @@ export default function Home() {
       />
       <SpreadsheetGrid
         activeCell={activeCell}
+        canEdit={canEdit}
         canExpandRows={canExpandRows}
         canRedo={canRedo}
         canUndo={canUndo}
+        collaborationPeers={collaborationPeers}
         columnCount={columnCount}
         columnNames={activeSheetColumns.map((column) => column.name)}
         editingCell={editingCell}
@@ -257,6 +298,7 @@ export default function Home() {
       />
       <SheetTabs
         activeSheetId={activeSheetId}
+        disableCreation={!canEdit}
         disabled={hydrationState !== "ready"}
         onAddSheet={() => {
           createSheet().catch(() => undefined);

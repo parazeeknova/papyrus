@@ -15,6 +15,7 @@ import {
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { Badge } from "@/web/components/ui/badge";
 import { Button } from "@/web/components/ui/button";
 import {
   Dialog,
@@ -48,6 +49,7 @@ import { FormatMenu } from "@/web/features/spreadsheet/components/menu-bar/forma
 import { HelpMenu } from "@/web/features/spreadsheet/components/menu-bar/help-menu";
 import { InsertMenu } from "@/web/features/spreadsheet/components/menu-bar/insert-menu";
 import { ViewMenu } from "@/web/features/spreadsheet/components/menu-bar/view-menu";
+import { colToLetter } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 
 interface SpreadsheetMenuBarProps {
   canEdit: boolean;
@@ -104,6 +106,30 @@ function AccountButtonFallback() {
       <span className="absolute right-0.5 bottom-0.5 size-2 rounded-full bg-border ring-2 ring-background" />
     </Button>
   );
+}
+
+function getPresenceStatusLabel(
+  collaborationStatus: "connected" | "connecting" | "disconnected"
+): string {
+  if (collaborationStatus === "connected") {
+    return "Realtime connected";
+  }
+
+  if (collaborationStatus === "connecting") {
+    return "Connecting";
+  }
+
+  return "Realtime offline";
+}
+
+function formatPresenceCell(
+  activeCell: { col: number; row: number } | null
+): string | null {
+  if (!activeCell) {
+    return null;
+  }
+
+  return `${colToLetter(activeCell.col)}${activeCell.row + 1}`;
 }
 
 const GoogleAuthDialog = dynamic(
@@ -184,6 +210,7 @@ export function SpreadsheetMenuBar({
               ? "Cloud ready"
               : "Local only";
   const hasPendingChanges = remoteSyncStatus === "pending";
+  const collaborationStatusLabel = getPresenceStatusLabel(collaborationStatus);
 
   return (
     <>
@@ -349,39 +376,119 @@ export function SpreadsheetMenuBar({
           <div className="flex-1" />
 
           <div className="flex items-center gap-1.5">
-            <div className="flex items-center gap-2">
-              <div className="flex -space-x-1.5">
-                {collaborationIdentity ? (
-                  <CollaboratorAvatar
-                    identity={collaborationIdentity}
-                    ringClassName="ring-2 ring-background"
-                    size="md"
-                  />
-                ) : null}
-                {collaborationPeers.slice(0, 2).map((peer) => (
-                  <CollaboratorAvatar
-                    identity={peer.identity}
-                    key={peer.identity.clientId}
-                    ringClassName="ring-2 ring-background"
-                    size="md"
-                  />
-                ))}
-              </div>
-              <div className="hidden sm:block">
-                <p className="font-medium text-[11px] leading-none">
-                  {collaborationPeers.length > 0
-                    ? `${collaborationPeers.length + 1} live`
-                    : "Solo"}
-                </p>
-                <p className="text-[10px] text-muted-foreground leading-none">
-                  {collaborationStatus === "connected"
-                    ? "Realtime connected"
-                    : collaborationStatus === "connecting"
-                      ? "Connecting"
-                      : "Realtime offline"}
-                </p>
-              </div>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="flex items-center gap-2 rounded-sm px-1 py-0.5 transition-colors hover:bg-accent"
+                  type="button"
+                >
+                  <div className="flex -space-x-1.5">
+                    {collaborationIdentity ? (
+                      <CollaboratorAvatar
+                        identity={collaborationIdentity}
+                        ringClassName="ring-2 ring-background"
+                        size="md"
+                      />
+                    ) : null}
+                    {collaborationPeers.slice(0, 2).map((peer) => (
+                      <CollaboratorAvatar
+                        identity={peer.identity}
+                        key={peer.identity.clientId}
+                        ringClassName="ring-2 ring-background"
+                        size="md"
+                      />
+                    ))}
+                  </div>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="w-72 overflow-hidden border-white/10 bg-[#30302E] p-0 text-white shadow-xl ring-1 ring-white/10"
+                sideOffset={8}
+              >
+                <div className="space-y-3 px-4 py-4 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="font-medium text-sm text-white">Presence</p>
+                      <p className="text-white/60">
+                        {collaborationPeers.length > 0
+                          ? `${collaborationPeers.length + 1} people in this sheet`
+                          : "Only you are here right now"}
+                      </p>
+                    </div>
+                    <Badge className="border-white/10 bg-white/8 text-white hover:bg-white/8">
+                      {collaborationPeers.length > 0
+                        ? `${collaborationPeers.length + 1} live`
+                        : "Solo"}
+                    </Badge>
+                  </div>
+
+                  <div className="text-[11px] text-white/55">
+                    {collaborationStatusLabel}
+                  </div>
+
+                  {collaborationIdentity ? (
+                    <div className="space-y-2 border-white/10 border-t pt-3">
+                      <div className="flex items-center gap-3 rounded-none border border-white/10 bg-black/10 px-3 py-2.5">
+                        <CollaboratorAvatar
+                          identity={collaborationIdentity}
+                          ringClassName="ring-2 ring-background"
+                          size="md"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium text-white">You</p>
+                          <p className="text-white/55">
+                            {collaborationAccessRole === "viewer"
+                              ? "Viewer access"
+                              : "Editor access"}
+                          </p>
+                        </div>
+                        <Badge className="border-white/10 bg-white/8 text-white hover:bg-white/8">
+                          {collaborationAccessRole === "viewer"
+                            ? "Viewer"
+                            : "Editor"}
+                        </Badge>
+                      </div>
+
+                      {collaborationPeers.map((peer) => (
+                        <div
+                          className="flex items-center gap-3 rounded-none border border-white/10 bg-black/10 px-3 py-2.5"
+                          key={peer.identity.clientId}
+                        >
+                          <CollaboratorAvatar
+                            identity={peer.identity}
+                            ringClassName="ring-2 ring-background"
+                            size="md"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium text-white">
+                              {peer.identity.name}
+                            </p>
+                            <p className="text-white/55">
+                              {peer.accessRole === "viewer"
+                                ? "Viewer"
+                                : "Editor"}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {formatPresenceCell(peer.activeCell) ? (
+                              <Badge className="border-white/10 bg-white/8 font-mono text-[10px] text-white hover:bg-white/8">
+                                {formatPresenceCell(peer.activeCell)}
+                              </Badge>
+                            ) : null}
+                            <Badge className="border-white/10 bg-white/8 text-white hover:bg-white/8">
+                              {peer.accessRole === "viewer"
+                                ? "Viewer"
+                                : "Editor"}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Separator className="mx-1 h-5" orientation="vertical" />
 

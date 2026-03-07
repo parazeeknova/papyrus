@@ -1,6 +1,13 @@
 "use client";
 
+import type {
+  CollaborationAccessRole,
+  CollaboratorIdentity,
+} from "@papyrus/core/collaboration-types";
+import { onAuthStateChanged, type User } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { firebaseAuth } from "@/web/features/auth/lib/firebase-auth";
+import { buildCollaboratorIdentity } from "@/web/features/spreadsheet/lib/collaboration";
 import {
   getCellReferenceLabel as buildCellReferenceLabel,
   cellId,
@@ -73,6 +80,12 @@ interface SelectionBounds {
 
 interface ClipboardPayload {
   matrix: string[][];
+}
+
+interface UseSpreadsheetOptions {
+  sharedAccessRole?: CollaborationAccessRole | null;
+  sharedWorkbookId?: string | null;
+  syncServerUrl?: string | null;
 }
 
 function normalizeSelectionRange(
@@ -222,7 +235,11 @@ const applySpreadsheetPatch = (
   return next;
 };
 
-export function useSpreadsheet() {
+export function useSpreadsheet({
+  sharedAccessRole = null,
+  sharedWorkbookId = null,
+  syncServerUrl = null,
+}: UseSpreadsheetOptions = {}) {
   const activeSheetCells = useSpreadsheetStore(
     (state) => state.activeSheetCells
   );
@@ -233,6 +250,16 @@ export function useSpreadsheet() {
   const activeWorkbook = useSpreadsheetStore((state) => state.activeWorkbook);
   const canRedo = useSpreadsheetStore((state) => state.canRedo);
   const canUndo = useSpreadsheetStore((state) => state.canUndo);
+  const collaborationAccessRole = useSpreadsheetStore(
+    (state) => state.collaborationAccessRole
+  );
+  const collaborationPeers = useSpreadsheetStore(
+    (state) => state.collaborationPeers
+  );
+  const collaborationStatus = useSpreadsheetStore(
+    (state) => state.collaborationStatus
+  );
+  const connectRealtime = useSpreadsheetStore((state) => state.connectRealtime);
   const createSheet = useSpreadsheetStore((state) => state.createSheet);
   const createWorkbook = useSpreadsheetStore((state) => state.createWorkbook);
   const deleteColumns = useSpreadsheetStore((state) => state.deleteColumns);
@@ -241,6 +268,9 @@ export function useSpreadsheet() {
   const hydrationState = useSpreadsheetStore((state) => state.hydrationState);
   const isRemoteSyncAuthenticated = useSpreadsheetStore(
     (state) => state.isRemoteSyncAuthenticated
+  );
+  const lastSyncErrorMessage = useSpreadsheetStore(
+    (state) => state.lastSyncErrorMessage
   );
   const lastSyncedAt = useSpreadsheetStore((state) => state.lastSyncedAt);
   const manualSyncCooldownUntil = useSpreadsheetStore(
@@ -253,6 +283,10 @@ export function useSpreadsheet() {
   const renameColumn = useSpreadsheetStore((state) => state.renameColumn);
   const renameWorkbook = useSpreadsheetStore((state) => state.renameWorkbook);
   const redo = useSpreadsheetStore((state) => state.redo);
+  const remoteVersion = useSpreadsheetStore((state) => state.remoteVersion);
+  const remoteSyncStatus = useSpreadsheetStore(
+    (state) => state.remoteSyncStatus
+  );
   const saveState = useSpreadsheetStore((state) => state.saveState);
   const setActiveSheet = useSpreadsheetStore((state) => state.setActiveSheet);
   const setCellValuesByKey = useSpreadsheetStore(
@@ -265,8 +299,12 @@ export function useSpreadsheet() {
     (state) => state.setWorkbookFavorite
   );
   const sheets = useSpreadsheetStore((state) => state.sheets);
+  const stopRealtime = useSpreadsheetStore((state) => state.stopRealtime);
   const syncNow = useSpreadsheetStore((state) => state.syncNow);
   const undo = useSpreadsheetStore((state) => state.undo);
+  const updateRealtimePresence = useSpreadsheetStore(
+    (state) => state.updateRealtimePresence
+  );
   const workbooks = useSpreadsheetStore((state) => state.workbooks);
   const workerResetKey = useSpreadsheetStore((state) => state.workerResetKey);
   const [activeCell, setActiveCell] = useState<CellPosition | null>(null);
@@ -276,6 +314,9 @@ export function useSpreadsheet() {
     {}
   );
   const [now, setNow] = useState(() => Date.now());
+  const [collaborationIdentity, setCollaborationIdentity] =
+    useState<CollaboratorIdentity | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const activeColumnNames = useMemo(
     () => activeSheetColumns.map((column) => column.name),
     [activeSheetColumns]
@@ -288,6 +329,17 @@ export function useSpreadsheet() {
   const workerCellsRef = useRef<Record<string, CellData>>({});
   const clipboardRef = useRef<ClipboardPayload | null>(null);
   const workerColumnNamesRef = useRef<string[]>([]);
+  const requestedAccessRole = sharedAccessRole ?? "editor";
+  const canEdit = requestedAccessRole === "editor";
+  const remoteCollaborationPeers = useMemo(() => {
+    if (!collaborationIdentity) {
+      return collaborationPeers;
+    }
+
+    return collaborationPeers.filter(
+      (peer) => peer.identity.clientId !== collaborationIdentity.clientId
+    );
+  }, [collaborationIdentity, collaborationPeers]);
   const normalizedSelection = useMemo(
     () => normalizeSelectionRange(selection, columnCount, rowCount),
     [selection, columnCount, rowCount]
@@ -330,8 +382,55 @@ export function useSpreadsheet() {
   }, []);
 
   useEffect(() => {
+    if (sharedWorkbookId) {
+      openWorkbook(sharedWorkbookId).catch(() => undefined);
+      return;
+    }
+
     hydrateWorkbookList().catch(() => undefined);
-  }, [hydrateWorkbookList]);
+  }, [hydrateWorkbookList, openWorkbook, sharedWorkbookId]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
+      setCurrentUser(nextUser);
+      buildCollaboratorIdentity(nextUser)
+        .then((identity) => {
+          if (!isCancelled) {
+            setCollaborationIdentity(identity);
+          }
+        })
+        .catch(() => {
+          if (!isCancelled) {
+            setCollaborationIdentity(null);
+          }
+        });
+    });
+
+    return () => {
+      isCancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!(collaborationIdentity && syncServerUrl)) {
+      return;
+    }
+
+    connectRealtime(requestedAccessRole, collaborationIdentity, syncServerUrl);
+
+    return () => {
+      stopRealtime();
+    };
+  }, [
+    collaborationIdentity,
+    connectRealtime,
+    requestedAccessRole,
+    stopRealtime,
+    syncServerUrl,
+  ]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -392,6 +491,10 @@ export function useSpreadsheet() {
 
   const setCellValue = useCallback(
     (row: number, col: number, raw: string) => {
+      if (!canEdit) {
+        return;
+      }
+
       setPersistedCellValue(row, col, raw).catch(() => undefined);
 
       workerRef.current?.postMessage({
@@ -399,7 +502,7 @@ export function useSpreadsheet() {
         payload: { row, col, raw },
       });
     },
-    [setPersistedCellValue]
+    [canEdit, setPersistedCellValue]
   );
 
   const selectCell = useCallback((pos: CellPosition | null) => {
@@ -461,6 +564,10 @@ export function useSpreadsheet() {
   }, [getRawCellValue, getSelectionBounds]);
 
   const cutSelection = useCallback(async (): Promise<boolean> => {
+    if (!canEdit) {
+      return false;
+    }
+
     const bounds = getSelectionBounds();
     if (!bounds) {
       return false;
@@ -480,9 +587,13 @@ export function useSpreadsheet() {
 
     await setCellValuesByKey(nextValues);
     return true;
-  }, [copySelection, getSelectionBounds, setCellValuesByKey]);
+  }, [canEdit, copySelection, getSelectionBounds, setCellValuesByKey]);
 
   const pasteSelection = useCallback(async (): Promise<boolean> => {
+    if (!canEdit) {
+      return false;
+    }
+
     const targetCell =
       activeCell ??
       (normalizedSelection
@@ -520,9 +631,13 @@ export function useSpreadsheet() {
 
     await setCellValuesByKey(nextValues);
     return true;
-  }, [activeCell, normalizedSelection, setCellValuesByKey]);
+  }, [activeCell, canEdit, normalizedSelection, setCellValuesByKey]);
 
   const deleteSelectedRows = useCallback(async (): Promise<boolean> => {
+    if (!canEdit) {
+      return false;
+    }
+
     if (normalizedSelection?.mode === "rows") {
       await deleteRows(
         normalizedSelection.startRow,
@@ -542,9 +657,13 @@ export function useSpreadsheet() {
     await deleteRows(activeCell.row, 1);
     selectCell({ col: activeCell.col, row: Math.max(0, activeCell.row - 1) });
     return true;
-  }, [activeCell, deleteRows, normalizedSelection, selectCell]);
+  }, [activeCell, canEdit, deleteRows, normalizedSelection, selectCell]);
 
   const deleteSelectedColumns = useCallback(async (): Promise<boolean> => {
+    if (!canEdit) {
+      return false;
+    }
+
     if (normalizedSelection?.mode === "columns") {
       await deleteColumns(
         normalizedSelection.startCol,
@@ -564,7 +683,7 @@ export function useSpreadsheet() {
     await deleteColumns(activeCell.col, 1);
     selectCell({ col: Math.max(0, activeCell.col - 1), row: activeCell.row });
     return true;
-  }, [activeCell, deleteColumns, normalizedSelection, selectCell]);
+  }, [activeCell, canEdit, deleteColumns, normalizedSelection, selectCell]);
 
   const findNext = useCallback(
     (query: string, caseSensitive = false): boolean => {
@@ -634,6 +753,10 @@ export function useSpreadsheet() {
       replacement: string,
       caseSensitive = false
     ): Promise<boolean> => {
+      if (!canEdit) {
+        return false;
+      }
+
       if (!(activeCell && query.trim().length > 0)) {
         return false;
       }
@@ -654,7 +777,7 @@ export function useSpreadsheet() {
       });
       return true;
     },
-    [activeCell, findNext, getRawCellValue, setCellValuesByKey]
+    [activeCell, canEdit, findNext, getRawCellValue, setCellValuesByKey]
   );
 
   const replaceAll = useCallback(
@@ -663,6 +786,10 @@ export function useSpreadsheet() {
       replacement: string,
       caseSensitive = false
     ): Promise<number> => {
+      if (!canEdit) {
+        return 0;
+      }
+
       if (query.trim().length === 0) {
         return 0;
       }
@@ -699,7 +826,7 @@ export function useSpreadsheet() {
       await setCellValuesByKey(nextValues);
       return replacementCount;
     },
-    [activeSheetCells, setCellValuesByKey]
+    [activeSheetCells, canEdit, setCellValuesByKey]
   );
 
   const setSelectionRange = useCallback(
@@ -731,10 +858,17 @@ export function useSpreadsheet() {
     [columnCount, rowCount]
   );
 
-  const startEditing = useCallback((pos: CellPosition) => {
-    setActiveCell(pos);
-    setEditingCell(pos);
-  }, []);
+  const startEditing = useCallback(
+    (pos: CellPosition) => {
+      if (!canEdit) {
+        return;
+      }
+
+      setActiveCell(pos);
+      setEditingCell(pos);
+    },
+    [canEdit]
+  );
 
   const stopEditing = useCallback(() => {
     setEditingCell(null);
@@ -783,6 +917,10 @@ export function useSpreadsheet() {
     },
     [activeCell, rowCount, columnCount, selectCell]
   );
+
+  useEffect(() => {
+    updateRealtimePresence(activeCell);
+  }, [activeCell, updateRealtimePresence]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -838,9 +976,21 @@ export function useSpreadsheet() {
     activeSheetColumns,
     activeSheetId,
     activeWorkbook,
+    collaborationAccessRole: collaborationAccessRole ?? requestedAccessRole,
+    collaborationIdentity,
+    collaborationPeers: remoteCollaborationPeers,
+    collaborationStatus,
+    currentUser,
     canRedo,
     canUndo,
-    createSheet,
+    canEdit,
+    createSheet: async () => {
+      if (!canEdit) {
+        return;
+      }
+
+      await createSheet();
+    },
     createWorkbook,
     canManualSync,
     copySelection,
@@ -854,13 +1004,28 @@ export function useSpreadsheet() {
     columnCount,
     expandRowCount,
     hydrationState,
+    lastSyncErrorMessage,
     lastSyncedLabel,
     findNext,
     openWorkbook,
     pasteSelection,
     redo,
-    renameColumn,
-    renameWorkbook,
+    renameColumn: (columnIndex: number, columnName: string) => {
+      if (!canEdit) {
+        return Promise.resolve(false);
+      }
+
+      return renameColumn(columnIndex, columnName);
+    },
+    renameWorkbook: async (name: string) => {
+      if (!canEdit) {
+        return;
+      }
+
+      await renameWorkbook(name);
+    },
+    remoteSyncStatus,
+    remoteVersion,
     replaceAll,
     replaceCurrent,
     rowCount,
@@ -873,7 +1038,13 @@ export function useSpreadsheet() {
     setCellValue,
     selectCell,
     setActiveSheet,
-    setWorkbookFavorite,
+    setWorkbookFavorite: async (isFavorite: boolean) => {
+      if (!canEdit) {
+        return;
+      }
+
+      await setWorkbookFavorite(isFavorite);
+    },
     showAllRows,
     startEditing,
     stopEditing,
