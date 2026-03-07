@@ -11,7 +11,6 @@ import { useSpreadsheet } from "@/web/hooks/use-spreadsheet";
 
 export default function Home() {
   const {
-    cells,
     activeCell,
     editingCell,
     columnCount,
@@ -65,7 +64,6 @@ export default function Home() {
       />
       <SpreadsheetGrid
         activeCell={activeCell}
-        cells={cells}
         columnCount={columnCount}
         editingCell={editingCell}
         getCellData={getCellData}

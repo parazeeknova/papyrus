@@ -6,6 +6,7 @@ import {
   SquaresFourIcon,
   StarIcon,
 } from "@phosphor-icons/react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { Button } from "@/web/components/ui/button";
 import {
@@ -31,6 +32,33 @@ interface SpreadsheetMenuBarProps {
   isGalleryOpen: boolean;
   onToggleGallery: () => void;
 }
+
+function AccountButtonFallback() {
+  return (
+    <Button
+      aria-label="Open Google login dialog"
+      className="relative size-8 rounded-full"
+      size="icon"
+      variant="ghost"
+    >
+      <div className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground ring-1 ring-border/60">
+        U
+      </div>
+      <span className="absolute right-0.5 bottom-0.5 size-2 rounded-full bg-border ring-2 ring-background" />
+    </Button>
+  );
+}
+
+const GoogleAuthDialog = dynamic(
+  async () =>
+    import("@/web/components/auth/google-auth-dialog").then(
+      (mod) => mod.GoogleAuthDialog
+    ),
+  {
+    loading: AccountButtonFallback,
+    ssr: false,
+  }
+);
 
 export function SpreadsheetMenuBar({
   isGalleryOpen,
@@ -118,14 +146,7 @@ export function SpreadsheetMenuBar({
             <TooltipContent side="bottom">Share this document</TooltipContent>
           </Tooltip>
 
-          <Button
-            aria-label="User menu"
-            className="size-8 rounded-full bg-chart-2 font-semibold text-white text-xs"
-            size="icon"
-            variant="ghost"
-          >
-            U
-          </Button>
+          <GoogleAuthDialog />
         </div>
       </div>
 

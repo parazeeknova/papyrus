@@ -1,7 +1,7 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { memo, useCallback, useEffect, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   type CellData,
   type CellPosition,
@@ -14,6 +14,7 @@ const ROW_HEADER_WIDTH = 46;
 const DEFAULT_COL_WIDTH = 100;
 const DEFAULT_ROW_HEIGHT = 20;
 const COL_HEADER_HEIGHT = 24;
+const ROW_OVERSCAN = 30;
 
 interface CellComponentProps {
   col: number;
@@ -108,7 +109,6 @@ const CellComponent = memo(function CellComponent({
 
 interface SpreadsheetGridProps {
   activeCell: CellPosition | null;
-  cells: Record<string, CellData>;
   columnCount: number;
   editingCell: CellPosition | null;
   getCellData: (row: number, col: number) => CellData;
@@ -135,6 +135,10 @@ export function SpreadsheetGrid({
   navigateFromActive,
 }: SpreadsheetGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const columnIndexes = useMemo(
+    () => Array.from({ length: columnCount }, (_, index) => index),
+    [columnCount]
+  );
 
   const handleCellKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -167,29 +171,21 @@ export function SpreadsheetGrid({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => DEFAULT_ROW_HEIGHT,
-    overscan: 10,
-  });
-
-  const colVirtualizer = useVirtualizer({
-    horizontal: true,
-    count: columnCount,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => DEFAULT_COL_WIDTH,
-    overscan: 5,
+    overscan: ROW_OVERSCAN,
+    scrollPaddingStart: COL_HEADER_HEIGHT,
   });
 
   const virtualRows = rowVirtualizer.getVirtualItems();
-  const virtualCols = colVirtualizer.getVirtualItems();
-
-  const totalWidth = colVirtualizer.getTotalSize() + ROW_HEADER_WIDTH;
-  const totalHeight = rowVirtualizer.getTotalSize() + COL_HEADER_HEIGHT;
+  const totalColWidth = columnCount * DEFAULT_COL_WIDTH;
+  const totalGridWidth = ROW_HEADER_WIDTH + totalColWidth;
+  const totalRowHeight = rowVirtualizer.getTotalSize();
+  const totalGridHeight = COL_HEADER_HEIGHT + totalRowHeight;
 
   useEffect(() => {
     if (activeCell) {
       rowVirtualizer.scrollToIndex(activeCell.row, { align: "auto" });
-      colVirtualizer.scrollToIndex(activeCell.col, { align: "auto" });
     }
-  }, [activeCell, rowVirtualizer, colVirtualizer]);
+  }, [activeCell, rowVirtualizer]);
 
   return (
     <div
@@ -199,111 +195,88 @@ export function SpreadsheetGrid({
     >
       <div
         className="relative"
-        style={{
-          width: totalWidth,
-          height: totalHeight,
-        }}
+        style={{ width: totalGridWidth, height: totalGridHeight }}
       >
-        {/* Column header row — sticky to the top, scrolls horizontally with content */}
         <div
-          className="sticky top-0 z-20"
-          style={{ height: COL_HEADER_HEIGHT }}
+          className="sticky top-0 z-30 flex"
+          style={{ width: totalGridWidth, height: COL_HEADER_HEIGHT }}
         >
-          {/* Corner cell — sticky to both top (via parent) and left */}
           <div
-            className="sticky left-0 z-30 border-border border-r border-b bg-muted"
+            className="sticky left-0 z-40 border-border border-r border-b bg-muted"
             style={{ width: ROW_HEADER_WIDTH, height: COL_HEADER_HEIGHT }}
           />
-          {/* Column letter headers — absolutely positioned within the sticky row */}
-          {virtualCols.map((vc) => (
+          {columnIndexes.map((col) => (
             <div
               className={cn(
-                "absolute top-0 flex select-none items-center justify-center border-border border-r border-b bg-muted font-medium text-muted-foreground text-xs",
-                activeCell?.col === vc.index &&
+                "flex shrink-0 select-none items-center justify-center border-border border-r border-b bg-muted font-medium text-muted-foreground text-xs",
+                activeCell?.col === col &&
                   "bg-primary/10 font-semibold text-primary"
               )}
-              key={`col-${vc.index}`}
-              style={{
-                left: vc.start + ROW_HEADER_WIDTH,
-                width: vc.size,
-                height: COL_HEADER_HEIGHT,
-              }}
+              key={`col-${col}`}
+              style={{ width: DEFAULT_COL_WIDTH, height: COL_HEADER_HEIGHT }}
             >
-              {colToLetter(vc.index)}
+              {colToLetter(col)}
             </div>
           ))}
         </div>
 
-        {/*
-         * Row header left panel — a single sticky element that scrolls vertically
-         * with the content and sticks to the left during horizontal scroll.
-         * Row number divs inside are plain absolute — no per-row sticky, no blink.
-         */}
-        <div
-          className="sticky left-0 z-10"
-          style={{
-            width: ROW_HEADER_WIDTH,
-            height: totalHeight - COL_HEADER_HEIGHT,
-          }}
-        >
-          {virtualRows.map((vr) => (
+        {virtualRows.map((vr) => {
+          const row = vr.index;
+
+          return (
             <div
-              className={cn(
-                "absolute flex select-none items-center justify-center border-border border-r border-b bg-muted text-muted-foreground text-xs",
-                activeCell?.row === vr.index &&
-                  "bg-primary/10 font-semibold text-primary"
-              )}
-              key={`row-${vr.index}`}
+              className="absolute left-0 flex"
+              key={`row-${row}`}
               style={{
-                top: vr.start,
-                width: ROW_HEADER_WIDTH,
+                top: COL_HEADER_HEIGHT + vr.start,
+                width: totalGridWidth,
                 height: vr.size,
               }}
             >
-              {vr.index + 1}
-            </div>
-          ))}
-        </div>
-
-        {/* Cells — absolutely positioned in the inner div */}
-        {virtualRows.map((vr) =>
-          virtualCols.map((vc) => {
-            const row = vr.index;
-            const col = vc.index;
-            const id = cellId(row, col);
-            const data = getCellData(row, col);
-            const isActive = activeCell?.row === row && activeCell?.col === col;
-            const isEditing =
-              editingCell?.row === row && editingCell?.col === col;
-
-            return (
               <div
-                className="absolute border-border border-r border-b p-0"
-                data-cell={id}
-                key={id}
-                style={{
-                  top: vr.start + COL_HEADER_HEIGHT,
-                  left: vc.start + ROW_HEADER_WIDTH,
-                  width: vc.size,
-                  height: vr.size,
-                }}
+                className={cn(
+                  "sticky left-0 z-20 flex shrink-0 select-none items-center justify-center border-border border-r border-b bg-muted text-muted-foreground text-xs",
+                  activeCell?.row === row &&
+                    "bg-primary/10 font-semibold text-primary"
+                )}
+                style={{ width: ROW_HEADER_WIDTH, height: vr.size }}
               >
-                <CellComponent
-                  col={col}
-                  data={data}
-                  isActive={isActive}
-                  isEditing={isEditing}
-                  onCommit={stopEditing}
-                  onDoubleClick={startEditing}
-                  onKeyDown={handleCellKeyDown}
-                  onSelect={selectCell}
-                  onValueChange={setCellValue}
-                  row={row}
-                />
+                {row + 1}
               </div>
-            );
-          })
-        )}
+
+              {columnIndexes.map((col) => {
+                const id = cellId(row, col);
+                const data = getCellData(row, col);
+                const isActive =
+                  activeCell?.row === row && activeCell?.col === col;
+                const isEditing =
+                  editingCell?.row === row && editingCell?.col === col;
+
+                return (
+                  <div
+                    className="relative shrink-0 border-border border-r border-b bg-background p-0"
+                    data-cell={id}
+                    key={id}
+                    style={{ width: DEFAULT_COL_WIDTH, height: vr.size }}
+                  >
+                    <CellComponent
+                      col={col}
+                      data={data}
+                      isActive={isActive}
+                      isEditing={isEditing}
+                      onCommit={stopEditing}
+                      onDoubleClick={startEditing}
+                      onKeyDown={handleCellKeyDown}
+                      onSelect={selectCell}
+                      onValueChange={setCellValue}
+                      row={row}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
