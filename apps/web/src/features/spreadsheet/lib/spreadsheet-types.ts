@@ -1,3 +1,5 @@
+export type SelectionMode = "cells" | "columns" | "rows";
+
 export interface CellData {
   computed: string;
   raw: string;
@@ -10,6 +12,7 @@ export interface CellPosition {
 
 export interface SelectionRange {
   end: CellPosition;
+  mode: SelectionMode;
   start: CellPosition;
 }
 

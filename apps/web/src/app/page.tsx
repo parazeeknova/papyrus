@@ -17,6 +17,8 @@ export default function Home() {
     columnCount,
     expandRowCount,
     rowCount,
+    selection,
+    setSelectionRange,
     showAllRows,
     getCellData,
     setCellValue,
@@ -75,7 +77,9 @@ export default function Home() {
         navigateFromActive={navigateFromActive}
         rowCount={rowCount}
         selectCell={selectCell}
+        selection={selection}
         setCellValue={setCellValue}
+        setSelectionRange={setSelectionRange}
         showAllRows={showAllRows}
         startEditing={startEditing}
         stopEditing={stopEditing}

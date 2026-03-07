@@ -5,6 +5,7 @@ import { cellId } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 import type {
   CellData,
   CellPosition,
+  SelectionMode,
   SelectionRange,
   SpreadsheetPatch,
   SpreadsheetWorkerResponse,
@@ -20,6 +21,7 @@ export {
 export type {
   CellData,
   CellPosition,
+  SelectionMode,
   SelectionRange,
   SpreadsheetState,
 } from "@/web/features/spreadsheet/lib/spreadsheet-types";
@@ -117,9 +119,38 @@ export function useSpreadsheet() {
     });
   }, []);
 
+  const setSelectionRange = useCallback(
+    (start: CellPosition, end: CellPosition, mode: SelectionMode = "cells") => {
+      const nextStart = {
+        row: Math.max(0, Math.min(rowCount - 1, start.row)),
+        col: Math.max(0, Math.min(columnCount - 1, start.col)),
+      };
+      const nextEnd = {
+        row: Math.max(0, Math.min(rowCount - 1, end.row)),
+        col: Math.max(0, Math.min(columnCount - 1, end.col)),
+      };
+
+      setSelection({ start: nextStart, end: nextEnd, mode });
+      setEditingCell(null);
+
+      if (mode === "rows") {
+        setActiveCell({ row: nextStart.row, col: 0 });
+        return;
+      }
+
+      if (mode === "columns") {
+        setActiveCell({ row: 0, col: nextStart.col });
+        return;
+      }
+
+      setActiveCell(nextStart);
+    },
+    [columnCount, rowCount]
+  );
+
   const selectCell = useCallback((pos: CellPosition | null) => {
     setActiveCell(pos);
-    setSelection(pos ? { start: pos, end: pos } : null);
+    setSelection(pos ? { start: pos, end: pos, mode: "cells" } : null);
     setEditingCell(null);
   }, []);
 
@@ -180,6 +211,7 @@ export function useSpreadsheet() {
     columnCount,
     expandRowCount,
     rowCount,
+    setSelectionRange,
     totalRowCount,
     getCellData,
     setCellValue,

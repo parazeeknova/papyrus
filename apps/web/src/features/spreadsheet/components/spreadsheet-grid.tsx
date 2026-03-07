@@ -8,6 +8,8 @@ import {
   type CellPosition,
   cellId,
   colToLetter,
+  type SelectionMode,
+  type SelectionRange,
 } from "@/web/features/spreadsheet/hooks/use-spreadsheet";
 import { cn } from "@/web/lib/utils";
 
@@ -24,10 +26,15 @@ interface CellComponentProps {
   data: CellData;
   isActive: boolean;
   isEditing: boolean;
+  isSelected: boolean;
   onCommit: () => void;
   onDoubleClick: (pos: CellPosition) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
-  onSelect: (pos: CellPosition) => void;
+  onSelect: (
+    pos: CellPosition,
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => void;
+  onSelectHover: (pos: CellPosition) => void;
   onValueChange: (row: number, col: number, value: string) => void;
   row: number;
 }
@@ -38,7 +45,9 @@ const CellComponent = memo(function CellComponent({
   data,
   isActive,
   isEditing,
+  isSelected,
   onSelect,
+  onSelectHover,
   onDoubleClick,
   onValueChange,
   onCommit,
@@ -83,6 +92,7 @@ const CellComponent = memo(function CellComponent({
     <button
       className={cn(
         "absolute inset-0 cursor-cell overflow-hidden text-ellipsis whitespace-nowrap bg-background px-1.5 text-left text-xs transition-none",
+        isSelected && "bg-primary/5",
         isActive &&
           "z-5 border-2 border-primary bg-primary/5 shadow-[0_0_0_1px] shadow-primary/30"
       )}
@@ -100,7 +110,10 @@ const CellComponent = memo(function CellComponent({
       }}
       onMouseDown={(e) => {
         e.preventDefault();
-        onSelect({ row, col });
+        onSelect({ row, col }, e);
+      }}
+      onMouseEnter={() => {
+        onSelectHover({ row, col });
       }}
       tabIndex={isActive ? 0 : -1}
       type="button"
@@ -122,7 +135,13 @@ interface SpreadsheetGridProps {
   ) => CellPosition | null;
   rowCount: number;
   selectCell: (pos: CellPosition | null) => void;
+  selection: SelectionRange | null;
   setCellValue: (row: number, col: number, value: string) => void;
+  setSelectionRange: (
+    start: CellPosition,
+    end: CellPosition,
+    mode?: SelectionMode
+  ) => void;
   showAllRows: () => void;
   startEditing: (pos: CellPosition) => void;
   stopEditing: () => void;
@@ -136,14 +155,59 @@ export function SpreadsheetGrid({
   expandRowCount,
   rowCount,
   getCellData,
+  selection,
   setCellValue,
   selectCell,
+  setSelectionRange,
   showAllRows,
   startEditing,
   stopEditing,
   navigateFromActive,
 }: SpreadsheetGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const selectionDragRef = useRef<{
+    mode: SelectionMode;
+    start: CellPosition;
+  } | null>(null);
+
+  const normalizedSelection = useMemo(() => {
+    if (!selection) {
+      return null;
+    }
+
+    const minRow = Math.min(selection.start.row, selection.end.row);
+    const maxRow = Math.max(selection.start.row, selection.end.row);
+    const minCol = Math.min(selection.start.col, selection.end.col);
+    const maxCol = Math.max(selection.start.col, selection.end.col);
+
+    if (selection.mode === "rows") {
+      return {
+        mode: selection.mode,
+        startRow: minRow,
+        endRow: maxRow,
+        startCol: 0,
+        endCol: columnCount - 1,
+      };
+    }
+
+    if (selection.mode === "columns") {
+      return {
+        mode: selection.mode,
+        startRow: 0,
+        endRow: rowCount - 1,
+        startCol: minCol,
+        endCol: maxCol,
+      };
+    }
+
+    return {
+      mode: selection.mode,
+      startRow: minRow,
+      endRow: maxRow,
+      startCol: minCol,
+      endCol: maxCol,
+    };
+  }, [selection, columnCount, rowCount]);
 
   const handleCellKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -219,6 +283,139 @@ export function SpreadsheetGrid({
     }
   }, [activeCell, rowVirtualizer, colVirtualizer]);
 
+  useEffect(() => {
+    const handleMouseUp = () => {
+      selectionDragRef.current = null;
+    };
+
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
+  const isCellSelected = useCallback(
+    (row: number, col: number) => {
+      if (!normalizedSelection) {
+        return false;
+      }
+
+      return (
+        row >= normalizedSelection.startRow &&
+        row <= normalizedSelection.endRow &&
+        col >= normalizedSelection.startCol &&
+        col <= normalizedSelection.endCol
+      );
+    },
+    [normalizedSelection]
+  );
+
+  const isRowHeaderSelected = useCallback(
+    (row: number) => {
+      if (!normalizedSelection) {
+        return false;
+      }
+
+      return (
+        row >= normalizedSelection.startRow && row <= normalizedSelection.endRow
+      );
+    },
+    [normalizedSelection]
+  );
+
+  const isColumnHeaderSelected = useCallback(
+    (col: number) => {
+      if (!normalizedSelection) {
+        return false;
+      }
+
+      return (
+        col >= normalizedSelection.startCol && col <= normalizedSelection.endCol
+      );
+    },
+    [normalizedSelection]
+  );
+
+  const beginSelectionDrag = useCallback(
+    (start: CellPosition, mode: SelectionMode) => {
+      selectionDragRef.current = { start, mode };
+      setSelectionRange(start, start, mode);
+    },
+    [setSelectionRange]
+  );
+
+  const updateDraggedSelection = useCallback(
+    (end: CellPosition) => {
+      const dragState = selectionDragRef.current;
+      if (!dragState) {
+        return;
+      }
+
+      setSelectionRange(dragState.start, end, dragState.mode);
+    },
+    [setSelectionRange]
+  );
+
+  const handleCellSelect = useCallback(
+    (pos: CellPosition, event: React.MouseEvent<HTMLButtonElement>) => {
+      if (event.shiftKey && activeCell) {
+        selectionDragRef.current = { start: activeCell, mode: "cells" };
+        setSelectionRange(activeCell, pos, "cells");
+        return;
+      }
+
+      selectionDragRef.current = { start: pos, mode: "cells" };
+      selectCell(pos);
+    },
+    [activeCell, selectCell, setSelectionRange]
+  );
+
+  const visibleSelection = useMemo(() => {
+    if (!(normalizedSelection && firstVirtualRow && firstVirtualCol)) {
+      return null;
+    }
+
+    const visibleSelectionRows = virtualRows.filter(
+      (row) =>
+        row.index >= normalizedSelection.startRow &&
+        row.index <= normalizedSelection.endRow
+    );
+    const visibleSelectionCols = virtualCols.filter(
+      (col) =>
+        col.index >= normalizedSelection.startCol &&
+        col.index <= normalizedSelection.endCol
+    );
+
+    if (
+      visibleSelectionRows.length === 0 ||
+      visibleSelectionCols.length === 0
+    ) {
+      return null;
+    }
+
+    const startRow = visibleSelectionRows[0];
+    const endRow = visibleSelectionRows.at(-1);
+    const startCol = visibleSelectionCols[0];
+    const endCol = visibleSelectionCols.at(-1);
+
+    if (!(startRow && endRow && startCol && endCol)) {
+      return null;
+    }
+
+    return {
+      top: COL_HEADER_HEIGHT + startRow.start,
+      left: ROW_HEADER_WIDTH + startCol.start,
+      width: endCol.start + endCol.size - startCol.start,
+      height: endRow.start + endRow.size - startRow.start,
+    };
+  }, [
+    normalizedSelection,
+    firstVirtualRow,
+    firstVirtualCol,
+    virtualRows,
+    virtualCols,
+  ]);
+
   return (
     <div
       className="flex-1 overflow-auto bg-background"
@@ -248,21 +445,34 @@ export function SpreadsheetGrid({
               }}
             >
               {virtualCols.map((vc) => (
-                <div
+                <button
                   className={cn(
                     "absolute top-0 flex select-none items-center justify-center border-border border-r border-b bg-muted font-medium text-muted-foreground text-xs",
+                    isColumnHeaderSelected(vc.index) &&
+                      "z-10 bg-primary/12 font-semibold text-primary ring-1 ring-primary/30 ring-inset",
                     activeCell?.col === vc.index &&
-                      "bg-primary/10 font-semibold text-primary"
+                      "z-20 bg-primary/18 text-primary ring-1 ring-primary/50 ring-inset"
                   )}
                   key={`col-${vc.index}`}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    beginSelectionDrag({ row: 0, col: vc.index }, "columns");
+                  }}
+                  onMouseEnter={() => {
+                    updateDraggedSelection({
+                      row: rowCount - 1,
+                      col: vc.index,
+                    });
+                  }}
                   style={{
                     left: vc.start - colOffset,
                     width: vc.size,
                     height: COL_HEADER_HEIGHT,
                   }}
+                  type="button"
                 >
                   {colToLetter(vc.index)}
-                </div>
+                </button>
               ))}
             </div>
           ) : null}
@@ -281,16 +491,26 @@ export function SpreadsheetGrid({
                 height: vr.size,
               }}
             >
-              <div
+              <button
                 className={cn(
                   "sticky left-0 z-20 flex select-none items-center justify-center border-border border-r border-b bg-muted text-muted-foreground text-xs",
+                  isRowHeaderSelected(row) &&
+                    "z-30 bg-primary/12 font-semibold text-primary ring-1 ring-primary/30 ring-inset",
                   activeCell?.row === row &&
-                    "bg-primary/10 font-semibold text-primary"
+                    "z-40 bg-primary/18 text-primary ring-1 ring-primary/50 ring-inset"
                 )}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  beginSelectionDrag({ row, col: 0 }, "rows");
+                }}
+                onMouseEnter={() => {
+                  updateDraggedSelection({ row, col: columnCount - 1 });
+                }}
                 style={{ width: ROW_HEADER_WIDTH, height: vr.size }}
+                type="button"
               >
                 {row + 1}
-              </div>
+              </button>
 
               {firstVirtualCol ? (
                 <div
@@ -309,6 +529,7 @@ export function SpreadsheetGrid({
                       activeCell?.row === row && activeCell?.col === col;
                     const isEditing =
                       editingCell?.row === row && editingCell?.col === col;
+                    const isSelected = isCellSelected(row, col);
 
                     return (
                       <div
@@ -327,10 +548,12 @@ export function SpreadsheetGrid({
                           data={data}
                           isActive={isActive}
                           isEditing={isEditing}
+                          isSelected={isSelected}
                           onCommit={stopEditing}
                           onDoubleClick={startEditing}
                           onKeyDown={handleCellKeyDown}
-                          onSelect={selectCell}
+                          onSelect={handleCellSelect}
+                          onSelectHover={updateDraggedSelection}
                           onValueChange={setCellValue}
                           row={row}
                         />
@@ -354,6 +577,21 @@ export function SpreadsheetGrid({
               height: visibleRowHeight,
             }}
           />
+        ) : null}
+
+        {visibleSelection ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute border-2 border-primary"
+            style={{
+              top: visibleSelection.top,
+              left: visibleSelection.left,
+              width: visibleSelection.width,
+              height: visibleSelection.height,
+            }}
+          >
+            <div className="absolute right-0 bottom-0 size-2 translate-x-1/2 translate-y-1/2 rounded-full bg-primary shadow-[0_0_0_1px] shadow-background" />
+          </div>
         ) : null}
 
         {canExpandRows ? (
