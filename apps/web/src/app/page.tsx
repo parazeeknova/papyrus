@@ -17,6 +17,7 @@ export default function Home() {
     canExpandRows,
     createSheet,
     createWorkbook,
+    deleteWorkbook,
     editingCell,
     columnCount,
     expandRowCount,
@@ -68,6 +69,9 @@ export default function Home() {
         isGalleryOpen={isGalleryOpen}
         onCreateWorkbook={() => {
           createWorkbook().catch(() => undefined);
+        }}
+        onDeleteWorkbook={() => {
+          deleteWorkbook().catch(() => undefined);
         }}
         onOpenWorkbook={(workbookId, workbookName) => {
           openWorkbook(workbookId, workbookName).catch(() => undefined);

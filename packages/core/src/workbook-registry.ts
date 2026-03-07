@@ -88,3 +88,19 @@ export function upsertWorkbookRegistryEntry(
     });
   });
 }
+
+export function deleteWorkbookRegistryEntry(workbookId: string): Promise<void> {
+  return withStore("readwrite", (store) => {
+    return new Promise<void>((resolve, reject) => {
+      const request = store.delete(workbookId);
+
+      request.onsuccess = () => {
+        resolve();
+      };
+
+      request.onerror = () => {
+        reject(request.error);
+      };
+    });
+  });
+}

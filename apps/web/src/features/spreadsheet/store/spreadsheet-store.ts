@@ -14,9 +14,11 @@ import {
 } from "@papyrus/core/workbook-doc";
 import {
   attachWorkbookPersistence,
+  deleteWorkbookPersistence,
   waitForWorkbookPersistence,
 } from "@papyrus/core/workbook-persistence";
 import {
+  deleteWorkbookRegistryEntry,
   listWorkbookRegistryEntries,
   upsertWorkbookRegistryEntry,
 } from "@papyrus/core/workbook-registry";
@@ -38,6 +40,7 @@ interface SpreadsheetStoreState {
   activeWorkbook: WorkbookMeta | null;
   createSheet: () => Promise<void>;
   createWorkbook: () => Promise<void>;
+  deleteWorkbook: () => Promise<void>;
   hydrateWorkbookList: () => Promise<void>;
   hydrationState: HydrationState;
   openWorkbook: (workbookId: string, name?: string) => Promise<void>;
@@ -176,6 +179,33 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     createWorkbook: async () => {
       const nextWorkbookId = createWorkbookId();
       await activateWorkbook(nextWorkbookId);
+    },
+    deleteWorkbook: async () => {
+      const workbookId = get().activeWorkbook?.id;
+      if (!workbookId) {
+        return;
+      }
+
+      set({ hydrationState: "loading", saveState: "saving" });
+
+      try {
+        await destroyActiveWorkbookSession();
+        await deleteWorkbookPersistence(workbookId, new Doc());
+        await deleteWorkbookRegistryEntry(workbookId);
+
+        const workbooks = sortWorkbooks(await listWorkbookRegistryEntries());
+        set({ workbooks });
+
+        const [nextWorkbook] = workbooks;
+        if (nextWorkbook) {
+          await activateWorkbook(nextWorkbook.id, nextWorkbook.name);
+          return;
+        }
+
+        await get().createWorkbook();
+      } catch {
+        set({ hydrationState: "error", saveState: "error" });
+      }
     },
     hydrationState: "idle",
     hydrateWorkbookList: async () => {

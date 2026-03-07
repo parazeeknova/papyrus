@@ -61,6 +61,7 @@ export function useSpreadsheet() {
   const activeWorkbook = useSpreadsheetStore((state) => state.activeWorkbook);
   const createSheet = useSpreadsheetStore((state) => state.createSheet);
   const createWorkbook = useSpreadsheetStore((state) => state.createWorkbook);
+  const deleteWorkbook = useSpreadsheetStore((state) => state.deleteWorkbook);
   const hydrationState = useSpreadsheetStore((state) => state.hydrationState);
   const hydrateWorkbookList = useSpreadsheetStore(
     (state) => state.hydrateWorkbookList
@@ -267,6 +268,7 @@ export function useSpreadsheet() {
     activeWorkbook,
     createSheet,
     createWorkbook,
+    deleteWorkbook,
     editingCell,
     selection,
     canExpandRows,

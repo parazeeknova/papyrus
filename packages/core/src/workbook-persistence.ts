@@ -31,3 +31,17 @@ export function waitForWorkbookPersistence(
     persistence.on("synced", handleSynced);
   });
 }
+
+export async function deleteWorkbookPersistence(
+  workbookId: string,
+  doc: Doc
+): Promise<void> {
+  const persistence = attachWorkbookPersistence(workbookId, doc);
+
+  try {
+    await waitForWorkbookPersistence(persistence);
+    await persistence.clearData();
+  } finally {
+    doc.destroy();
+  }
+}
