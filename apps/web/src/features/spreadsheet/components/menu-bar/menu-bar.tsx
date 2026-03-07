@@ -2,6 +2,7 @@
 
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import {
+  ArrowClockwiseIcon,
   CloudCheckIcon,
   SquaresFourIcon,
   StarIcon,
@@ -38,6 +39,7 @@ import { InsertMenu } from "@/web/features/spreadsheet/components/menu-bar/inser
 import { ViewMenu } from "@/web/features/spreadsheet/components/menu-bar/view-menu";
 
 interface SpreadsheetMenuBarProps {
+  canManualSync: boolean;
   canRedo: boolean;
   canUndo: boolean;
   isFavorite: boolean;
@@ -48,6 +50,7 @@ interface SpreadsheetMenuBarProps {
   onDeleteColumn: () => void;
   onDeleteRow: () => void;
   onDeleteWorkbook: () => void;
+  onManualSync: () => void;
   onOpenFindReplace: () => void;
   onOpenWorkbook: (workbookId: string, workbookName: string) => void;
   onPaste: () => void;
@@ -90,6 +93,7 @@ const GoogleAuthDialog = dynamic(
 );
 
 export function SpreadsheetMenuBar({
+  canManualSync,
   canRedo,
   canUndo,
   isGalleryOpen,
@@ -100,6 +104,7 @@ export function SpreadsheetMenuBar({
   onDeleteColumn,
   onDeleteRow,
   onDeleteWorkbook,
+  onManualSync,
   onOpenFindReplace,
   onOpenWorkbook,
   onPaste,
@@ -207,6 +212,26 @@ export function SpreadsheetMenuBar({
           </div>
 
           <div className="flex items-center gap-1 text-muted-foreground text-xs">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  className="size-7"
+                  disabled={!canManualSync}
+                  onClick={onManualSync}
+                  size="icon-sm"
+                  variant="ghost"
+                >
+                  <ArrowClockwiseIcon className="size-3.5" weight="bold" />
+                  <span className="sr-only">Manual sync</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {canManualSync
+                  ? "Sync workbooks to cloud"
+                  : "Manual sync available every 5 seconds"}
+              </TooltipContent>
+            </Tooltip>
+
             <CloudCheckIcon className="size-3.5" weight="fill" />
             <span>
               {saveState === "saving"

@@ -66,7 +66,7 @@ export function FindReplaceDialog({
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent
-        className="dark !top-20 !right-5 !left-auto !translate-x-0 !translate-y-0 w-80 max-w-[calc(100%-2rem)] gap-0 overflow-hidden bg-popover p-0 text-popover-foreground shadow-md sm:max-w-none"
+        className="dark top-20! right-5! left-auto! w-80 max-w-[calc(100%-2rem)] translate-x-0! translate-y-0! gap-0 overflow-hidden bg-popover p-0 text-popover-foreground shadow-md sm:max-w-none"
         overlayClassName="bg-transparent supports-backdrop-filter:backdrop-blur-none"
         showCloseButton={false}
       >

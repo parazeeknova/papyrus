@@ -210,6 +210,12 @@ export function useSpreadsheet() {
   const deleteRows = useSpreadsheetStore((state) => state.deleteRows);
   const deleteWorkbook = useSpreadsheetStore((state) => state.deleteWorkbook);
   const hydrationState = useSpreadsheetStore((state) => state.hydrationState);
+  const isRemoteSyncAuthenticated = useSpreadsheetStore(
+    (state) => state.isRemoteSyncAuthenticated
+  );
+  const manualSyncCooldownUntil = useSpreadsheetStore(
+    (state) => state.manualSyncCooldownUntil
+  );
   const hydrateWorkbookList = useSpreadsheetStore(
     (state) => state.hydrateWorkbookList
   );
@@ -229,6 +235,7 @@ export function useSpreadsheet() {
     (state) => state.setWorkbookFavorite
   );
   const sheets = useSpreadsheetStore((state) => state.sheets);
+  const syncNow = useSpreadsheetStore((state) => state.syncNow);
   const undo = useSpreadsheetStore((state) => state.undo);
   const workbooks = useSpreadsheetStore((state) => state.workbooks);
   const workerResetKey = useSpreadsheetStore((state) => state.workerResetKey);
@@ -238,6 +245,7 @@ export function useSpreadsheet() {
   const [computedCells, setComputedCells] = useState<Record<string, CellData>>(
     {}
   );
+  const [now, setNow] = useState(() => Date.now());
   const activeColumnNames = useMemo(
     () => activeSheetColumns.map((column) => column.name),
     [activeSheetColumns]
@@ -294,6 +302,16 @@ export function useSpreadsheet() {
   useEffect(() => {
     hydrateWorkbookList().catch(() => undefined);
   }, [hydrateWorkbookList]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     workerCellsRef.current = activeSheetCellsForWorker;
@@ -701,6 +719,8 @@ export function useSpreadsheet() {
   }, [totalRowCount]);
 
   const canExpandRows = rowCount < totalRowCount;
+  const canManualSync =
+    isRemoteSyncAuthenticated && now >= manualSyncCooldownUntil;
 
   const navigateFromActive = useCallback(
     (direction: "up" | "down" | "left" | "right"): CellPosition | null => {
@@ -789,6 +809,7 @@ export function useSpreadsheet() {
     canUndo,
     createSheet,
     createWorkbook,
+    canManualSync,
     copySelection,
     cutSelection,
     deleteSelectedColumns,
@@ -811,6 +832,7 @@ export function useSpreadsheet() {
     rowCount,
     saveState,
     sheets,
+    syncNow,
     setSelectionRange,
     totalRowCount,
     getCellData,

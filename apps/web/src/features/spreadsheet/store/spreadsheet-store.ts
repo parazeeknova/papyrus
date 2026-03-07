@@ -74,6 +74,8 @@ interface SpreadsheetStoreState {
   deleteWorkbook: () => Promise<void>;
   hydrateWorkbookList: () => Promise<void>;
   hydrationState: HydrationState;
+  isRemoteSyncAuthenticated: boolean;
+  manualSyncCooldownUntil: number;
   openWorkbook: (workbookId: string, name?: string) => Promise<void>;
   redo: () => Promise<void>;
   renameColumn: (columnIndex: number, columnName: string) => Promise<boolean>;
@@ -84,6 +86,7 @@ interface SpreadsheetStoreState {
   setCellValuesByKey: (values: Record<string, string>) => Promise<void>;
   setWorkbookFavorite: (isFavorite: boolean) => Promise<void>;
   sheets: SheetMeta[];
+  syncNow: () => Promise<boolean>;
   undo: () => Promise<void>;
   workbooks: WorkbookMeta[];
   workerResetKey: string;
@@ -103,10 +106,12 @@ let activeWorkbookSession: ActiveWorkbookSession | null = null;
 let currentAuthenticatedUser: User | null = null;
 let remoteSyncTimeout: ReturnType<typeof setTimeout> | null = null;
 let hasInitializedAuthSync = false;
+let hasResolvedInitialAuthState = false;
 
 const FIRESTORE_SYNC_DEBOUNCE_MS = 2500;
 const FIRESTORE_SYNC_ORIGIN = "firestore-sync";
 const FIRESTORE_SYNC_CLIENT_ID = crypto.randomUUID();
+const MANUAL_SYNC_COOLDOWN_MS = 5000;
 const syncLogger = createLogger({ scope: "spreadsheet-sync" });
 
 function clearRemoteSyncTimeout() {
@@ -527,12 +532,18 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     onAuthStateChanged(firebaseAuth, (user) => {
       currentAuthenticatedUser = user;
       clearRemoteSyncTimeout();
+      set({ isRemoteSyncAuthenticated: user !== null });
 
       if (!user) {
-        syncLogger.info("Signed out; paused Firestore workbook syncing.");
+        if (hasResolvedInitialAuthState) {
+          syncLogger.info("Signed out; paused Firestore workbook syncing.");
+        }
+
+        hasResolvedInitialAuthState = true;
         return;
       }
 
+      hasResolvedInitialAuthState = true;
       syncLogger.info(
         `Signed in as ${user.uid}; starting workbook reconciliation.`
       );
@@ -738,6 +749,8 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       }
     },
     hydrationState: "idle",
+    isRemoteSyncAuthenticated: false,
+    manualSyncCooldownUntil: 0,
     hydrateWorkbookList: async () => {
       if (get().hydrationState !== "idle") {
         return;
@@ -846,6 +859,37 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       await persistActiveWorkbookMeta(set);
     },
     saveState: "saved",
+    syncNow: async () => {
+      if (!(currentAuthenticatedUser && activeWorkbookSession)) {
+        syncLogger.warn(
+          "Manual sync requested without an authenticated active workbook session."
+        );
+        return false;
+      }
+
+      const now = Date.now();
+      if (now < get().manualSyncCooldownUntil) {
+        syncLogger.debug(
+          "Manual sync skipped because the cooldown is still active."
+        );
+        return false;
+      }
+
+      set({
+        manualSyncCooldownUntil: now + MANUAL_SYNC_COOLDOWN_MS,
+        saveState: "saving",
+      });
+      clearRemoteSyncTimeout();
+
+      try {
+        await flushRemoteWorkbookSync(set);
+        return true;
+      } catch (error) {
+        syncLogger.error("Manual Firestore sync failed.", error);
+        set({ saveState: "error" });
+        return false;
+      }
+    },
     setActiveSheet: async (sheetId) => {
       if (!activeWorkbookSession) {
         return;

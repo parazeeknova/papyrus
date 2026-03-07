@@ -19,6 +19,7 @@ export default function Home() {
     canRedo,
     canUndo,
     canExpandRows,
+    canManualSync,
     copySelection,
     createSheet,
     createWorkbook,
@@ -46,6 +47,7 @@ export default function Home() {
     selection,
     setSelectionRange,
     showAllRows,
+    syncNow,
     getCellData,
     getCellReferenceLabel,
     setCellValue,
@@ -112,6 +114,7 @@ export default function Home() {
   return (
     <div className="flex h-screen flex-col bg-background font-sans">
       <SpreadsheetMenuBar
+        canManualSync={canManualSync}
         canRedo={canRedo}
         canUndo={canUndo}
         isFavorite={activeWorkbook?.isFavorite ?? false}
@@ -133,6 +136,9 @@ export default function Home() {
         }}
         onDeleteWorkbook={() => {
           deleteWorkbook().catch(() => undefined);
+        }}
+        onManualSync={() => {
+          syncNow().catch(() => undefined);
         }}
         onOpenFindReplace={() => {
           setIsFindReplaceOpen(true);
