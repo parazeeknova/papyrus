@@ -38,6 +38,31 @@ const LAST_SYNC_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
 });
 
+function formatRelativeSyncTime(timestamp: number, now: number): string {
+  const diffMs = Math.max(0, now - timestamp);
+  const diffSeconds = Math.floor(diffMs / 1000);
+
+  if (diffSeconds < 10) {
+    return "just now";
+  }
+
+  if (diffSeconds < 60) {
+    return `${diffSeconds}s ago`;
+  }
+
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  return LAST_SYNC_TIME_FORMATTER.format(new Date(timestamp));
+}
+
 interface SelectionBounds {
   endCol: number;
   endRow: number;
@@ -727,7 +752,7 @@ export function useSpreadsheet() {
   const canManualSync =
     isRemoteSyncAuthenticated && now >= manualSyncCooldownUntil;
   const lastSyncedLabel = lastSyncedAt
-    ? LAST_SYNC_TIME_FORMATTER.format(new Date(lastSyncedAt))
+    ? formatRelativeSyncTime(lastSyncedAt, now)
     : null;
 
   const navigateFromActive = useCallback(
