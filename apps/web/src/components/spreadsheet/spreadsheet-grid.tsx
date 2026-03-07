@@ -10,9 +10,8 @@ import {
 import { cn } from "@/web/lib/utils";
 
 const ROW_HEADER_WIDTH = 46;
-const COL_HEADER_HEIGHT = 24;
 const DEFAULT_COL_WIDTH = 100;
-const DEFAULT_ROW_HEIGHT = 24;
+const DEFAULT_ROW_HEIGHT = 20;
 
 interface CellComponentProps {
   col: number;
@@ -79,7 +78,7 @@ function CellComponent({
   return (
     <button
       className={cn(
-        "absolute inset-0 cursor-cell overflow-hidden text-ellipsis whitespace-nowrap border-border border-r border-b bg-background px-1.5 text-left text-xs leading-5.5 transition-none",
+        "absolute inset-0 cursor-cell overflow-hidden text-ellipsis whitespace-nowrap bg-background px-1.5 text-left text-xs transition-none",
         isActive &&
           "z-5 border-2 border-primary bg-primary/5 shadow-[0_0_0_1px] shadow-primary/30"
       )}
@@ -90,7 +89,6 @@ function CellComponent({
         onDoubleClick(pos);
       }}
       onKeyDown={(e) => {
-        // Enter typing mode on printable keys
         if (!(e.ctrlKey || e.metaKey || e.altKey) && e.key.length === 1) {
           e.preventDefault();
           onValueChange(row, col, e.key);
@@ -106,8 +104,6 @@ function CellComponent({
     </button>
   );
 }
-
-// --- Spreadsheet Grid ---
 
 interface SpreadsheetGridProps {
   activeCell: CellPosition | null;
@@ -166,7 +162,6 @@ export function SpreadsheetGrid({
     [navigateFromActive, activeCell, setCellValue, startEditing]
   );
 
-  // Scroll active cell into view
   useEffect(() => {
     if (!(activeCell && gridRef.current)) {
       return;
@@ -179,142 +174,95 @@ export function SpreadsheetGrid({
     }
   }, [activeCell]);
 
-  // Build columns array
   const columns = Array.from({ length: columnCount }, (_, i) => i);
   const rows = Array.from({ length: rowCount }, (_, i) => i);
 
-  const totalWidth = ROW_HEADER_WIDTH + columnCount * DEFAULT_COL_WIDTH;
-  const totalHeight = COL_HEADER_HEIGHT + rowCount * DEFAULT_ROW_HEIGHT;
-
   return (
     <div
-      className="relative flex-1 overflow-auto bg-background"
+      className="flex-1 overflow-auto bg-background"
       data-slot="spreadsheet-grid"
       ref={gridRef}
     >
-      <div
-        className="relative"
-        style={{
-          width: totalWidth,
-          height: totalHeight,
-        }}
+      <table
+        className="border-collapse border-spacing-0"
+        style={{ tableLayout: "fixed" }}
       >
-        {/* Corner header (top-left empty) */}
-        <div
-          className="sticky top-0 left-0 z-30 border-border border-r border-b bg-muted"
-          style={{
-            position: "sticky",
-            width: ROW_HEADER_WIDTH,
-            height: COL_HEADER_HEIGHT,
-          }}
-        />
-
-        {/* Column headers */}
-        <div
-          className="sticky top-0 z-20"
-          style={{
-            position: "sticky",
-            left: ROW_HEADER_WIDTH,
-            height: COL_HEADER_HEIGHT,
-            marginTop: -COL_HEADER_HEIGHT,
-          }}
-        >
+        <colgroup>
+          <col style={{ width: ROW_HEADER_WIDTH }} />
           {columns.map((col) => (
-            <div
-              className={cn(
-                "absolute flex select-none items-center justify-center border-border border-r border-b bg-muted font-medium text-muted-foreground text-xs",
-                activeCell?.col === col &&
-                  "bg-primary/10 font-semibold text-primary"
-              )}
-              key={col}
-              style={{
-                left: col * DEFAULT_COL_WIDTH,
-                top: 0,
-                width: DEFAULT_COL_WIDTH,
-                height: COL_HEADER_HEIGHT,
-              }}
-            >
-              {colToLetter(col)}
-            </div>
+            <col key={col} style={{ width: DEFAULT_COL_WIDTH }} />
           ))}
-        </div>
+        </colgroup>
 
-        {/* Row headers */}
-        <div
-          className="sticky left-0 z-20"
-          style={{
-            position: "sticky",
-            top: COL_HEADER_HEIGHT,
-            width: ROW_HEADER_WIDTH,
-          }}
-        >
+        <thead>
+          <tr>
+            <th
+              className="sticky top-0 left-0 z-30 border-border border-r border-b bg-muted"
+              style={{ height: DEFAULT_ROW_HEIGHT }}
+            />
+            {columns.map((col) => (
+              <th
+                className={cn(
+                  "sticky top-0 z-20 select-none border-border border-r border-b bg-muted text-center font-medium text-muted-foreground text-xs",
+                  activeCell?.col === col &&
+                    "bg-primary/10 font-semibold text-primary"
+                )}
+                key={col}
+                style={{ height: DEFAULT_ROW_HEIGHT }}
+              >
+                {colToLetter(col)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+
+        <tbody>
           {rows.map((row) => (
-            <div
-              className={cn(
-                "absolute flex select-none items-center justify-center border-border border-r border-b bg-muted text-muted-foreground text-xs",
-                activeCell?.row === row &&
-                  "bg-primary/10 font-semibold text-primary"
-              )}
-              key={row}
-              style={{
-                left: 0,
-                top: row * DEFAULT_ROW_HEIGHT,
-                width: ROW_HEADER_WIDTH,
-                height: DEFAULT_ROW_HEIGHT,
-              }}
-            >
-              {row + 1}
-            </div>
+            <tr key={row}>
+              <td
+                className={cn(
+                  "sticky left-0 z-10 select-none border-border border-r border-b bg-muted text-center text-muted-foreground text-xs",
+                  activeCell?.row === row &&
+                    "bg-primary/10 font-semibold text-primary"
+                )}
+                style={{ height: DEFAULT_ROW_HEIGHT }}
+              >
+                {row + 1}
+              </td>
+              {columns.map((col) => {
+                const id = cellId(row, col);
+                const data = getCellData(row, col);
+                const isActive =
+                  activeCell?.row === row && activeCell?.col === col;
+                const isEditing =
+                  editingCell?.row === row && editingCell?.col === col;
+
+                return (
+                  <td
+                    className="relative border-border border-r border-b p-0"
+                    data-cell={id}
+                    key={id}
+                    style={{ height: DEFAULT_ROW_HEIGHT }}
+                  >
+                    <CellComponent
+                      col={col}
+                      data={data}
+                      isActive={isActive}
+                      isEditing={isEditing}
+                      onCommit={stopEditing}
+                      onDoubleClick={startEditing}
+                      onKeyDown={handleCellKeyDown}
+                      onSelect={selectCell}
+                      onValueChange={setCellValue}
+                      row={row}
+                    />
+                  </td>
+                );
+              })}
+            </tr>
           ))}
-        </div>
-
-        {/* Cells */}
-        <div
-          style={{
-            position: "absolute",
-            left: ROW_HEADER_WIDTH,
-            top: COL_HEADER_HEIGHT,
-          }}
-        >
-          {rows.map((row) =>
-            columns.map((col) => {
-              const id = cellId(row, col);
-              const data = getCellData(row, col);
-              const isActive =
-                activeCell?.row === row && activeCell?.col === col;
-              const isEditing =
-                editingCell?.row === row && editingCell?.col === col;
-
-              return (
-                <div
-                  data-cell={id}
-                  key={id}
-                  style={{
-                    position: "absolute",
-                    left: col * DEFAULT_COL_WIDTH,
-                    top: row * DEFAULT_ROW_HEIGHT,
-                    width: DEFAULT_COL_WIDTH,
-                    height: DEFAULT_ROW_HEIGHT,
-                  }}
-                >
-                  <CellComponent
-                    col={col}
-                    data={data}
-                    isActive={isActive}
-                    isEditing={isEditing}
-                    onCommit={stopEditing}
-                    onDoubleClick={startEditing}
-                    onKeyDown={handleCellKeyDown}
-                    onSelect={selectCell}
-                    onValueChange={setCellValue}
-                    row={row}
-                  />
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
+        </tbody>
+      </table>
     </div>
   );
 }

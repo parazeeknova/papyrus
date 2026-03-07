@@ -1,6 +1,7 @@
 "use client";
 
 import { CloudCheckIcon, LockIcon, StarIcon } from "@phosphor-icons/react";
+import Image from "next/image";
 import { Button } from "@/web/components/ui/button";
 import {
   Menubar,
@@ -28,11 +29,13 @@ export function SpreadsheetMenuBar() {
       data-slot="menu-bar"
     >
       <div className="flex h-10 items-center gap-2 px-3">
-        <div className="flex size-7 items-center justify-center rounded-sm bg-primary">
-          <span className="font-bold font-serif text-primary-foreground text-sm">
-            P
-          </span>
-        </div>
+        <Image
+          alt="Papyrus logo"
+          className="size-6 rounded-md"
+          height={28}
+          src="/apple-touch-icon.png"
+          width={28}
+        />
 
         <div className="flex items-center gap-1">
           <button
