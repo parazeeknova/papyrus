@@ -136,30 +136,33 @@ export async function listRemoteWorkbooks(
     return getDocs(collection(firebaseDb, "users", uid, "workbooks"));
   });
 
-  return snapshot.docs
-    .map((documentSnapshot) => {
-      const data = documentSnapshot.data() as Partial<RemoteWorkbookDocument>;
-      if (
-        typeof data.id !== "string" ||
-        typeof data.name !== "string" ||
-        typeof data.createdAt !== "string" ||
-        typeof data.updatedAt !== "string" ||
-        typeof data.lastOpenedAt !== "string" ||
-        typeof data.isFavorite !== "boolean"
-      ) {
-        return null;
-      }
+  return snapshot.docs.flatMap((documentSnapshot) => {
+    const data = documentSnapshot.data() as Partial<RemoteWorkbookDocument>;
+    if (
+      typeof data.id !== "string" ||
+      typeof data.name !== "string" ||
+      typeof data.createdAt !== "string" ||
+      typeof data.updatedAt !== "string" ||
+      typeof data.lastOpenedAt !== "string" ||
+      typeof data.isFavorite !== "boolean"
+    ) {
+      return [];
+    }
 
-      return {
+    return [
+      {
         createdAt: data.createdAt,
         id: data.id,
         isFavorite: data.isFavorite,
         lastOpenedAt: data.lastOpenedAt,
+        lastSyncedAt:
+          typeof data.lastSyncedAt === "string" ? data.lastSyncedAt : null,
         name: data.name,
+        remoteVersion: typeof data.version === "number" ? data.version : null,
         updatedAt: data.updatedAt,
-      } satisfies WorkbookMeta;
-    })
-    .filter((workbook): workbook is WorkbookMeta => workbook !== null);
+      } satisfies WorkbookMeta,
+    ];
+  });
 }
 
 export async function readRemoteWorkbook(
@@ -188,8 +191,15 @@ export async function readRemoteWorkbook(
     return null;
   }
 
-  const chunksSnapshot = await getDocs(
-    query(getWorkbookChunksCollection(uid, workbookId), orderBy("index", "asc"))
+  const chunksSnapshot = await withFirestoreRetry(
+    "readRemoteWorkbook:chunks",
+    async () =>
+      getDocs(
+        query(
+          getWorkbookChunksCollection(uid, workbookId),
+          orderBy("index", "asc")
+        )
+      )
   );
   const chunks = chunksSnapshot.docs
     .map(
@@ -203,7 +213,7 @@ export async function readRemoteWorkbook(
     )
     .sort((left, right) => left.index - right.index);
 
-  if (chunks.length === 0 && data.snapshotChunkCount > 0) {
+  if (chunks.length !== data.snapshotChunkCount) {
     return null;
   }
 
@@ -215,7 +225,10 @@ export async function readRemoteWorkbook(
       id: data.id,
       isFavorite: data.isFavorite,
       lastOpenedAt: data.lastOpenedAt,
+      lastSyncedAt:
+        typeof data.lastSyncedAt === "string" ? data.lastSyncedAt : null,
       name: data.name,
+      remoteVersion: typeof data.version === "number" ? data.version : null,
       updatedAt: data.updatedAt,
     },
     update: decodeBase64ToUpdate(chunks.map((chunk) => chunk.data).join("")),
@@ -271,17 +284,24 @@ export async function writeRemoteWorkbook(
     const snapshotId = `${Date.now()}-${clientId}`;
     const encodedUpdate = encodeUpdateToBase64(workbook.update);
     const chunks = chunkString(encodedUpdate, WORKBOOK_CHUNK_SIZE);
-    const existingChunks = await getDocs(chunksCollection);
+    const existingChunks = await withFirestoreRetry(
+      "writeRemoteWorkbook:chunks",
+      async () => getDocs(chunksCollection)
+    );
     const batch = writeBatch(firebaseDb);
+    const nextVersion = workbook.version + 1;
+    const lastSyncedAt = new Date().toISOString();
 
     batch.set(workbookRef, {
       ...workbook.meta,
       activeSheetId: workbook.activeSheetId,
+      lastSyncedAt,
       leaseExpiresAt: Date.now() + SYNC_LEASE_DURATION_MS,
       leaseOwner: clientId,
+      remoteVersion: nextVersion,
       snapshotChunkCount: chunks.length,
       snapshotId,
-      version: workbook.version + 1,
+      version: nextVersion,
     } satisfies RemoteWorkbookDocument);
 
     for (const existingChunk of existingChunks.docs) {
@@ -306,8 +326,9 @@ export async function deleteRemoteWorkbook(
 ): Promise<void> {
   await withFirestoreRetry("deleteRemoteWorkbook", async () => {
     const workbookRef = getWorkbookRef(uid, workbookId);
-    const chunksSnapshot = await getDocs(
-      getWorkbookChunksCollection(uid, workbookId)
+    const chunksSnapshot = await withFirestoreRetry(
+      "deleteRemoteWorkbook:chunks",
+      async () => getDocs(getWorkbookChunksCollection(uid, workbookId))
     );
     const batch = writeBatch(firebaseDb);
 

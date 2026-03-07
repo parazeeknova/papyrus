@@ -60,6 +60,7 @@ interface ToolbarProps {
   canEdit: boolean;
   canRedo: boolean;
   canUndo: boolean;
+  loading?: boolean;
   onCopy: () => void;
   onCut: () => void;
   onDeleteColumn: () => void;
@@ -100,6 +101,7 @@ export function Toolbar({
   canEdit,
   canRedo,
   canUndo,
+  loading = false,
   onCopy,
   onCut,
   onDeleteColumn,
@@ -111,52 +113,54 @@ export function Toolbar({
 }: ToolbarProps) {
   return (
     <div
-      className="flex h-9 shrink-0 items-center gap-0.5 border-border border-b bg-background px-2"
+      className="relative flex h-9 shrink-0 items-center gap-0.5 border-border border-b bg-background px-2"
       data-slot="toolbar"
     >
       {/* Undo / Redo */}
       <ToolbarButton
-        disabled={!canUndo}
+        disabled={loading || !canUndo}
         icon={<ArrowCounterClockwiseIcon weight="bold" />}
         label="Undo (Ctrl+Z)"
         onClick={onUndo}
       />
       <ToolbarButton
-        disabled={!canRedo}
+        disabled={loading || !canRedo}
         icon={<ArrowClockwiseIcon weight="bold" />}
         label="Redo (Ctrl+Y)"
         onClick={onRedo}
       />
       <ToolbarButton
-        disabled={!canEdit}
+        disabled={loading || !canEdit}
         icon={<ScissorsIcon weight="bold" />}
         label="Cut (Ctrl+X)"
         onClick={onCut}
       />
       <ToolbarButton
+        disabled={loading}
         icon={<CopyIcon weight="bold" />}
         label="Copy (Ctrl+C)"
         onClick={onCopy}
       />
       <ToolbarButton
-        disabled={!canEdit}
+        disabled={loading || !canEdit}
         icon={<ClipboardTextIcon weight="bold" />}
         label="Paste (Ctrl+V)"
         onClick={onPaste}
       />
       <ToolbarButton
+        disabled={loading}
         icon={<MagnifyingGlassIcon weight="bold" />}
         label="Find and replace (Ctrl+H)"
         onClick={onOpenFindReplace}
       />
       <ToolbarButton
-        disabled={!canEdit}
+        disabled={loading || !canEdit}
         icon={<RowsIcon weight="bold" />}
         label="Delete row"
         onClick={onDeleteRow}
       />
       <ToolbarButton
-        disabled={!canEdit}
+        disabled={loading || !canEdit}
         icon={<ColumnsIcon weight="bold" />}
         label="Delete column"
         onClick={onDeleteColumn}
@@ -178,6 +182,7 @@ export function Toolbar({
         <DropdownMenuTrigger asChild>
           <Button
             className="h-7 w-28 justify-start gap-1 px-2 text-xs"
+            disabled={loading}
             variant="outline"
           >
             <TextAaIcon className="size-3.5" weight="bold" />
@@ -198,6 +203,7 @@ export function Toolbar({
         <DropdownMenuTrigger asChild>
           <Button
             className="h-7 w-14 justify-center gap-0.5 px-2 text-xs"
+            disabled={loading}
             variant="outline"
           >
             10
@@ -214,18 +220,22 @@ export function Toolbar({
 
       {/* Text formatting */}
       <ToolbarButton
+        disabled={loading}
         icon={<TextBolderIcon weight="bold" />}
         label="Bold (Ctrl+B)"
       />
       <ToolbarButton
+        disabled={loading}
         icon={<TextItalicIcon weight="bold" />}
         label="Italic (Ctrl+I)"
       />
       <ToolbarButton
+        disabled={loading}
         icon={<TextUnderlineIcon weight="bold" />}
         label="Underline (Ctrl+U)"
       />
       <ToolbarButton
+        disabled={loading}
         icon={<TextStrikethroughIcon weight="bold" />}
         label="Strikethrough"
       />
@@ -234,6 +244,7 @@ export function Toolbar({
 
       {/* Colors */}
       <ToolbarButton
+        disabled={loading}
         icon={
           <span className="flex flex-col items-center">
             <TextAaIcon className="size-3.5" weight="bold" />
@@ -243,6 +254,7 @@ export function Toolbar({
         label="Text color"
       />
       <ToolbarButton
+        disabled={loading}
         icon={<PaintBucketIcon weight="bold" />}
         label="Fill color"
       />
@@ -251,14 +263,17 @@ export function Toolbar({
 
       {/* Alignment */}
       <ToolbarButton
+        disabled={loading}
         icon={<TextAlignLeftIcon weight="bold" />}
         label="Align left"
       />
       <ToolbarButton
+        disabled={loading}
         icon={<TextAlignCenterIcon weight="bold" />}
         label="Align center"
       />
       <ToolbarButton
+        disabled={loading}
         icon={<TextAlignRightIcon weight="bold" />}
         label="Align right"
       />
@@ -267,10 +282,29 @@ export function Toolbar({
 
       {/* Merge / Borders */}
       <ToolbarButton
+        disabled={loading}
         icon={<CellSignalFullIcon weight="bold" />}
         label="Merge cells"
       />
-      <ToolbarButton icon={<RectangleIcon weight="bold" />} label="Borders" />
+      <ToolbarButton
+        disabled={loading}
+        icon={<RectangleIcon weight="bold" />}
+        label="Borders"
+      />
+
+      {loading ? (
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-border"
+        >
+          <div
+            className="h-full w-40 bg-primary"
+            style={{
+              animation: "toolbar-loading-bar 1.4s ease-in-out infinite",
+            }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

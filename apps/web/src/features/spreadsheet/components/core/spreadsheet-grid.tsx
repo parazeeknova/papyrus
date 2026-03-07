@@ -42,6 +42,14 @@ const COL_HEADER_HEIGHT = 24;
 const ROW_OVERSCAN = 20;
 const COL_OVERSCAN = 4;
 const EXPANSION_PROMPT_HEIGHT = 56;
+const INITIAL_VISIBLE_COL_COUNT = 12;
+const INITIAL_VISIBLE_ROW_COUNT = 40;
+
+interface GridItem {
+  index: number;
+  size: number;
+  start: number;
+}
 
 interface ContextMenuState {
   col: number;
@@ -54,6 +62,7 @@ interface CellComponentProps {
   canEdit: boolean;
   col: number;
   data: CellData;
+  disabled?: boolean;
   isActive: boolean;
   isEditing: boolean;
   isSelected: boolean;
@@ -78,6 +87,7 @@ const CellComponent = memo(function CellComponent({
   row,
   col,
   data,
+  disabled = false,
   isActive,
   isEditing,
   isSelected,
@@ -101,6 +111,7 @@ const CellComponent = memo(function CellComponent({
     return (
       <input
         className="absolute inset-0 z-10 border-2 border-primary bg-background px-1.5 text-xs outline-none"
+        disabled={disabled}
         onBlur={onCommit}
         onChange={(e) => {
           onValueChange(row, col, e.target.value);
@@ -132,6 +143,7 @@ const CellComponent = memo(function CellComponent({
         isActive &&
           "z-5 border-2 border-primary bg-primary/5 shadow-[0_0_0_1px] shadow-primary/30"
       )}
+      disabled={disabled}
       onContextMenu={(event) => {
         event.preventDefault();
         onContextMenu({ row, col }, event);
@@ -176,6 +188,7 @@ interface SpreadsheetGridProps {
   collaborationPeers: CollaboratorPresence[];
   columnCount: number;
   columnNames: string[];
+  disabled?: boolean;
   editingCell: CellPosition | null;
   expandRowCount: () => void;
   getCellData: (row: number, col: number) => CellData;
@@ -213,6 +226,7 @@ export function SpreadsheetGrid({
   canExpandRows,
   collaborationPeers,
   columnNames,
+  disabled = false,
   editingCell,
   columnCount,
   expandRowCount,
@@ -332,17 +346,43 @@ export function SpreadsheetGrid({
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const virtualCols = colVirtualizer.getVirtualItems();
-  const firstVirtualRow = virtualRows[0];
-  const firstVirtualCol = virtualCols[0];
+  const fallbackRows = useMemo<GridItem[]>(
+    () =>
+      Array.from(
+        { length: Math.min(rowCount, INITIAL_VISIBLE_ROW_COUNT) },
+        (_unused, index) => ({
+          index,
+          size: DEFAULT_ROW_HEIGHT,
+          start: index * DEFAULT_ROW_HEIGHT,
+        })
+      ),
+    [rowCount]
+  );
+  const fallbackCols = useMemo<GridItem[]>(
+    () =>
+      Array.from(
+        { length: Math.min(columnCount, INITIAL_VISIBLE_COL_COUNT) },
+        (_unused, index) => ({
+          index,
+          size: DEFAULT_COL_WIDTH,
+          start: index * DEFAULT_COL_WIDTH,
+        })
+      ),
+    [columnCount]
+  );
+  const renderRows = virtualRows.length > 0 ? virtualRows : fallbackRows;
+  const renderCols = virtualCols.length > 0 ? virtualCols : fallbackCols;
+  const firstVirtualRow = renderRows[0];
+  const firstVirtualCol = renderCols[0];
   const rowOffset = firstVirtualRow?.start ?? 0;
   const colOffset = firstVirtualCol?.start ?? 0;
   const visibleRowHeight = useMemo(
-    () => virtualRows.reduce((sum, row) => sum + row.size, 0),
-    [virtualRows]
+    () => renderRows.reduce((sum, row) => sum + row.size, 0),
+    [renderRows]
   );
   const visibleColWidth = useMemo(
-    () => virtualCols.reduce((sum, col) => sum + col.size, 0),
-    [virtualCols]
+    () => renderCols.reduce((sum, col) => sum + col.size, 0),
+    [renderCols]
   );
 
   const totalColWidth = colVirtualizer.getTotalSize();
@@ -509,7 +549,11 @@ export function SpreadsheetGrid({
   }, [canEdit, columnNameDraft, onRenameColumn, renamingColumnIndex]);
 
   const visibleSelection = useMemo(() => {
-    if (!(normalizedSelection && firstVirtualRow && firstVirtualCol)) {
+    if (
+      !normalizedSelection ||
+      virtualRows.length === 0 ||
+      virtualCols.length === 0
+    ) {
       return null;
     }
 
@@ -546,20 +590,14 @@ export function SpreadsheetGrid({
       width: endCol.start + endCol.size - startCol.start,
       height: endRow.start + endRow.size - startRow.start,
     };
-  }, [
-    normalizedSelection,
-    firstVirtualRow,
-    firstVirtualCol,
-    virtualRows,
-    virtualCols,
-  ]);
+  }, [normalizedSelection, virtualRows, virtualCols]);
 
   const visiblePresence = useMemo(() => {
     const visibleRowsByIndex = new Map(
-      virtualRows.map((row) => [row.index, row])
+      renderRows.map((row) => [row.index, row])
     );
     const visibleColumnsByIndex = new Map(
-      virtualCols.map((column) => [column.index, column])
+      renderCols.map((column) => [column.index, column])
     );
     const presenceByCell = new Map<
       string,
@@ -618,11 +656,14 @@ export function SpreadsheetGrid({
         };
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-  }, [collaborationPeers, virtualCols, virtualRows]);
+  }, [collaborationPeers, renderCols, renderRows]);
 
   return (
     <div
-      className="flex-1 overflow-auto bg-background"
+      className={cn(
+        "flex-1 overflow-auto bg-background",
+        disabled && "pointer-events-none"
+      )}
       data-slot="spreadsheet-grid"
       ref={scrollRef}
     >
@@ -654,7 +695,7 @@ export function SpreadsheetGrid({
                 height: COL_HEADER_HEIGHT,
               }}
             >
-              {virtualCols.map((vc) => {
+              {renderCols.map((vc) => {
                 const headerClassName = cn(
                   "absolute top-0 flex select-none items-center justify-center border-border border-r border-b bg-muted font-medium text-muted-foreground text-xs",
                   isColumnHeaderSelected(vc.index) &&
@@ -710,6 +751,7 @@ export function SpreadsheetGrid({
                 return (
                   <button
                     className={headerClassName}
+                    disabled={disabled}
                     key={`col-${vc.index}`}
                     onDoubleClick={() => {
                       beginColumnRename(vc.index);
@@ -735,7 +777,7 @@ export function SpreadsheetGrid({
           ) : null}
         </div>
 
-        {virtualRows.map((vr) => {
+        {renderRows.map((vr) => {
           const row = vr.index;
 
           return (
@@ -756,6 +798,7 @@ export function SpreadsheetGrid({
                   activeCell?.row === row &&
                     "z-40 bg-primary/18 text-primary ring-1 ring-primary/50 ring-inset"
                 )}
+                disabled={disabled}
                 onMouseDown={(event) => {
                   event.preventDefault();
                   beginSelectionDrag({ row, col: 0 }, "rows");
@@ -778,7 +821,7 @@ export function SpreadsheetGrid({
                     height: vr.size,
                   }}
                 >
-                  {virtualCols.map((vc) => {
+                  {renderCols.map((vc) => {
                     const col = vc.index;
                     const id = cellId(row, col);
                     const data = getCellData(row, col);
@@ -804,6 +847,7 @@ export function SpreadsheetGrid({
                           canEdit={canEdit}
                           col={col}
                           data={data}
+                          disabled={disabled}
                           isActive={isActive}
                           isEditing={isEditing}
                           isSelected={isSelected}

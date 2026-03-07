@@ -190,6 +190,20 @@
     scrollbar-width: auto;
   }
 
+  @keyframes toolbar-loading-bar {
+    0% {
+      transform: translateX(-110%);
+    }
+
+    60% {
+      transform: translateX(220%);
+    }
+
+    100% {
+      transform: translateX(320%);
+    }
+  }
+
   ::-webkit-scrollbar {
     width: 20px;
     height: 20px;

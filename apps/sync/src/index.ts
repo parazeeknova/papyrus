@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type {
   CollaborationServerMessage,
   CollaboratorPresence,
@@ -23,9 +25,13 @@ interface RoomPeer {
 interface RoomState {
   doc: Doc;
   peers: Map<string, RoomPeer>;
+  persistTimeout: ReturnType<typeof setTimeout> | null;
 }
 
 const rooms = new Map<string, RoomState>();
+const ROOM_CACHE_DIR = resolve(process.cwd(), ".papyrus-sync-cache");
+const ROOM_PERSIST_DEBOUNCE_MS = 200;
+const ROOM_PERSISTENCE_ORIGIN = "room-persistence";
 
 function encodeUpdate(update: Uint8Array): string {
   return Buffer.from(update).toString("base64");
@@ -41,12 +47,79 @@ function getRoom(workbookId: string): RoomState {
     return existingRoom;
   }
 
+  const doc = new Doc();
   const nextRoom: RoomState = {
-    doc: new Doc(),
+    doc,
     peers: new Map(),
+    persistTimeout: null,
   };
+  hydrateRoomFromDisk(workbookId, doc);
+  doc.on("update", (_update, origin) => {
+    if (origin === ROOM_PERSISTENCE_ORIGIN) {
+      return;
+    }
+
+    scheduleRoomPersist(workbookId, nextRoom);
+  });
   rooms.set(workbookId, nextRoom);
   return nextRoom;
+}
+
+function ensureRoomCacheDirectory(): void {
+  if (existsSync(ROOM_CACHE_DIR)) {
+    return;
+  }
+
+  mkdirSync(ROOM_CACHE_DIR, { recursive: true });
+}
+
+function getRoomCachePath(workbookId: string): string {
+  return join(ROOM_CACHE_DIR, `${encodeURIComponent(workbookId)}.bin`);
+}
+
+function hydrateRoomFromDisk(workbookId: string, doc: Doc): void {
+  ensureRoomCacheDirectory();
+  const cachePath = getRoomCachePath(workbookId);
+  if (!existsSync(cachePath)) {
+    return;
+  }
+
+  const update = readFileSync(cachePath);
+  if (update.byteLength === 0) {
+    return;
+  }
+
+  applyUpdate(doc, new Uint8Array(update), ROOM_PERSISTENCE_ORIGIN);
+}
+
+function persistRoom(workbookId: string, room: RoomState): void {
+  ensureRoomCacheDirectory();
+  writeFileSync(
+    getRoomCachePath(workbookId),
+    Buffer.from(encodeStateAsUpdate(room.doc))
+  );
+}
+
+function scheduleRoomPersist(workbookId: string, room: RoomState): void {
+  if (room.persistTimeout) {
+    clearTimeout(room.persistTimeout);
+  }
+
+  room.persistTimeout = setTimeout(() => {
+    room.persistTimeout = null;
+    persistRoom(workbookId, room);
+  }, ROOM_PERSIST_DEBOUNCE_MS);
+}
+
+function disposeRoom(workbookId: string, room: RoomState): void {
+  if (room.persistTimeout) {
+    clearTimeout(room.persistTimeout);
+    room.persistTimeout = null;
+  }
+
+  persistRoom(workbookId, room);
+  room.doc.destroy();
+  rooms.delete(workbookId);
 }
 
 function getRoomPresence(room: RoomState): CollaboratorPresence[] {
@@ -262,6 +335,9 @@ export const app = new Elysia()
 
       room.peers.delete(clientId);
       broadcastPresence(room);
+      if (room.peers.size === 0) {
+        disposeRoom(workbookId, room);
+      }
     },
   })
   .listen(3001);

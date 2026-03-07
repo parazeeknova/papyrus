@@ -62,6 +62,7 @@ interface SpreadsheetMenuBarProps {
   collaborationStatus: "connected" | "connecting" | "disconnected";
   isFavorite: boolean;
   isGalleryOpen: boolean;
+  lastSyncErrorMessage: string | null;
   lastSyncedLabel: string | null;
   onCopy: () => void;
   onCreateWorkbook: () => void;
@@ -86,6 +87,7 @@ interface SpreadsheetMenuBarProps {
     | "pending"
     | "syncing"
     | "synced";
+  remoteVersion: number | null;
   saveState: "error" | "saved" | "saving";
   syncServerUrl: string | null;
   workbookId: string | null;
@@ -154,6 +156,7 @@ export function SpreadsheetMenuBar({
   collaborationStatus,
   isGalleryOpen,
   isFavorite,
+  lastSyncErrorMessage,
   lastSyncedLabel,
   onCopy,
   onCreateWorkbook,
@@ -172,6 +175,7 @@ export function SpreadsheetMenuBar({
   onUndo,
   recentWorkbooks,
   remoteSyncStatus,
+  remoteVersion,
   saveState,
   syncServerUrl,
   workbookId,
@@ -357,6 +361,14 @@ export function SpreadsheetMenuBar({
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-muted-foreground">
+                        Remote version
+                      </span>
+                      <span className="font-medium text-foreground">
+                        {remoteVersion ?? "-"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">
                         Pending changes
                       </span>
                       <span className="font-medium text-foreground">
@@ -364,6 +376,12 @@ export function SpreadsheetMenuBar({
                       </span>
                     </div>
                   </div>
+
+                  {lastSyncErrorMessage ? (
+                    <div className="border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive text-xs/relaxed">
+                      {lastSyncErrorMessage}
+                    </div>
+                  ) : null}
 
                   <div className="border-border border-t pt-2 text-muted-foreground">
                     Realtime presence is {collaborationStatus}.

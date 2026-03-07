@@ -1,7 +1,8 @@
 "use client";
 
+import type { SheetMeta } from "@papyrus/core/workbook-types";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { env } from "@/web/env";
 import { FormulaBar } from "@/web/features/spreadsheet/components/core/formula-bar";
 import { SheetTabs } from "@/web/features/spreadsheet/components/core/sheet-tabs";
@@ -12,8 +13,17 @@ import { SpreadsheetMenuBar } from "@/web/features/spreadsheet/components/menu-b
 import { TemplateGalleryPanel } from "@/web/features/spreadsheet/components/template-gallery";
 import { useSpreadsheet } from "@/web/features/spreadsheet/hooks/use-spreadsheet";
 import { getDefaultSyncServerUrl } from "@/web/features/spreadsheet/lib/collaboration";
+import { colToLetter } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 
-export default function Home() {
+const INITIAL_LOADING_SHEET: SheetMeta = {
+  createdAt: "",
+  id: "initial-loading-sheet",
+  name: "Sheet1",
+  updatedAt: "",
+};
+const BLANK_CELL = { raw: "", computed: "" };
+
+function HomeContent() {
   const searchParams = useSearchParams();
   const requestedAccessRole = useMemo(() => {
     return searchParams.get("access") === "viewer" ? "viewer" : "editor";
@@ -57,6 +67,7 @@ export default function Home() {
     expandRowCount,
     findNext,
     hydrationState,
+    lastSyncErrorMessage,
     lastSyncedLabel,
     openWorkbook,
     pasteSelection,
@@ -64,6 +75,7 @@ export default function Home() {
     renameColumn,
     renameWorkbook,
     remoteSyncStatus,
+    remoteVersion,
     replaceAll,
     replaceCurrent,
     rowCount,
@@ -94,6 +106,20 @@ export default function Home() {
   const activeCellData = activeCell
     ? getCellData(activeCell.row, activeCell.col)
     : { raw: "", computed: "" };
+  const isInitialLoad =
+    activeWorkbook === null &&
+    (hydrationState === "idle" || hydrationState === "loading");
+  const loadingColumnNames = useMemo(() => {
+    return Array.from({ length: columnCount }, (_unused, index) =>
+      colToLetter(index)
+    );
+  }, [columnCount]);
+  const visibleSheets = isInitialLoad ? [INITIAL_LOADING_SHEET] : sheets;
+  const visibleActiveSheetId = isInitialLoad
+    ? INITIAL_LOADING_SHEET.id
+    : activeSheetId;
+  const getLoadingCellData = useCallback(() => BLANK_CELL, []);
+  const navigateWhileLoading = useCallback(() => null, []);
 
   const handleFormulaChange = useCallback(
     (value: string) => {
@@ -155,6 +181,7 @@ export default function Home() {
         collaborationStatus={collaborationStatus}
         isFavorite={activeWorkbook?.isFavorite ?? false}
         isGalleryOpen={isGalleryOpen}
+        lastSyncErrorMessage={lastSyncErrorMessage}
         lastSyncedLabel={lastSyncedLabel}
         onCopy={() => {
           copySelection().catch(() => undefined);
@@ -203,6 +230,7 @@ export default function Home() {
         }}
         recentWorkbooks={workbooks}
         remoteSyncStatus={remoteSyncStatus}
+        remoteVersion={remoteVersion}
         saveState={saveState}
         syncServerUrl={syncServerUrl}
         workbookId={activeWorkbook?.id ?? null}
@@ -213,6 +241,7 @@ export default function Home() {
         canEdit={canEdit}
         canRedo={canRedo}
         canUndo={canUndo}
+        loading={isInitialLoad}
         onCopy={() => {
           copySelection().catch(() => undefined);
         }}
@@ -241,25 +270,32 @@ export default function Home() {
       <FormulaBar
         activeCell={activeCell}
         cellRaw={activeCellData.raw}
-        disabled={!canEdit}
+        disabled={!canEdit || isInitialLoad}
         getCellReferenceLabel={getCellReferenceLabel}
         onCommit={handleFormulaCommit}
         onValueChange={handleFormulaChange}
         primaryColumnName={activeSheetColumns[0]?.name ?? "A"}
       />
       <SpreadsheetGrid
-        activeCell={activeCell}
-        canEdit={canEdit}
-        canExpandRows={canExpandRows}
-        canRedo={canRedo}
-        canUndo={canUndo}
-        collaborationPeers={collaborationPeers}
+        activeCell={isInitialLoad ? null : activeCell}
+        canEdit={isInitialLoad ? false : canEdit}
+        canExpandRows={isInitialLoad ? false : canExpandRows}
+        canRedo={isInitialLoad ? false : canRedo}
+        canUndo={isInitialLoad ? false : canUndo}
+        collaborationPeers={isInitialLoad ? [] : collaborationPeers}
         columnCount={columnCount}
-        columnNames={activeSheetColumns.map((column) => column.name)}
-        editingCell={editingCell}
+        columnNames={
+          isInitialLoad
+            ? loadingColumnNames
+            : activeSheetColumns.map((column) => column.name)
+        }
+        disabled={isInitialLoad}
+        editingCell={isInitialLoad ? null : editingCell}
         expandRowCount={expandRowCount}
-        getCellData={getCellData}
-        navigateFromActive={navigateFromActive}
+        getCellData={isInitialLoad ? getLoadingCellData : getCellData}
+        navigateFromActive={
+          isInitialLoad ? navigateWhileLoading : navigateFromActive
+        }
         onCopy={() => {
           copySelection().catch(() => undefined);
         }}
@@ -288,16 +324,16 @@ export default function Home() {
           undo().catch(() => undefined);
         }}
         rowCount={rowCount}
-        selectCell={selectCell}
-        selection={selection}
+        selectCell={isInitialLoad ? () => undefined : selectCell}
+        selection={isInitialLoad ? null : selection}
         setCellValue={setCellValue}
-        setSelectionRange={setSelectionRange}
+        setSelectionRange={isInitialLoad ? () => undefined : setSelectionRange}
         showAllRows={showAllRows}
-        startEditing={startEditing}
-        stopEditing={stopEditing}
+        startEditing={isInitialLoad ? () => undefined : startEditing}
+        stopEditing={isInitialLoad ? () => undefined : stopEditing}
       />
       <SheetTabs
-        activeSheetId={activeSheetId}
+        activeSheetId={visibleActiveSheetId}
         disableCreation={!canEdit}
         disabled={hydrationState !== "ready"}
         onAddSheet={() => {
@@ -306,7 +342,7 @@ export default function Home() {
         onSelectSheet={(sheetId) => {
           setActiveSheet(sheetId).catch(() => undefined);
         }}
-        sheets={sheets}
+        sheets={visibleSheets}
       />
       <FindReplaceDialog
         onFindNext={findNext}
@@ -316,5 +352,13 @@ export default function Home() {
         open={isFindReplaceOpen}
       />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent />
+    </Suspense>
   );
 }

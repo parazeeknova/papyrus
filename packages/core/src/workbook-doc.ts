@@ -178,7 +178,6 @@ export function touchWorkbook(doc: Doc, activeSheetId?: string): void {
   const now = getNowIsoString();
 
   doc.transact(() => {
-    meta.set("updatedAt", now);
     meta.set("lastOpenedAt", now);
     if (activeSheetId) {
       meta.set("activeSheetId", activeSheetId);

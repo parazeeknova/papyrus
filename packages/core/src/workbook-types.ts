@@ -19,7 +19,9 @@ export interface WorkbookMeta {
   id: string;
   isFavorite: boolean;
   lastOpenedAt: string;
+  lastSyncedAt?: string | null;
   name: string;
+  remoteVersion?: number | null;
   updatedAt: string;
 }
 
