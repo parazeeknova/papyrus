@@ -314,6 +314,9 @@ export function useSpreadsheet({
   const updateRealtimePresence = useSpreadsheetStore(
     (state) => state.updateRealtimePresence
   );
+  const updateRealtimeTyping = useSpreadsheetStore(
+    (state) => state.updateRealtimeTyping
+  );
   const workbooks = useSpreadsheetStore((state) => state.workbooks);
   const workerResetKey = useSpreadsheetStore((state) => state.workerResetKey);
   const [activeCell, setActiveCell] = useState<CellPosition | null>(null);
@@ -385,7 +388,12 @@ export function useSpreadsheet({
     workerRef.current.onmessage = (
       e: MessageEvent<SpreadsheetWorkerResponse>
     ) => {
-      if (e.data.type === "READY" || e.data.type === "CELLS_PATCH") {
+      if (e.data.type === "READY") {
+        setComputedCells(applySpreadsheetPatch({}, e.data.payload.patch));
+        return;
+      }
+
+      if (e.data.type === "CELLS_PATCH") {
         setComputedCells((prev) =>
           applySpreadsheetPatch(prev, e.data.payload.patch)
         );
@@ -399,7 +407,7 @@ export function useSpreadsheet({
 
   useEffect(() => {
     if (sharedWorkbookId) {
-      openWorkbook(sharedWorkbookId).catch(() => undefined);
+      openWorkbook(sharedWorkbookId, undefined, true).catch(() => undefined);
       return;
     }
 
@@ -435,7 +443,12 @@ export function useSpreadsheet({
       return;
     }
 
-    connectRealtime(requestedAccessRole, collaborationIdentity, syncServerUrl);
+    connectRealtime(
+      requestedAccessRole,
+      collaborationIdentity,
+      syncServerUrl,
+      isSharedSession
+    );
 
     return () => {
       stopRealtime();
@@ -443,6 +456,7 @@ export function useSpreadsheet({
   }, [
     collaborationIdentity,
     connectRealtime,
+    isSharedSession,
     requestedAccessRole,
     stopRealtime,
     syncServerUrl,
@@ -459,19 +473,12 @@ export function useSpreadsheet({
   }, []);
 
   useEffect(() => {
-    workerCellsRef.current = activeSheetCellsForWorker;
-  }, [activeSheetCellsForWorker]);
-
-  useEffect(() => {
-    workerColumnNamesRef.current = activeColumnNames;
-  }, [activeColumnNames]);
-
-  useEffect(() => {
     if (workerResetKey.length === 0) {
       return;
     }
 
-    setComputedCells({});
+    workerCellsRef.current = activeSheetCellsForWorker;
+    workerColumnNamesRef.current = activeColumnNames;
     workerRef.current?.postMessage({
       type: "INIT",
       payload: {
@@ -479,6 +486,13 @@ export function useSpreadsheet({
         columnNames: workerColumnNamesRef.current,
       },
     });
+  }, [activeColumnNames, activeSheetCellsForWorker, workerResetKey]);
+
+  useEffect(() => {
+    if (workerResetKey.length === 0) {
+      return;
+    }
+
     setActiveCell(null);
     setEditingCell(null);
     setSelection(null);
@@ -937,6 +951,24 @@ export function useSpreadsheet({
   useEffect(() => {
     updateRealtimePresence(activeCell);
   }, [activeCell, updateRealtimePresence]);
+
+  useEffect(() => {
+    if (!(editingCell && activeSheetId)) {
+      updateRealtimeTyping({
+        cell: null,
+        draft: null,
+        sheetId: null,
+      });
+      return;
+    }
+
+    updateRealtimeTyping({
+      cell: editingCell,
+      draft:
+        activeSheetCells[cellId(editingCell.row, editingCell.col)]?.raw ?? "",
+      sheetId: activeSheetId,
+    });
+  }, [activeSheetCells, activeSheetId, editingCell, updateRealtimeTyping]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

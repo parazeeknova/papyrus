@@ -19,6 +19,7 @@ import {
   renameWorkbook as renameWorkbookInDoc,
   replaceSheetCells,
   replaceSheetColumns,
+  resetWorkbook,
   setActiveSheet as setActiveSheetInDoc,
   setSheetCellRaw,
   setSheetCellValues,
@@ -94,7 +95,8 @@ interface SpreadsheetStoreState {
   connectRealtime: (
     accessRole: CollaborationAccessRole,
     identity: CollaboratorIdentity,
-    serverUrl: string
+    serverUrl: string,
+    isSharedSession: boolean
   ) => void;
   createSheet: () => Promise<void>;
   createWorkbook: () => Promise<void>;
@@ -107,7 +109,11 @@ interface SpreadsheetStoreState {
   lastSyncErrorMessage: string | null;
   lastSyncedAt: number | null;
   manualSyncCooldownUntil: number;
-  openWorkbook: (workbookId: string, name?: string) => Promise<void>;
+  openWorkbook: (
+    workbookId: string,
+    name?: string,
+    isSharedSession?: boolean
+  ) => Promise<void>;
   redo: () => Promise<void>;
   remoteSyncStatus: RemoteSyncStatus;
   remoteVersion: number | null;
@@ -129,6 +135,11 @@ interface SpreadsheetStoreState {
   updateRealtimePresence: (
     activeCell: { col: number; row: number } | null
   ) => void;
+  updateRealtimeTyping: (typing: {
+    cell: { col: number; row: number } | null;
+    draft: string | null;
+    sheetId: string | null;
+  }) => void;
   workbooks: WorkbookMeta[];
   workerResetKey: string;
 }
@@ -140,7 +151,8 @@ interface ActiveWorkbookSession {
   doc: Doc;
   handleDocUpdate: (update: Uint8Array, origin: unknown) => void;
   handleUndoStackChange: () => void;
-  persistence: WorkbookPersistence;
+  isSharedSession: boolean;
+  persistence: WorkbookPersistence | null;
   sessionId: number;
   undoManager: UndoManager | null;
 }
@@ -150,6 +162,7 @@ let collaborationReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let collaborationSocket: WebSocket | null = null;
 let collaborationServerUrl: string | null = null;
 let currentCollaborationIdentity: CollaboratorIdentity | null = null;
+let currentCollaborationIsSharedSession = false;
 let currentCollaborationRole: CollaborationAccessRole | null = null;
 let currentAuthenticatedUser: User | null = null;
 let remoteSyncTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -202,6 +215,17 @@ function decodeBase64ToUpdate(value: string): Uint8Array {
   }
 
   return result;
+}
+
+function getWorkbookUpdatedAtFromEncodedUpdate(encodedUpdate: string): number {
+  const doc = new Doc();
+
+  try {
+    applyUpdate(doc, decodeBase64ToUpdate(encodedUpdate), REALTIME_SYNC_ORIGIN);
+    return getTimestampValue(getWorkbookMeta(doc).updatedAt);
+  } finally {
+    doc.destroy();
+  }
 }
 
 function toWebSocketUrl(serverUrl: string, workbookId: string): string {
@@ -305,7 +329,10 @@ async function refreshWorkbookRegistry(
 }
 
 async function syncActiveWorkbookShareAccess(): Promise<void> {
-  if (!(currentAuthenticatedUser && activeWorkbookSession)) {
+  if (
+    !(currentAuthenticatedUser && activeWorkbookSession) ||
+    activeWorkbookSession.isSharedSession
+  ) {
     return;
   }
 
@@ -316,7 +343,7 @@ async function syncActiveWorkbookShareAccess(): Promise<void> {
 async function persistActiveWorkbookMeta(
   set: (partial: Partial<SpreadsheetStoreState>) => void
 ): Promise<void> {
-  if (!activeWorkbookSession) {
+  if (!activeWorkbookSession || activeWorkbookSession.isSharedSession) {
     return;
   }
 
@@ -334,6 +361,7 @@ async function destroyActiveWorkbookSession(): Promise<void> {
     doc,
     handleDocUpdate,
     handleUndoStackChange,
+    isSharedSession: _isSharedSession,
     persistence,
     undoManager,
   } = activeWorkbookSession;
@@ -342,7 +370,7 @@ async function destroyActiveWorkbookSession(): Promise<void> {
   undoManager?.off("stack-item-popped", handleUndoStackChange);
   undoManager?.off("stack-cleared", handleUndoStackChange);
   undoManager?.destroy();
-  await persistence.destroy();
+  await persistence?.destroy();
   doc.destroy();
   activeWorkbookSession = null;
 }
@@ -382,7 +410,7 @@ async function flushRemoteWorkbookSync(
     scheduleRetryOnLeaseFailure?: boolean;
   }
 ): Promise<boolean> {
-  if (!(currentAuthenticatedUser && session)) {
+  if (!(currentAuthenticatedUser && session) || session.isSharedSession) {
     return false;
   }
 
@@ -676,6 +704,11 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       return;
     }
 
+    const isSharedSession = currentCollaborationIsSharedSession;
+    const initialLocalSeedUpdate = encodeUpdateToBase64(
+      encodeStateAsUpdate(activeWorkbookSession.doc)
+    );
+
     const authToken = currentAuthenticatedUser
       ? await currentAuthenticatedUser.getIdToken().catch(() => null)
       : null;
@@ -707,23 +740,10 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     });
 
     const socket = new WebSocket(wsUrl);
+    let hasAppliedInitialSnapshot = false;
     collaborationSocket = socket;
 
     socket.addEventListener("open", () => {
-      if (!(activeWorkbookSession && currentCollaborationRole === "editor")) {
-        set({ collaborationStatus: "connected" });
-        return;
-      }
-
-      const syncMessage: CollaborationClientMessage = {
-        type: "sync",
-        payload: {
-          update: encodeUpdateToBase64(
-            encodeStateAsUpdate(activeWorkbookSession.doc)
-          ),
-        },
-      };
-      socket.send(JSON.stringify(syncMessage));
       set({ collaborationStatus: "connected" });
     });
 
@@ -748,11 +768,23 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       }
 
       if (message.type === "snapshot") {
+        const shouldSeedRoomFromLocalState =
+          !isSharedSession &&
+          currentCollaborationRole === "editor" &&
+          getTimestampValue(
+            getWorkbookMeta(activeWorkbookSession.doc).updatedAt
+          ) > getWorkbookUpdatedAtFromEncodedUpdate(message.payload.update);
+
+        if (isSharedSession && !hasAppliedInitialSnapshot) {
+          resetWorkbook(activeWorkbookSession.doc, REALTIME_SYNC_ORIGIN);
+        }
+
         applyUpdate(
           activeWorkbookSession.doc,
           decodeBase64ToUpdate(message.payload.update),
           REALTIME_SYNC_ORIGIN
         );
+        hasAppliedInitialSnapshot = true;
         set({
           collaborationAccessRole: syncEffectiveRealtimeAccessRole(
             message.payload.peers
@@ -760,6 +792,22 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
           collaborationErrorMessage: null,
           collaborationPeers: message.payload.peers,
         });
+
+        if (
+          (isSharedSession &&
+            currentCollaborationRole === "editor" &&
+            message.payload.shouldInitializeFromClient) ||
+          shouldSeedRoomFromLocalState
+        ) {
+          const syncMessage: CollaborationClientMessage = {
+            type: "sync",
+            payload: {
+              update: initialLocalSeedUpdate,
+            },
+          };
+          socket.send(JSON.stringify(syncMessage));
+        }
+
         return;
       }
 
@@ -899,7 +947,8 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
 
   const activateWorkbook = async (
     workbookId: string,
-    fallbackName?: string
+    fallbackName?: string,
+    isSharedSession = false
   ): Promise<void> => {
     set({ hydrationState: "loading", saveState: "saving" });
 
@@ -913,11 +962,15 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     await destroyActiveWorkbookSession();
 
     const doc = new Doc();
-    const persistence = attachWorkbookPersistence(workbookId, doc);
+    const persistence = isSharedSession
+      ? null
+      : attachWorkbookPersistence(workbookId, doc);
     const sessionId = nextWorkbookSessionId + 1;
     nextWorkbookSessionId = sessionId;
 
-    await waitForWorkbookPersistence(persistence);
+    if (persistence) {
+      await waitForWorkbookPersistence(persistence);
+    }
 
     ensureWorkbookInitialized(doc, {
       name: fallbackName,
@@ -931,6 +984,7 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       doc,
       handleDocUpdate: () => undefined,
       handleUndoStackChange: () => undefined,
+      isSharedSession,
       persistence,
       sessionId,
       undoManager: null,
@@ -939,7 +993,7 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
       applySnapshot(doc);
 
-      if (origin !== FIRESTORE_SYNC_ORIGIN) {
+      if (!(session.isSharedSession || origin === FIRESTORE_SYNC_ORIGIN)) {
         session.dirty = true;
         scheduleRemoteWorkbookSync(set, session);
       }
@@ -1045,9 +1099,10 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     collaborationErrorMessage: null,
     collaborationPeers: [],
     collaborationStatus: "disconnected",
-    connectRealtime: (accessRole, identity, serverUrl) => {
+    connectRealtime: (accessRole, identity, serverUrl, isSharedSession) => {
       collaborationServerUrl = serverUrl;
       currentCollaborationIdentity = identity;
+      currentCollaborationIsSharedSession = isSharedSession;
       currentCollaborationRole = accessRole;
       set({ collaborationErrorMessage: null });
       connectRealtimeTransport().catch(() => undefined);
@@ -1274,8 +1329,8 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
         set({ hydrationState: "error", saveState: "error" });
       }
     },
-    openWorkbook: async (workbookId, name) => {
-      await activateWorkbook(workbookId, name);
+    openWorkbook: async (workbookId, name, isSharedSession) => {
+      await activateWorkbook(workbookId, name, isSharedSession);
     },
     renameColumn: async (columnIndex, columnName) => {
       if (isViewerAccess()) {
@@ -1532,6 +1587,7 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     stopRealtime: () => {
       collaborationServerUrl = null;
       currentCollaborationIdentity = null;
+      currentCollaborationIsSharedSession = false;
       currentCollaborationRole = null;
       set({ collaborationAccessRole: null, collaborationErrorMessage: null });
       stopRealtimeConnection();
@@ -1560,6 +1616,17 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
         payload: {
           activeCell,
         },
+      };
+      collaborationSocket.send(JSON.stringify(message));
+    },
+    updateRealtimeTyping: (typing) => {
+      if (collaborationSocket?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      const message: CollaborationClientMessage = {
+        type: "typing",
+        payload: typing,
       };
       collaborationSocket.send(JSON.stringify(message));
     },

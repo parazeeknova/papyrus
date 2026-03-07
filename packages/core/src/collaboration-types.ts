@@ -13,6 +13,11 @@ export interface CollaboratorPresence {
   accessRole: CollaborationAccessRole;
   activeCell: { col: number; row: number } | null;
   identity: CollaboratorIdentity;
+  typing: {
+    cell: { col: number; row: number };
+    draft: string;
+    sheetId: string;
+  } | null;
   updatedAt: number;
 }
 
@@ -21,6 +26,14 @@ export type CollaborationClientMessage =
       type: "presence";
       payload: {
         activeCell: { col: number; row: number } | null;
+      };
+    }
+  | {
+      type: "typing";
+      payload: {
+        cell: { col: number; row: number } | null;
+        draft: string | null;
+        sheetId: string | null;
       };
     }
   | {
@@ -41,6 +54,7 @@ export type CollaborationServerMessage =
       type: "snapshot";
       payload: {
         peers: CollaboratorPresence[];
+        shouldInitializeFromClient: boolean;
         update: string;
       };
     }

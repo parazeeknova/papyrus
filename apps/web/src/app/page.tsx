@@ -342,6 +342,7 @@ function HomeContent() {
         selection={isInitialLoad ? null : selection}
         setCellValue={setCellValue}
         setSelectionRange={isInitialLoad ? () => undefined : setSelectionRange}
+        sheetId={visibleActiveSheetId}
         showAllRows={showAllRows}
         startEditing={isInitialLoad ? () => undefined : startEditing}
         stopEditing={isInitialLoad ? () => undefined : stopEditing}

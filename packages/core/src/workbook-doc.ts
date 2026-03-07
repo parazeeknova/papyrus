@@ -180,6 +180,21 @@ export function ensureWorkbookInitialized(
   });
 }
 
+export function resetWorkbook(doc: Doc, origin?: unknown): void {
+  const meta = getMetaMap(doc);
+  const sheetOrder = getSheetOrder(doc);
+  const sheets = getSheetsMap(doc);
+
+  doc.transact(() => {
+    meta.clear();
+    sheets.clear();
+
+    if (sheetOrder.length > 0) {
+      sheetOrder.delete(0, sheetOrder.length);
+    }
+  }, origin);
+}
+
 export function touchWorkbook(doc: Doc, activeSheetId?: string): void {
   const meta = getMetaMap(doc);
   const now = getNowIsoString();

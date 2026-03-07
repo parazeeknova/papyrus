@@ -17,6 +17,7 @@ interface RoomPeer {
   isOwner: boolean;
   name: string;
   photoURL: string | null;
+  typing: CollaboratorPresence["typing"];
   updatedAt: number;
   ws: {
     close: (code?: number, reason?: string) => unknown;
@@ -417,6 +418,7 @@ function getRoomPresence(room: RoomState): CollaboratorPresence[] {
       name: peer.name,
       photoURL: peer.photoURL,
     },
+    typing: peer.typing,
     updatedAt: peer.updatedAt,
   }));
 }
@@ -470,6 +472,19 @@ const collaborationMessageSchema = t.Union([
     }),
   }),
   t.Object({
+    type: t.Literal("typing"),
+    payload: t.Object({
+      cell: t.Nullable(
+        t.Object({
+          col: t.Number(),
+          row: t.Number(),
+        })
+      ),
+      draft: t.Nullable(t.String()),
+      sheetId: t.Nullable(t.String()),
+    }),
+  }),
+  t.Object({
     type: t.Literal("sync"),
     payload: t.Object({
       update: t.String(),
@@ -498,6 +513,16 @@ const collaborationResponseSchema = t.Union([
             name: t.String(),
             photoURL: t.Nullable(t.String()),
           }),
+          typing: t.Nullable(
+            t.Object({
+              cell: t.Object({
+                col: t.Number(),
+                row: t.Number(),
+              }),
+              draft: t.String(),
+              sheetId: t.String(),
+            })
+          ),
           updatedAt: t.Number(),
         })
       ),
@@ -523,9 +548,20 @@ const collaborationResponseSchema = t.Union([
             name: t.String(),
             photoURL: t.Nullable(t.String()),
           }),
+          typing: t.Nullable(
+            t.Object({
+              cell: t.Object({
+                col: t.Number(),
+                row: t.Number(),
+              }),
+              draft: t.String(),
+              sheetId: t.String(),
+            })
+          ),
           updatedAt: t.Number(),
         })
       ),
+      shouldInitializeFromClient: t.Boolean(),
       update: t.String(),
     }),
   }),
@@ -579,6 +615,7 @@ export const app = new Elysia()
       }
 
       const room = getRoom(workbookId);
+      const shouldInitializeFromClient = isOwner;
       ensureRoomPolicyRefresh(workbookId, room);
 
       const peer: RoomPeer = {
@@ -591,6 +628,7 @@ export const app = new Elysia()
         isAnonymous: query.isAnonymous === "true",
         name: query.name,
         photoURL: query.photoURL ?? null,
+        typing: null,
         updatedAt: Date.now(),
         ws,
       };
@@ -600,6 +638,7 @@ export const app = new Elysia()
         type: "snapshot",
         payload: {
           peers: getRoomPresence(room),
+          shouldInitializeFromClient,
           update: encodeUpdate(encodeStateAsUpdate(room.doc)),
         },
       });
@@ -618,6 +657,22 @@ export const app = new Elysia()
 
       if (message.type === "presence") {
         peer.activeCell = message.payload.activeCell;
+        peer.updatedAt = Date.now();
+        broadcastPresence(room);
+        return;
+      }
+
+      if (message.type === "typing") {
+        peer.typing =
+          message.payload.cell &&
+          message.payload.draft &&
+          message.payload.sheetId
+            ? {
+                cell: message.payload.cell,
+                draft: message.payload.draft,
+                sheetId: message.payload.sheetId,
+              }
+            : null;
         peer.updatedAt = Date.now();
         broadcastPresence(room);
         return;

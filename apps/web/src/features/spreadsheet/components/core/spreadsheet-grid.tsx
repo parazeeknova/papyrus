@@ -213,6 +213,7 @@ interface SpreadsheetGridProps {
     end: CellPosition,
     mode?: SelectionMode
   ) => void;
+  sheetId: string | null;
   showAllRows: () => void;
   startEditing: (pos: CellPosition) => void;
   stopEditing: () => void;
@@ -249,6 +250,7 @@ export function SpreadsheetGrid({
   onRenameColumn,
   onRedo,
   onUndo,
+  sheetId,
 }: SpreadsheetGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionDragRef = useRef<{
@@ -651,12 +653,19 @@ export function SpreadsheetGrid({
           key: `${presence.row}:${presence.col}`,
           left: ROW_HEADER_WIDTH + column.start,
           name: primaryPeer.identity.name,
+          typingDraft:
+            presence.peers.find(
+              (peer) =>
+                peer.typing?.sheetId === sheetId &&
+                peer.typing.cell.row === presence.row &&
+                peer.typing.cell.col === presence.col
+            )?.typing?.draft ?? null,
           top: COL_HEADER_HEIGHT + row.start,
           width: column.size,
         };
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-  }, [collaborationPeers, renderCols, renderRows]);
+  }, [collaborationPeers, renderCols, renderRows, sheetId]);
 
   return (
     <div
@@ -919,6 +928,7 @@ export function SpreadsheetGrid({
               style={{ backgroundColor: presence.color }}
             >
               {presence.name}
+              {presence.typingDraft ? `: ${presence.typingDraft}` : ""}
               {presence.count > 1 ? ` +${presence.count - 1}` : ""}
             </div>
           </div>
