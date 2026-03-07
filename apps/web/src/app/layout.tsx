@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Nunito_Sans } from "next/font/google";
+// biome-ignore lint/suspicious/noTsIgnore: vercel build fix for css imports
+// @ts-ignore - this is a css file, but next doesn't know how to handle it
 import "./globals.css";
 import { TooltipProvider } from "@/web/components/ui/tooltip";
 import { cn } from "@/web/lib/utils";
