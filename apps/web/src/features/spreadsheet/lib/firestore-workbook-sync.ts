@@ -1,4 +1,6 @@
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
+import { createLogger } from "@papyrus/logs";
+import { FirebaseError } from "firebase/app";
 import {
   collection,
   doc,
@@ -13,11 +15,15 @@ import { firebaseDb } from "@/web/features/auth/lib/firebase-auth";
 
 const WORKBOOK_CHUNK_SIZE = 600_000;
 const SYNC_LEASE_DURATION_MS = 10_000;
+const FIRESTORE_RETRY_ATTEMPTS = 3;
+const FIRESTORE_RETRY_BASE_DELAY_MS = 500;
+const firestoreSyncLogger = createLogger({ scope: "firestore-sync" });
 
 export interface RemoteWorkbookState {
   activeSheetId: string | null;
   meta: WorkbookMeta;
   update: Uint8Array;
+  version: number;
 }
 
 interface RemoteWorkbookDocument extends WorkbookMeta {
@@ -26,6 +32,7 @@ interface RemoteWorkbookDocument extends WorkbookMeta {
   leaseOwner?: string;
   snapshotChunkCount: number;
   snapshotId: string;
+  version: number;
 }
 
 interface RemoteWorkbookChunk {
@@ -73,12 +80,61 @@ function chunkString(value: string, chunkSize: number): string[] {
   return result;
 }
 
+function isRetryableFirestoreError(error: unknown): boolean {
+  if (!(error instanceof FirebaseError)) {
+    return false;
+  }
+
+  return [
+    "aborted",
+    "deadline-exceeded",
+    "failed-precondition",
+    "internal",
+    "resource-exhausted",
+    "unavailable",
+  ].includes(error.code);
+}
+
+function waitForDelay(delayMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
+async function withFirestoreRetry<T>(
+  label: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      attempt += 1;
+      if (
+        attempt >= FIRESTORE_RETRY_ATTEMPTS ||
+        !isRetryableFirestoreError(error)
+      ) {
+        throw error;
+      }
+
+      const delayMs = FIRESTORE_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+      firestoreSyncLogger.warn(
+        `${label} failed with a retryable Firestore error. Retrying in ${delayMs}ms.`,
+        error
+      );
+      await waitForDelay(delayMs);
+    }
+  }
+}
+
 export async function listRemoteWorkbooks(
   uid: string
 ): Promise<WorkbookMeta[]> {
-  const snapshot = await getDocs(
-    collection(firebaseDb, "users", uid, "workbooks")
-  );
+  const snapshot = await withFirestoreRetry("listRemoteWorkbooks", () => {
+    return getDocs(collection(firebaseDb, "users", uid, "workbooks"));
+  });
 
   return snapshot.docs
     .map((documentSnapshot) => {
@@ -110,7 +166,10 @@ export async function readRemoteWorkbook(
   uid: string,
   workbookId: string
 ): Promise<RemoteWorkbookState | null> {
-  const workbookSnapshot = await getDoc(getWorkbookRef(uid, workbookId));
+  const workbookSnapshot = await withFirestoreRetry(
+    "readRemoteWorkbook:meta",
+    async () => getDoc(getWorkbookRef(uid, workbookId))
+  );
   if (!workbookSnapshot.exists()) {
     return null;
   }
@@ -160,6 +219,7 @@ export async function readRemoteWorkbook(
       updatedAt: data.updatedAt,
     },
     update: decodeBase64ToUpdate(chunks.map((chunk) => chunk.data).join("")),
+    version: typeof data.version === "number" ? data.version : 0,
   };
 }
 
@@ -170,31 +230,33 @@ export function acquireWorkbookSyncLease(
 ): Promise<boolean> {
   const workbookRef = getWorkbookRef(uid, workbookId);
 
-  return runTransaction(firebaseDb, async (transaction) => {
-    const snapshot = await transaction.get(workbookRef);
-    const data = snapshot.exists()
-      ? (snapshot.data() as Partial<RemoteWorkbookDocument>)
-      : null;
-    const now = Date.now();
-    const leaseOwner = data?.leaseOwner;
-    const leaseExpiresAt = data?.leaseExpiresAt ?? 0;
-    const hasLease =
-      !leaseOwner || leaseOwner === clientId || leaseExpiresAt <= now;
+  return withFirestoreRetry("acquireWorkbookSyncLease", () => {
+    return runTransaction(firebaseDb, async (transaction) => {
+      const snapshot = await transaction.get(workbookRef);
+      const data = snapshot.exists()
+        ? (snapshot.data() as Partial<RemoteWorkbookDocument>)
+        : null;
+      const now = Date.now();
+      const leaseOwner = data?.leaseOwner;
+      const leaseExpiresAt = data?.leaseExpiresAt ?? 0;
+      const hasLease =
+        !leaseOwner || leaseOwner === clientId || leaseExpiresAt <= now;
 
-    if (!hasLease) {
-      return false;
-    }
+      if (!hasLease) {
+        return false;
+      }
 
-    transaction.set(
-      workbookRef,
-      {
-        leaseExpiresAt: now + SYNC_LEASE_DURATION_MS,
-        leaseOwner: clientId,
-      },
-      { merge: true }
-    );
+      transaction.set(
+        workbookRef,
+        {
+          leaseExpiresAt: now + SYNC_LEASE_DURATION_MS,
+          leaseOwner: clientId,
+        },
+        { merge: true }
+      );
 
-    return true;
+      return true;
+    });
   });
 }
 
@@ -203,52 +265,57 @@ export async function writeRemoteWorkbook(
   workbook: RemoteWorkbookState,
   clientId: string
 ): Promise<void> {
-  const workbookRef = getWorkbookRef(uid, workbook.meta.id);
-  const chunksCollection = getWorkbookChunksCollection(uid, workbook.meta.id);
-  const snapshotId = `${Date.now()}-${clientId}`;
-  const encodedUpdate = encodeUpdateToBase64(workbook.update);
-  const chunks = chunkString(encodedUpdate, WORKBOOK_CHUNK_SIZE);
-  const existingChunks = await getDocs(chunksCollection);
-  const batch = writeBatch(firebaseDb);
+  await withFirestoreRetry("writeRemoteWorkbook", async () => {
+    const workbookRef = getWorkbookRef(uid, workbook.meta.id);
+    const chunksCollection = getWorkbookChunksCollection(uid, workbook.meta.id);
+    const snapshotId = `${Date.now()}-${clientId}`;
+    const encodedUpdate = encodeUpdateToBase64(workbook.update);
+    const chunks = chunkString(encodedUpdate, WORKBOOK_CHUNK_SIZE);
+    const existingChunks = await getDocs(chunksCollection);
+    const batch = writeBatch(firebaseDb);
 
-  batch.set(workbookRef, {
-    ...workbook.meta,
-    activeSheetId: workbook.activeSheetId,
-    leaseExpiresAt: Date.now() + SYNC_LEASE_DURATION_MS,
-    leaseOwner: clientId,
-    snapshotChunkCount: chunks.length,
-    snapshotId,
-  } satisfies RemoteWorkbookDocument);
-
-  for (const existingChunk of existingChunks.docs) {
-    batch.delete(existingChunk.ref);
-  }
-
-  for (const [index, chunk] of chunks.entries()) {
-    batch.set(doc(chunksCollection, index.toString().padStart(4, "0")), {
-      data: chunk,
-      index,
+    batch.set(workbookRef, {
+      ...workbook.meta,
+      activeSheetId: workbook.activeSheetId,
+      leaseExpiresAt: Date.now() + SYNC_LEASE_DURATION_MS,
+      leaseOwner: clientId,
+      snapshotChunkCount: chunks.length,
       snapshotId,
-    } satisfies RemoteWorkbookChunk);
-  }
+      version: workbook.version + 1,
+    } satisfies RemoteWorkbookDocument);
 
-  await batch.commit();
+    for (const existingChunk of existingChunks.docs) {
+      batch.delete(existingChunk.ref);
+    }
+
+    for (const [index, chunk] of chunks.entries()) {
+      batch.set(doc(chunksCollection, index.toString().padStart(4, "0")), {
+        data: chunk,
+        index,
+        snapshotId,
+      } satisfies RemoteWorkbookChunk);
+    }
+
+    await batch.commit();
+  });
 }
 
 export async function deleteRemoteWorkbook(
   uid: string,
   workbookId: string
 ): Promise<void> {
-  const workbookRef = getWorkbookRef(uid, workbookId);
-  const chunksSnapshot = await getDocs(
-    getWorkbookChunksCollection(uid, workbookId)
-  );
-  const batch = writeBatch(firebaseDb);
+  await withFirestoreRetry("deleteRemoteWorkbook", async () => {
+    const workbookRef = getWorkbookRef(uid, workbookId);
+    const chunksSnapshot = await getDocs(
+      getWorkbookChunksCollection(uid, workbookId)
+    );
+    const batch = writeBatch(firebaseDb);
 
-  for (const chunk of chunksSnapshot.docs) {
-    batch.delete(chunk.ref);
-  }
+    for (const chunk of chunksSnapshot.docs) {
+      batch.delete(chunk.ref);
+    }
 
-  batch.delete(workbookRef);
-  await batch.commit();
+    batch.delete(workbookRef);
+    await batch.commit();
+  });
 }
