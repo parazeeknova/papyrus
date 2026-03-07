@@ -1,4 +1,5 @@
 import { type Doc, UndoManager, type Array as YArray, Map as YMap } from "yjs";
+import type { CollaborationAccessRole } from "./collaboration-types";
 import type {
   PersistedCellRecord,
   SheetColumn,
@@ -15,6 +16,7 @@ const SHEET_COLUMNS_KEY = "columns";
 const DEFAULT_WORKBOOK_NAME = "Untitled spreadsheet";
 const DEFAULT_SHEET_NAME_PREFIX = "Sheet";
 const DEFAULT_COLUMN_COUNT = 100;
+const DEFAULT_SHARING_ACCESS_ROLE: CollaborationAccessRole = "viewer";
 
 function getNowIsoString(): string {
   return new Date().toISOString();
@@ -159,7 +161,12 @@ export function ensureWorkbookInitialized(
     if (!meta.has("isFavorite")) {
       meta.set("isFavorite", false);
     }
-
+    if (!meta.has("sharingEnabled")) {
+      meta.set("sharingEnabled", false);
+    }
+    if (!meta.has("sharingAccessRole")) {
+      meta.set("sharingAccessRole", DEFAULT_SHARING_ACCESS_ROLE);
+    }
     if (sheetOrder.length === 0 || sheets.size === 0) {
       const firstSheetId = createSheetId();
       ensureSheet(
@@ -208,6 +215,36 @@ export function setWorkbookFavorite(doc: Doc, isFavorite: boolean): boolean {
   });
 
   return isFavorite;
+}
+
+export function setWorkbookSharingEnabled(
+  doc: Doc,
+  sharingEnabled: boolean
+): boolean {
+  const meta = getMetaMap(doc);
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    meta.set("sharingEnabled", sharingEnabled);
+    meta.set("updatedAt", now);
+  });
+
+  return sharingEnabled;
+}
+
+export function setWorkbookSharingAccessRole(
+  doc: Doc,
+  accessRole: CollaborationAccessRole
+): CollaborationAccessRole {
+  const meta = getMetaMap(doc);
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    meta.set("sharingAccessRole", accessRole);
+    meta.set("updatedAt", now);
+  });
+
+  return accessRole;
 }
 
 export function createSheet(doc: Doc, name?: string): SheetMeta {
@@ -463,6 +500,12 @@ export function getWorkbookMeta(doc: Doc): WorkbookMeta {
     isFavorite: getBooleanValue(meta, "isFavorite"),
     lastOpenedAt: getStringValue(meta, "lastOpenedAt"),
     name: getStringValue(meta, "name", DEFAULT_WORKBOOK_NAME),
+    sharingAccessRole: getStringValue(
+      meta,
+      "sharingAccessRole",
+      DEFAULT_SHARING_ACCESS_ROLE
+    ) as CollaborationAccessRole,
+    sharingEnabled: getBooleanValue(meta, "sharingEnabled"),
     updatedAt: getStringValue(meta, "updatedAt"),
   };
 }

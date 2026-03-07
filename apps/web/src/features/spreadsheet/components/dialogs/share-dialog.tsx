@@ -2,7 +2,6 @@
 
 import type {
   CollaborationAccessRole,
-  CollaboratorIdentity,
   CollaboratorPresence,
 } from "@papyrus/core/collaboration-types";
 import {
@@ -28,15 +27,18 @@ import { buildWorkbookShareLink } from "@/web/features/spreadsheet/lib/collabora
 interface ShareDialogProps {
   accessRole: CollaborationAccessRole;
   canEdit: boolean;
+  canManageSharing: boolean;
   collaborators: CollaboratorPresence[];
-  currentIdentity: CollaboratorIdentity | null;
+  onUpdateSharingAccessRole: (accessRole: CollaborationAccessRole) => void;
+  onUpdateSharingEnabled: (sharingEnabled: boolean) => void;
+  realtimeErrorMessage: string | null;
   realtimeStatus: "connected" | "connecting" | "disconnected";
+  sharingAccessRole: CollaborationAccessRole;
+  sharingEnabled: boolean;
   syncServerUrl: string | null;
   workbookId: string | null;
   workbookName: string;
 }
-
-type CopiedLinkRole = "editor" | "viewer" | null;
 
 function buildPresenceLabel(peer: CollaboratorPresence): string {
   if (!peer.activeCell) {
@@ -48,17 +50,22 @@ function buildPresenceLabel(peer: CollaboratorPresence): string {
 
 export function ShareDialog({
   accessRole,
+  canManageSharing,
   canEdit,
   collaborators,
-  currentIdentity,
+  onUpdateSharingAccessRole,
+  onUpdateSharingEnabled,
+  realtimeErrorMessage,
   realtimeStatus,
+  sharingAccessRole,
+  sharingEnabled,
   syncServerUrl,
   workbookId,
   workbookName,
 }: ShareDialogProps) {
   const [open, setOpen] = useState(false);
   const [origin, setOrigin] = useState("");
-  const [copiedLinkRole, setCopiedLinkRole] = useState<CopiedLinkRole>(null);
+  const [didCopyLink, setDidCopyLink] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -69,65 +76,40 @@ export function ShareDialog({
   }, []);
 
   useEffect(() => {
-    if (!copiedLinkRole) {
+    if (!didCopyLink) {
       return;
     }
 
     const timeout = window.setTimeout(() => {
-      setCopiedLinkRole(null);
+      setDidCopyLink(false);
     }, 1500);
 
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [copiedLinkRole]);
+  }, [didCopyLink]);
 
-  const viewerLink = useMemo(() => {
+  const shareLink = useMemo(() => {
     if (!(origin && workbookId)) {
       return "";
     }
 
-    return buildWorkbookShareLink(origin, workbookId, "viewer");
-  }, [origin, workbookId]);
-
-  const editorLink = useMemo(() => {
-    if (!(origin && workbookId)) {
-      return "";
-    }
-
-    return buildWorkbookShareLink(origin, workbookId, "editor");
+    return buildWorkbookShareLink(origin, workbookId);
   }, [origin, workbookId]);
 
   const visibleCollaborators = useMemo(() => {
-    const peers = [...collaborators].sort(
+    return [...collaborators].sort(
       (left, right) => right.updatedAt - left.updatedAt
     );
+  }, [collaborators]);
 
-    if (!currentIdentity) {
-      return peers;
-    }
-
-    return [
-      {
-        accessRole,
-        activeCell: null,
-        identity: currentIdentity,
-        updatedAt: Date.now(),
-      },
-      ...peers,
-    ];
-  }, [accessRole, collaborators, currentIdentity]);
-
-  const copyLink = async (
-    access: Exclude<CopiedLinkRole, null>,
-    link: string
-  ): Promise<void> => {
-    if (link.length === 0) {
+  const copyLink = async (): Promise<void> => {
+    if (!sharingEnabled || shareLink.length === 0) {
       return;
     }
 
-    await navigator.clipboard.writeText(link);
-    setCopiedLinkRole(access);
+    await navigator.clipboard.writeText(shareLink);
+    setDidCopyLink(true);
   };
 
   return (
@@ -141,7 +123,7 @@ export function ShareDialog({
 
       <DropdownMenuContent
         align="end"
-        className="w-[27rem] overflow-hidden p-0"
+        className="w-108 overflow-hidden p-0"
         sideOffset={8}
       >
         <div className="border-border border-b px-4 py-3">
@@ -175,13 +157,15 @@ export function ShareDialog({
             <div>
               <p className="font-medium text-xs">Realtime collaboration</p>
               <p className="text-muted-foreground text-xs">
-                {syncServerUrl
-                  ? realtimeStatus === "connected"
-                    ? "Connected to the sync server."
-                    : realtimeStatus === "connecting"
-                      ? "Connecting to the sync server."
-                      : "Sync server unreachable right now."
-                  : "No sync server configured yet."}
+                {realtimeErrorMessage
+                  ? realtimeErrorMessage
+                  : syncServerUrl
+                    ? realtimeStatus === "connected"
+                      ? "Connected to the sync server."
+                      : realtimeStatus === "connecting"
+                        ? "Connecting to the sync server."
+                        : "Sync server unreachable right now."
+                    : "No sync server configured yet."}
               </p>
             </div>
             <Badge
@@ -191,51 +175,74 @@ export function ShareDialog({
             </Badge>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3 border-border border-t pt-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="font-medium text-xs">Viewer link</p>
-              <Badge variant="outline">
-                <EyeIcon className="mr-1 size-3" weight="bold" />
-                Read only
-              </Badge>
+              <div>
+                <p className="font-medium text-xs">Share access</p>
+                <p className="text-muted-foreground text-xs">
+                  Turn sharing on before sending a link.
+                </p>
+              </div>
+              <Button
+                disabled={!canManageSharing}
+                onClick={() => {
+                  onUpdateSharingEnabled(!sharingEnabled);
+                }}
+                size="sm"
+                variant={sharingEnabled ? "default" : "outline"}
+              >
+                {sharingEnabled ? "Sharing on" : "Enable sharing"}
+              </Button>
             </div>
             <div className="flex gap-2">
-              <Input readOnly value={viewerLink} />
               <Button
-                disabled={viewerLink.length === 0}
+                disabled={!(canManageSharing && sharingEnabled)}
                 onClick={() => {
-                  copyLink("viewer", viewerLink).catch(() => undefined);
+                  onUpdateSharingAccessRole("viewer");
                 }}
-                variant="outline"
+                variant={sharingAccessRole === "viewer" ? "default" : "outline"}
               >
-                {copiedLinkRole === "viewer" ? (
-                  <CheckIcon weight="bold" />
-                ) : (
-                  <CopyIcon weight="bold" />
-                )}
-                Copy
+                <EyeIcon className="mr-1 size-3.5" weight="bold" />
+                Viewer
+              </Button>
+              <Button
+                disabled={!(canManageSharing && sharingEnabled)}
+                onClick={() => {
+                  onUpdateSharingAccessRole("editor");
+                }}
+                variant={sharingAccessRole === "editor" ? "default" : "outline"}
+              >
+                <PencilSimpleIcon className="mr-1 size-3.5" weight="bold" />
+                Editor
               </Button>
             </div>
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <p className="font-medium text-xs">Editor link</p>
+              <p className="font-medium text-xs">Share link</p>
               <Badge variant="outline">
-                <PencilSimpleIcon className="mr-1 size-3" weight="bold" />
-                Can edit
+                {sharingAccessRole === "editor" ? "Can edit" : "Read only"}
               </Badge>
             </div>
             <div className="flex gap-2">
-              <Input readOnly value={editorLink} />
+              <Input
+                placeholder={
+                  canManageSharing
+                    ? "Enable sharing to generate a link"
+                    : "Sign in as the owner to manage sharing"
+                }
+                readOnly
+                value={sharingEnabled ? shareLink : ""}
+              />
               <Button
-                disabled={editorLink.length === 0}
+                disabled={!sharingEnabled || shareLink.length === 0}
                 onClick={() => {
-                  copyLink("editor", editorLink).catch(() => undefined);
+                  copyLink().catch(() => undefined);
                 }}
                 variant="outline"
               >
-                {copiedLinkRole === "editor" ? (
+                {didCopyLink ? (
                   <CheckIcon weight="bold" />
                 ) : (
                   <CopyIcon weight="bold" />
@@ -247,16 +254,13 @@ export function ShareDialog({
 
           <div className="space-y-2 border-border border-t pt-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="font-medium text-xs">People in this sheet</p>
+              <p className="font-medium text-xs">Other people in this sheet</p>
               <Badge variant="outline">{visibleCollaborators.length}</Badge>
             </div>
 
             {visibleCollaborators.length > 0 ? (
               <div className="space-y-2">
                 {visibleCollaborators.map((peer) => {
-                  const isCurrentUser =
-                    currentIdentity?.clientId === peer.identity.clientId;
-
                   return (
                     <div
                       className="flex items-center gap-3 border border-border bg-background px-3 py-2"
@@ -266,7 +270,7 @@ export function ShareDialog({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <p className="truncate font-medium text-xs">
-                            {isCurrentUser ? "You" : peer.identity.name}
+                            {peer.identity.name}
                           </p>
                           <Badge variant="outline">{peer.accessRole}</Badge>
                           {peer.identity.isAnonymous ? (
@@ -274,9 +278,7 @@ export function ShareDialog({
                           ) : null}
                         </div>
                         <p className="truncate text-muted-foreground text-xs">
-                          {isCurrentUser
-                            ? "Active here now"
-                            : buildPresenceLabel(peer)}
+                          {buildPresenceLabel(peer)}
                         </p>
                       </div>
                     </div>
@@ -286,7 +288,7 @@ export function ShareDialog({
             ) : (
               <div className="flex items-start gap-2 border border-border bg-muted/20 px-3 py-2 text-muted-foreground text-xs">
                 <WarningCircleIcon className="mt-0.5 size-4 shrink-0" />
-                Waiting for another collaborator to join this workbook.
+                Waiting for someone else to join this workbook.
               </div>
             )}
           </div>

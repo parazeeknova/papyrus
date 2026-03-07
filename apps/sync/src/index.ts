@@ -14,10 +14,12 @@ interface RoomPeer {
   color: string;
   icon: string;
   isAnonymous: boolean;
+  isOwner: boolean;
   name: string;
   photoURL: string | null;
   updatedAt: number;
   ws: {
+    close: (code?: number, reason?: string) => unknown;
     send: (data: CollaborationServerMessage) => unknown;
   };
 }
@@ -26,12 +28,99 @@ interface RoomState {
   doc: Doc;
   peers: Map<string, RoomPeer>;
   persistTimeout: ReturnType<typeof setTimeout> | null;
+  policyRefreshInFlight: boolean;
+  policyRefreshInterval: ReturnType<typeof setInterval> | null;
+}
+
+interface SharedWorkbookAccess {
+  accessRole: CollaboratorPresence["accessRole"];
+  ownerId: string;
+  sharingEnabled: boolean;
+  workbookId: string;
 }
 
 const rooms = new Map<string, RoomState>();
 const ROOM_CACHE_DIR = resolve(process.cwd(), ".papyrus-sync-cache");
 const ROOM_PERSIST_DEBOUNCE_MS = 200;
+const ROOM_POLICY_REFRESH_MS = 5000;
 const ROOM_PERSISTENCE_ORIGIN = "room-persistence";
+const DOT_ENV_LINE_SPLIT_PATTERN = /\r?\n/;
+const WEB_APP_DIR = resolve(process.cwd(), "..", "web");
+
+function parseDotEnvFile(filePath: string): Record<string, string> {
+  if (!existsSync(filePath)) {
+    return {};
+  }
+
+  const contents = readFileSync(filePath, "utf8");
+  const entries = contents.split(DOT_ENV_LINE_SPLIT_PATTERN);
+  const result: Record<string, string> = {};
+
+  for (const entry of entries) {
+    const trimmedEntry = entry.trim();
+    if (!trimmedEntry || trimmedEntry.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmedEntry.indexOf("=");
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = trimmedEntry.slice(0, separatorIndex).trim();
+    const rawValue = trimmedEntry.slice(separatorIndex + 1).trim();
+    const quotedValue =
+      (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
+      (rawValue.startsWith("'") && rawValue.endsWith("'"));
+
+    result[key] = quotedValue ? rawValue.slice(1, -1) : rawValue;
+  }
+
+  return result;
+}
+
+function readFallbackEnvValue(key: string): string | undefined {
+  const candidateFiles = [
+    resolve(process.cwd(), ".env.local"),
+    resolve(process.cwd(), ".env"),
+    resolve(WEB_APP_DIR, ".env.local"),
+    resolve(WEB_APP_DIR, ".env"),
+  ];
+
+  for (const filePath of candidateFiles) {
+    const value = parseDotEnvFile(filePath)[key];
+    if (value) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function getConfigValue(...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const processValue = process.env[key];
+    if (processValue) {
+      return processValue;
+    }
+
+    const fallbackValue = readFallbackEnvValue(key);
+    if (fallbackValue) {
+      return fallbackValue;
+    }
+  }
+
+  return undefined;
+}
+
+const FIREBASE_API_KEY = getConfigValue(
+  "FIREBASE_API_KEY",
+  "NEXT_PUBLIC_FIREBASE_API_KEY"
+);
+const FIREBASE_PROJECT_ID = getConfigValue(
+  "FIREBASE_PROJECT_ID",
+  "NEXT_PUBLIC_FIREBASE_PROJECT_ID"
+);
 
 function encodeUpdate(update: Uint8Array): string {
   return Buffer.from(update).toString("base64");
@@ -51,6 +140,8 @@ function getRoom(workbookId: string): RoomState {
   const nextRoom: RoomState = {
     doc,
     peers: new Map(),
+    policyRefreshInFlight: false,
+    policyRefreshInterval: null,
     persistTimeout: null,
   };
   hydrateRoomFromDisk(workbookId, doc);
@@ -63,6 +154,194 @@ function getRoom(workbookId: string): RoomState {
   });
   rooms.set(workbookId, nextRoom);
   return nextRoom;
+}
+
+function getFirestoreDocumentUrl(workbookId: string): string | null {
+  if (!(FIREBASE_API_KEY && FIREBASE_PROJECT_ID)) {
+    return null;
+  }
+
+  return `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/sharedWorkbooks/${encodeURIComponent(workbookId)}?key=${FIREBASE_API_KEY}`;
+}
+
+function getStringField(
+  fields: Record<string, { stringValue?: string }>,
+  key: string
+): string | null {
+  const value = fields[key];
+  return typeof value?.stringValue === "string" ? value.stringValue : null;
+}
+
+function getBooleanField(
+  fields: Record<string, { booleanValue?: boolean }>,
+  key: string
+): boolean | null {
+  const value = fields[key];
+  return typeof value?.booleanValue === "boolean" ? value.booleanValue : null;
+}
+
+async function readSharedWorkbookAccess(
+  workbookId: string
+): Promise<SharedWorkbookAccess | null> {
+  const documentUrl = getFirestoreDocumentUrl(workbookId);
+  if (!documentUrl) {
+    throw new Error("share-config-unavailable");
+  }
+
+  const response = await fetch(documentUrl);
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error("share-config-unavailable");
+  }
+
+  const payload = (await response.json()) as {
+    fields?: Record<string, { booleanValue?: boolean; stringValue?: string }>;
+  };
+  const fields = payload.fields;
+  if (!fields) {
+    return null;
+  }
+
+  const accessRole = getStringField(fields, "accessRole");
+  const ownerId = getStringField(fields, "ownerId");
+  const sharingEnabled = getBooleanField(fields, "sharingEnabled");
+  const storedWorkbookId = getStringField(fields, "workbookId");
+  if (
+    (accessRole !== "editor" && accessRole !== "viewer") ||
+    !ownerId ||
+    sharingEnabled === null ||
+    !storedWorkbookId
+  ) {
+    return null;
+  }
+
+  return {
+    accessRole,
+    ownerId,
+    sharingEnabled,
+    workbookId: storedWorkbookId,
+  };
+}
+
+async function verifyOwnerAuthToken(authToken: string): Promise<string | null> {
+  if (!FIREBASE_API_KEY) {
+    throw new Error("share-config-unavailable");
+  }
+
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
+    {
+      body: JSON.stringify({ idToken: authToken }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    }
+  );
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as {
+    users?: Array<{ localId?: string }>;
+  };
+
+  return payload.users?.[0]?.localId ?? null;
+}
+
+async function resolveAccessRole(
+  workbookId: string,
+  authToken?: string
+): Promise<{
+  accessRole: CollaboratorPresence["accessRole"];
+  isOwner: boolean;
+}> {
+  const sharedWorkbookAccess = await readSharedWorkbookAccess(workbookId);
+  if (!sharedWorkbookAccess) {
+    throw new Error("missing-share-config");
+  }
+
+  if (authToken) {
+    const ownerId = await verifyOwnerAuthToken(authToken);
+    if (ownerId === sharedWorkbookAccess.ownerId) {
+      return {
+        accessRole: "editor",
+        isOwner: true,
+      };
+    }
+  }
+
+  if (!sharedWorkbookAccess.sharingEnabled) {
+    throw new Error("sharing-disabled");
+  }
+
+  return {
+    accessRole: sharedWorkbookAccess.accessRole,
+    isOwner: false,
+  };
+}
+
+async function refreshRoomPolicy(
+  workbookId: string,
+  room: RoomState
+): Promise<void> {
+  if (room.policyRefreshInFlight) {
+    return;
+  }
+
+  room.policyRefreshInFlight = true;
+
+  try {
+    const sharedWorkbookAccess = await readSharedWorkbookAccess(workbookId);
+    let shouldBroadcastPresence = false;
+
+    for (const peer of room.peers.values()) {
+      if (peer.isOwner) {
+        if (peer.accessRole !== "editor") {
+          peer.accessRole = "editor";
+          shouldBroadcastPresence = true;
+        }
+        continue;
+      }
+
+      if (!sharedWorkbookAccess) {
+        peer.ws.close(4403, "missing-share-config");
+        continue;
+      }
+
+      if (!sharedWorkbookAccess.sharingEnabled) {
+        peer.ws.close(4403, "sharing-disabled");
+        continue;
+      }
+
+      if (peer.accessRole !== sharedWorkbookAccess.accessRole) {
+        peer.accessRole = sharedWorkbookAccess.accessRole;
+        shouldBroadcastPresence = true;
+      }
+    }
+
+    if (shouldBroadcastPresence) {
+      broadcastPresence(room);
+    }
+  } catch {
+    return;
+  } finally {
+    room.policyRefreshInFlight = false;
+  }
+}
+
+function ensureRoomPolicyRefresh(workbookId: string, room: RoomState): void {
+  if (room.policyRefreshInterval) {
+    return;
+  }
+
+  room.policyRefreshInterval = setInterval(() => {
+    refreshRoomPolicy(workbookId, room).catch(() => undefined);
+  }, ROOM_POLICY_REFRESH_MS);
 }
 
 function ensureRoomCacheDirectory(): void {
@@ -115,6 +394,10 @@ function disposeRoom(workbookId: string, room: RoomState): void {
   if (room.persistTimeout) {
     clearTimeout(room.persistTimeout);
     room.persistTimeout = null;
+  }
+  if (room.policyRefreshInterval) {
+    clearInterval(room.policyRefreshInterval);
+    room.policyRefreshInterval = null;
   }
 
   persistRoom(workbookId, room);
@@ -263,6 +546,7 @@ export const app = new Elysia()
     }),
     query: t.Object({
       accessRole: accessRoleSchema,
+      authToken: t.Optional(t.String()),
       clientId: t.String(),
       color: t.String(),
       icon: t.String(),
@@ -271,19 +555,39 @@ export const app = new Elysia()
       photoURL: t.Optional(t.String()),
     }),
     response: collaborationResponseSchema,
-    open(ws) {
+    async open(ws) {
       const {
         params: { workbookId },
         query,
       } = ws.data;
+      let resolvedAccessRole: CollaboratorPresence["accessRole"];
+      let isOwner = false;
+
+      try {
+        const accessResolution = await resolveAccessRole(
+          workbookId,
+          query.authToken
+        );
+        resolvedAccessRole = accessResolution.accessRole;
+        isOwner = accessResolution.isOwner;
+      } catch (error) {
+        ws.close(
+          4403,
+          error instanceof Error ? error.message : "sharing-disabled"
+        );
+        return;
+      }
+
       const room = getRoom(workbookId);
+      ensureRoomPolicyRefresh(workbookId, room);
 
       const peer: RoomPeer = {
-        accessRole: query.accessRole,
+        accessRole: resolvedAccessRole,
         activeCell: null,
         clientId: query.clientId,
         color: query.color,
         icon: query.icon,
+        isOwner,
         isAnonymous: query.isAnonymous === "true",
         name: query.name,
         photoURL: query.photoURL ?? null,

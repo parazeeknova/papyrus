@@ -23,6 +23,8 @@ import {
   setSheetCellRaw,
   setSheetCellValues,
   setWorkbookFavorite,
+  setWorkbookSharingAccessRole,
+  setWorkbookSharingEnabled,
   touchWorkbook,
 } from "@papyrus/core/workbook-doc";
 import {
@@ -55,6 +57,10 @@ import {
   writeRemoteWorkbook,
 } from "@/web/features/spreadsheet/lib/firestore-workbook-sync";
 import {
+  deleteSharedWorkbookAccess,
+  upsertSharedWorkbookAccess,
+} from "@/web/features/spreadsheet/lib/share-registry";
+import {
   cellId,
   colToLetter,
   isValidColumnName,
@@ -82,6 +88,7 @@ interface SpreadsheetStoreState {
   canRedo: boolean;
   canUndo: boolean;
   collaborationAccessRole: CollaborationAccessRole | null;
+  collaborationErrorMessage: string | null;
   collaborationPeers: CollaboratorPresence[];
   collaborationStatus: "connected" | "connecting" | "disconnected";
   connectRealtime: (
@@ -111,6 +118,10 @@ interface SpreadsheetStoreState {
   setCellValue: (row: number, col: number, raw: string) => Promise<void>;
   setCellValuesByKey: (values: Record<string, string>) => Promise<void>;
   setWorkbookFavorite: (isFavorite: boolean) => Promise<void>;
+  setWorkbookSharingAccessRole: (
+    accessRole: CollaborationAccessRole
+  ) => Promise<boolean>;
+  setWorkbookSharingEnabled: (sharingEnabled: boolean) => Promise<boolean>;
   sheets: SheetMeta[];
   stopRealtime: () => void;
   syncNow: () => Promise<boolean>;
@@ -291,6 +302,15 @@ async function refreshWorkbookRegistry(
 ): Promise<void> {
   const workbooks = await listWorkbookRegistryEntries();
   set({ workbooks: sortWorkbooks(workbooks) });
+}
+
+async function syncActiveWorkbookShareAccess(): Promise<void> {
+  if (!(currentAuthenticatedUser && activeWorkbookSession)) {
+    return;
+  }
+
+  const workbook = getWorkbookMeta(activeWorkbookSession.doc);
+  await upsertSharedWorkbookAccess(currentAuthenticatedUser.uid, workbook);
 }
 
 async function persistActiveWorkbookMeta(
@@ -609,17 +629,33 @@ async function reconcileRemoteWorkbooks(
 export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
   const isViewerAccess = () => get().collaborationAccessRole === "viewer";
 
+  const syncEffectiveRealtimeAccessRole = (
+    peers: CollaboratorPresence[]
+  ): CollaborationAccessRole | null => {
+    const currentClientId = currentCollaborationIdentity?.clientId;
+    if (!currentClientId) {
+      return null;
+    }
+
+    const selfPeer = peers.find(
+      (peer) => peer.identity.clientId === currentClientId
+    );
+
+    return selfPeer?.accessRole ?? null;
+  };
+
   const stopRealtimeConnection = () => {
     clearCollaborationReconnectTimeout();
     collaborationSocket?.close();
     collaborationSocket = null;
     set({
+      collaborationErrorMessage: null,
       collaborationPeers: [],
       collaborationStatus: "disconnected",
     });
   };
 
-  const connectRealtimeTransport = () => {
+  const connectRealtimeTransport = async () => {
     if (
       !(
         activeWorkbookSession &&
@@ -640,10 +676,17 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       return;
     }
 
+    const authToken = currentAuthenticatedUser
+      ? await currentAuthenticatedUser.getIdToken().catch(() => null)
+      : null;
+
     const wsUrl = new URL(
       toWebSocketUrl(collaborationServerUrl, activeWorkbook.id)
     );
     wsUrl.searchParams.set("accessRole", currentCollaborationRole);
+    if (authToken) {
+      wsUrl.searchParams.set("authToken", authToken);
+    }
     wsUrl.searchParams.set("clientId", currentCollaborationIdentity.clientId);
     wsUrl.searchParams.set("color", currentCollaborationIdentity.color);
     wsUrl.searchParams.set("icon", currentCollaborationIdentity.icon);
@@ -657,7 +700,8 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     }
 
     set({
-      collaborationAccessRole: currentCollaborationRole,
+      collaborationAccessRole: null,
+      collaborationErrorMessage: null,
       collaborationPeers: [],
       collaborationStatus: "connecting",
     });
@@ -693,7 +737,13 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       ) as CollaborationServerMessage;
 
       if (message.type === "presence") {
-        set({ collaborationPeers: message.payload.peers });
+        set({
+          collaborationAccessRole: syncEffectiveRealtimeAccessRole(
+            message.payload.peers
+          ),
+          collaborationErrorMessage: null,
+          collaborationPeers: message.payload.peers,
+        });
         return;
       }
 
@@ -703,7 +753,13 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
           decodeBase64ToUpdate(message.payload.update),
           REALTIME_SYNC_ORIGIN
         );
-        set({ collaborationPeers: message.payload.peers });
+        set({
+          collaborationAccessRole: syncEffectiveRealtimeAccessRole(
+            message.payload.peers
+          ),
+          collaborationErrorMessage: null,
+          collaborationPeers: message.payload.peers,
+        });
         return;
       }
 
@@ -714,25 +770,49 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       );
     });
 
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       if (collaborationSocket !== socket) {
         return;
       }
 
-      set({ collaborationStatus: "disconnected" });
+      const isAccessDenied = event.code === 4403;
+      const collaborationErrorMessage =
+        event.reason === "sharing-disabled"
+          ? "Sharing is currently turned off for this workbook."
+          : event.reason === "invalid-owner-token"
+            ? "Your owner session could not be verified."
+            : event.reason === "missing-share-config"
+              ? "This workbook is not configured for sharing yet."
+              : event.reason === "share-config-unavailable"
+                ? "Share access could not be verified right now."
+                : null;
+
+      set({
+        collaborationAccessRole: null,
+        collaborationErrorMessage,
+        collaborationPeers: [],
+        collaborationStatus: "disconnected",
+      });
       collaborationSocket = null;
 
-      if (!(collaborationServerUrl && currentCollaborationIdentity)) {
+      if (
+        isAccessDenied ||
+        !(collaborationServerUrl && currentCollaborationIdentity)
+      ) {
         return;
       }
 
       collaborationReconnectTimeout = setTimeout(() => {
-        connectRealtimeTransport();
+        connectRealtimeTransport().catch(() => undefined);
       }, 1500);
     });
 
     socket.addEventListener("error", () => {
-      set({ collaborationStatus: "disconnected" });
+      set({
+        collaborationAccessRole: null,
+        collaborationPeers: [],
+        collaborationStatus: "disconnected",
+      });
     });
   };
 
@@ -868,7 +948,7 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
         !(
           origin !== REALTIME_SYNC_ORIGIN &&
           collaborationSocket?.readyState === WebSocket.OPEN &&
-          currentCollaborationRole === "editor"
+          get().collaborationAccessRole === "editor"
         )
       ) {
         return;
@@ -895,7 +975,8 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     syncUndoManager(doc);
 
     applySnapshot(doc, { forceWorkerReset: true });
-    connectRealtimeTransport();
+    await syncActiveWorkbookShareAccess();
+    connectRealtimeTransport().catch(() => undefined);
     await persistActiveWorkbookMeta(set);
   };
 
@@ -911,6 +992,8 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
 
       if (!user) {
         set({
+          collaborationAccessRole: null,
+          collaborationErrorMessage: null,
           lastSyncErrorMessage: null,
           lastSyncedAt: null,
           remoteVersion: null,
@@ -929,9 +1012,11 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       );
 
       reconcileRemoteWorkbooks(set, get, user)
-        .then(() => {
+        .then(async () => {
+          await syncActiveWorkbookShareAccess();
           if (activeWorkbookSession) {
             scheduleRemoteWorkbookSync(set, activeWorkbookSession);
+            connectRealtimeTransport().catch(() => undefined);
           }
         })
         .catch((error) => {
@@ -957,14 +1042,15 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
     canRedo: false,
     canUndo: false,
     collaborationAccessRole: null,
+    collaborationErrorMessage: null,
     collaborationPeers: [],
     collaborationStatus: "disconnected",
     connectRealtime: (accessRole, identity, serverUrl) => {
       collaborationServerUrl = serverUrl;
       currentCollaborationIdentity = identity;
       currentCollaborationRole = accessRole;
-      set({ collaborationAccessRole: accessRole });
-      connectRealtimeTransport();
+      set({ collaborationErrorMessage: null });
+      connectRealtimeTransport().catch(() => undefined);
     },
     createSheet: async () => {
       if (!activeWorkbookSession || isViewerAccess()) {
@@ -1135,6 +1221,7 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       try {
         if (currentAuthenticatedUser) {
           await deleteRemoteWorkbook(currentAuthenticatedUser.uid, workbookId);
+          await deleteSharedWorkbookAccess(workbookId);
         }
 
         await destroyActiveWorkbookSession();
@@ -1371,12 +1458,82 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>((set, get) => {
       setWorkbookFavorite(activeWorkbookSession.doc, isFavorite);
       await persistActiveWorkbookMeta(set);
     },
+    setWorkbookSharingAccessRole: async (accessRole) => {
+      if (
+        !(activeWorkbookSession && currentAuthenticatedUser) ||
+        isViewerAccess()
+      ) {
+        return false;
+      }
+
+      const previousAccessRole = getWorkbookMeta(
+        activeWorkbookSession.doc
+      ).sharingAccessRole;
+      if (previousAccessRole === accessRole) {
+        return true;
+      }
+
+      set({ saveState: "saving" });
+      setWorkbookSharingAccessRole(activeWorkbookSession.doc, accessRole);
+
+      try {
+        await syncActiveWorkbookShareAccess();
+        await persistActiveWorkbookMeta(set);
+        return true;
+      } catch (error) {
+        setWorkbookSharingAccessRole(
+          activeWorkbookSession.doc,
+          previousAccessRole
+        );
+        set({
+          collaborationErrorMessage:
+            error instanceof Error ? error.message : String(error),
+          saveState: "error",
+        });
+        return false;
+      }
+    },
+    setWorkbookSharingEnabled: async (sharingEnabled) => {
+      if (
+        !(activeWorkbookSession && currentAuthenticatedUser) ||
+        isViewerAccess()
+      ) {
+        return false;
+      }
+
+      const previousSharingEnabled = getWorkbookMeta(
+        activeWorkbookSession.doc
+      ).sharingEnabled;
+      if (previousSharingEnabled === sharingEnabled) {
+        return true;
+      }
+
+      set({ saveState: "saving" });
+      setWorkbookSharingEnabled(activeWorkbookSession.doc, sharingEnabled);
+
+      try {
+        await syncActiveWorkbookShareAccess();
+        await persistActiveWorkbookMeta(set);
+        return true;
+      } catch (error) {
+        setWorkbookSharingEnabled(
+          activeWorkbookSession.doc,
+          previousSharingEnabled
+        );
+        set({
+          collaborationErrorMessage:
+            error instanceof Error ? error.message : String(error),
+          saveState: "error",
+        });
+        return false;
+      }
+    },
     sheets: [],
     stopRealtime: () => {
       collaborationServerUrl = null;
       currentCollaborationIdentity = null;
       currentCollaborationRole = null;
-      set({ collaborationAccessRole: null });
+      set({ collaborationAccessRole: null, collaborationErrorMessage: null });
       stopRealtimeConnection();
     },
     undo: async () => {

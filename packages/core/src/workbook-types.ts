@@ -1,3 +1,5 @@
+import type { CollaborationAccessRole } from "./collaboration-types";
+
 export interface PersistedCellRecord {
   raw: string;
 }
@@ -22,6 +24,8 @@ export interface WorkbookMeta {
   lastSyncedAt?: string | null;
   name: string;
   remoteVersion?: number | null;
+  sharingAccessRole: CollaborationAccessRole;
+  sharingEnabled: boolean;
   updatedAt: string;
 }
 

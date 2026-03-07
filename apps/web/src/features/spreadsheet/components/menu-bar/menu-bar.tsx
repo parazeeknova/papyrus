@@ -2,7 +2,6 @@
 
 import type {
   CollaborationAccessRole,
-  CollaboratorIdentity,
   CollaboratorPresence,
 } from "@papyrus/core/collaboration-types";
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
@@ -53,11 +52,12 @@ import { colToLetter } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 
 interface SpreadsheetMenuBarProps {
   canEdit: boolean;
+  canManageSharing: boolean;
   canManualSync: boolean;
   canRedo: boolean;
   canUndo: boolean;
   collaborationAccessRole: CollaborationAccessRole | null;
-  collaborationIdentity: CollaboratorIdentity | null;
+  collaborationErrorMessage: string | null;
   collaborationPeers: CollaboratorPresence[];
   collaborationStatus: "connected" | "connecting" | "disconnected";
   isFavorite: boolean;
@@ -79,6 +79,8 @@ interface SpreadsheetMenuBarProps {
   onToggleFavorite: (isFavorite: boolean) => void;
   onToggleGallery: () => void;
   onUndo: () => void;
+  onUpdateSharingAccessRole: (accessRole: CollaborationAccessRole) => void;
+  onUpdateSharingEnabled: (sharingEnabled: boolean) => void;
   recentWorkbooks: WorkbookMeta[];
   remoteSyncStatus:
     | "disabled"
@@ -89,6 +91,8 @@ interface SpreadsheetMenuBarProps {
     | "synced";
   remoteVersion: number | null;
   saveState: "error" | "saved" | "saving";
+  sharingAccessRole: CollaborationAccessRole;
+  sharingEnabled: boolean;
   syncServerUrl: string | null;
   workbookId: string | null;
   workbookName: string;
@@ -148,10 +152,11 @@ const GoogleAuthDialog = dynamic(
 export function SpreadsheetMenuBar({
   canEdit,
   canManualSync,
+  canManageSharing,
   canRedo,
   canUndo,
   collaborationAccessRole,
-  collaborationIdentity,
+  collaborationErrorMessage,
   collaborationPeers,
   collaborationStatus,
   isGalleryOpen,
@@ -171,12 +176,16 @@ export function SpreadsheetMenuBar({
   onRedo,
   onRenameWorkbook,
   onToggleFavorite,
+  onUpdateSharingAccessRole,
+  onUpdateSharingEnabled,
   onToggleGallery,
   onUndo,
   recentWorkbooks,
   remoteSyncStatus,
   remoteVersion,
   saveState,
+  sharingAccessRole,
+  sharingEnabled,
   syncServerUrl,
   workbookId,
   workbookName,
@@ -400,22 +409,20 @@ export function SpreadsheetMenuBar({
                   className="flex items-center gap-2 rounded-sm px-1 py-0.5 transition-colors hover:bg-accent"
                   type="button"
                 >
-                  <div className="flex -space-x-1.5">
-                    {collaborationIdentity ? (
-                      <CollaboratorAvatar
-                        identity={collaborationIdentity}
-                        ringClassName="ring-2 ring-background"
-                        size="md"
-                      />
+                  <div className="flex items-center gap-2">
+                    {collaborationPeers.length === 0 ? (
+                      <Badge variant="outline">Solo</Badge>
                     ) : null}
-                    {collaborationPeers.slice(0, 2).map((peer) => (
-                      <CollaboratorAvatar
-                        identity={peer.identity}
-                        key={peer.identity.clientId}
-                        ringClassName="ring-2 ring-background"
-                        size="md"
-                      />
-                    ))}
+                    <div className="flex -space-x-1.5">
+                      {collaborationPeers.slice(0, 2).map((peer) => (
+                        <CollaboratorAvatar
+                          identity={peer.identity}
+                          key={peer.identity.clientId}
+                          ringClassName="ring-2 ring-background"
+                          size="md"
+                        />
+                      ))}
+                    </div>
                   </div>
                 </button>
               </DropdownMenuTrigger>
@@ -430,44 +437,23 @@ export function SpreadsheetMenuBar({
                       <p className="font-medium text-sm text-white">Presence</p>
                       <p className="text-white/60">
                         {collaborationPeers.length > 0
-                          ? `${collaborationPeers.length + 1} people in this sheet`
-                          : "Only you are here right now"}
+                          ? `${collaborationPeers.length} other people in this sheet`
+                          : "No one else is here right now"}
                       </p>
                     </div>
                     <Badge className="border-white/10 bg-white/8 text-white hover:bg-white/8">
                       {collaborationPeers.length > 0
-                        ? `${collaborationPeers.length + 1} live`
+                        ? `${collaborationPeers.length} live`
                         : "Solo"}
                     </Badge>
                   </div>
 
                   <div className="text-[11px] text-white/55">
-                    {collaborationStatusLabel}
+                    {collaborationErrorMessage ?? collaborationStatusLabel}
                   </div>
 
-                  {collaborationIdentity ? (
+                  {collaborationPeers.length > 0 ? (
                     <div className="space-y-2 border-white/10 border-t pt-3">
-                      <div className="flex items-center gap-3 rounded-none border border-white/10 bg-black/10 px-3 py-2.5">
-                        <CollaboratorAvatar
-                          identity={collaborationIdentity}
-                          ringClassName="ring-2 ring-background"
-                          size="md"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-white">You</p>
-                          <p className="text-white/55">
-                            {collaborationAccessRole === "viewer"
-                              ? "Viewer access"
-                              : "Editor access"}
-                          </p>
-                        </div>
-                        <Badge className="border-white/10 bg-white/8 text-white hover:bg-white/8">
-                          {collaborationAccessRole === "viewer"
-                            ? "Viewer"
-                            : "Editor"}
-                        </Badge>
-                      </div>
-
                       {collaborationPeers.map((peer) => (
                         <div
                           className="flex items-center gap-3 rounded-none border border-white/10 bg-black/10 px-3 py-2.5"
@@ -533,9 +519,14 @@ export function SpreadsheetMenuBar({
             <ShareDialog
               accessRole={collaborationAccessRole ?? "editor"}
               canEdit={canEdit}
+              canManageSharing={canManageSharing}
               collaborators={collaborationPeers}
-              currentIdentity={collaborationIdentity}
+              onUpdateSharingAccessRole={onUpdateSharingAccessRole}
+              onUpdateSharingEnabled={onUpdateSharingEnabled}
+              realtimeErrorMessage={collaborationErrorMessage}
               realtimeStatus={collaborationStatus}
+              sharingAccessRole={sharingAccessRole}
+              sharingEnabled={sharingEnabled}
               syncServerUrl={syncServerUrl}
               workbookId={workbookId}
               workbookName={workbookName}

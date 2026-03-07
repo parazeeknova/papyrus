@@ -51,8 +51,9 @@ function HomeContent() {
     canUndo,
     canExpandRows,
     canManualSync,
+    canManageSharing,
     collaborationAccessRole,
-    collaborationIdentity,
+    collaborationErrorMessage,
     collaborationPeers,
     collaborationStatus,
     copySelection,
@@ -82,6 +83,10 @@ function HomeContent() {
     saveState,
     setActiveSheet,
     setWorkbookFavorite,
+    setWorkbookSharingAccessRole,
+    setWorkbookSharingEnabled,
+    sharingAccessRole,
+    sharingEnabled,
     sheets,
     selection,
     setSelectionRange,
@@ -172,11 +177,12 @@ function HomeContent() {
     <div className="flex h-screen flex-col bg-background font-sans">
       <SpreadsheetMenuBar
         canEdit={canEdit}
+        canManageSharing={canManageSharing}
         canManualSync={canManualSync}
         canRedo={canRedo}
         canUndo={canUndo}
         collaborationAccessRole={collaborationAccessRole}
-        collaborationIdentity={collaborationIdentity}
+        collaborationErrorMessage={collaborationErrorMessage}
         collaborationPeers={collaborationPeers}
         collaborationStatus={collaborationStatus}
         isFavorite={activeWorkbook?.isFavorite ?? false}
@@ -228,10 +234,18 @@ function HomeContent() {
         onUndo={() => {
           undo().catch(() => undefined);
         }}
+        onUpdateSharingAccessRole={(accessRole) => {
+          setWorkbookSharingAccessRole(accessRole).catch(() => undefined);
+        }}
+        onUpdateSharingEnabled={(nextSharingEnabled) => {
+          setWorkbookSharingEnabled(nextSharingEnabled).catch(() => undefined);
+        }}
         recentWorkbooks={workbooks}
         remoteSyncStatus={remoteSyncStatus}
         remoteVersion={remoteVersion}
         saveState={saveState}
+        sharingAccessRole={sharingAccessRole}
+        sharingEnabled={sharingEnabled}
         syncServerUrl={syncServerUrl}
         workbookId={activeWorkbook?.id ?? null}
         workbookName={activeWorkbook?.name ?? "Untitled spreadsheet"}

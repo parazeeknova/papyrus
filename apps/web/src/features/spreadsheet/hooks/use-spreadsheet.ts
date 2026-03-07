@@ -253,6 +253,9 @@ export function useSpreadsheet({
   const collaborationAccessRole = useSpreadsheetStore(
     (state) => state.collaborationAccessRole
   );
+  const collaborationErrorMessage = useSpreadsheetStore(
+    (state) => state.collaborationErrorMessage
+  );
   const collaborationPeers = useSpreadsheetStore(
     (state) => state.collaborationPeers
   );
@@ -298,6 +301,12 @@ export function useSpreadsheet({
   const setWorkbookFavorite = useSpreadsheetStore(
     (state) => state.setWorkbookFavorite
   );
+  const setWorkbookSharingAccessRole = useSpreadsheetStore(
+    (state) => state.setWorkbookSharingAccessRole
+  );
+  const setWorkbookSharingEnabled = useSpreadsheetStore(
+    (state) => state.setWorkbookSharingEnabled
+  );
   const sheets = useSpreadsheetStore((state) => state.sheets);
   const stopRealtime = useSpreadsheetStore((state) => state.stopRealtime);
   const syncNow = useSpreadsheetStore((state) => state.syncNow);
@@ -329,8 +338,15 @@ export function useSpreadsheet({
   const workerCellsRef = useRef<Record<string, CellData>>({});
   const clipboardRef = useRef<ClipboardPayload | null>(null);
   const workerColumnNamesRef = useRef<string[]>([]);
+  const isSharedSession = sharedWorkbookId !== null;
   const requestedAccessRole = sharedAccessRole ?? "editor";
-  const canEdit = requestedAccessRole === "editor";
+  const effectiveCollaborationAccessRole = isSharedSession
+    ? collaborationAccessRole
+    : (collaborationAccessRole ?? requestedAccessRole);
+  const canEdit = isSharedSession
+    ? effectiveCollaborationAccessRole === "editor"
+    : requestedAccessRole === "editor";
+  const canManageSharing = currentUser !== null && !isSharedSession && canEdit;
   const remoteCollaborationPeers = useMemo(() => {
     if (!collaborationIdentity) {
       return collaborationPeers;
@@ -976,7 +992,8 @@ export function useSpreadsheet({
     activeSheetColumns,
     activeSheetId,
     activeWorkbook,
-    collaborationAccessRole: collaborationAccessRole ?? requestedAccessRole,
+    collaborationAccessRole: effectiveCollaborationAccessRole,
+    collaborationErrorMessage,
     collaborationIdentity,
     collaborationPeers: remoteCollaborationPeers,
     collaborationStatus,
@@ -993,6 +1010,7 @@ export function useSpreadsheet({
     },
     createWorkbook,
     canManualSync,
+    canManageSharing,
     copySelection,
     cutSelection,
     deleteSelectedColumns,
@@ -1030,6 +1048,8 @@ export function useSpreadsheet({
     replaceCurrent,
     rowCount,
     saveState,
+    sharingAccessRole: activeWorkbook?.sharingAccessRole ?? "viewer",
+    sharingEnabled: activeWorkbook?.sharingEnabled ?? false,
     sheets,
     syncNow,
     setSelectionRange,
@@ -1044,6 +1064,20 @@ export function useSpreadsheet({
       }
 
       await setWorkbookFavorite(isFavorite);
+    },
+    setWorkbookSharingAccessRole: (accessRole: CollaborationAccessRole) => {
+      if (!canManageSharing) {
+        return Promise.resolve(false);
+      }
+
+      return setWorkbookSharingAccessRole(accessRole);
+    },
+    setWorkbookSharingEnabled: (sharingEnabled: boolean) => {
+      if (!canManageSharing) {
+        return Promise.resolve(false);
+      }
+
+      return setWorkbookSharingEnabled(sharingEnabled);
     },
     showAllRows,
     startEditing,

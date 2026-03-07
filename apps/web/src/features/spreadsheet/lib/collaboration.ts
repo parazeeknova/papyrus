@@ -208,12 +208,10 @@ export async function buildCollaboratorIdentity(
 
 export function buildWorkbookShareLink(
   origin: string,
-  workbookId: string,
-  accessRole: "editor" | "viewer"
+  workbookId: string
 ): string {
   const url = new URL("/", origin);
   url.searchParams.set("workbook", workbookId);
-  url.searchParams.set("access", accessRole);
   return url.toString();
 }
 

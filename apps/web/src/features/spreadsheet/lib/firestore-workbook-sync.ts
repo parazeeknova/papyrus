@@ -144,7 +144,9 @@ export async function listRemoteWorkbooks(
       typeof data.createdAt !== "string" ||
       typeof data.updatedAt !== "string" ||
       typeof data.lastOpenedAt !== "string" ||
-      typeof data.isFavorite !== "boolean"
+      typeof data.isFavorite !== "boolean" ||
+      typeof data.sharingAccessRole !== "string" ||
+      typeof data.sharingEnabled !== "boolean"
     ) {
       return [];
     }
@@ -159,6 +161,8 @@ export async function listRemoteWorkbooks(
           typeof data.lastSyncedAt === "string" ? data.lastSyncedAt : null,
         name: data.name,
         remoteVersion: typeof data.version === "number" ? data.version : null,
+        sharingAccessRole: data.sharingAccessRole,
+        sharingEnabled: data.sharingEnabled,
         updatedAt: data.updatedAt,
       } satisfies WorkbookMeta,
     ];
@@ -186,7 +190,9 @@ export async function readRemoteWorkbook(
     typeof data.createdAt !== "string" ||
     typeof data.updatedAt !== "string" ||
     typeof data.lastOpenedAt !== "string" ||
-    typeof data.isFavorite !== "boolean"
+    typeof data.isFavorite !== "boolean" ||
+    typeof data.sharingAccessRole !== "string" ||
+    typeof data.sharingEnabled !== "boolean"
   ) {
     return null;
   }
@@ -229,6 +235,8 @@ export async function readRemoteWorkbook(
         typeof data.lastSyncedAt === "string" ? data.lastSyncedAt : null,
       name: data.name,
       remoteVersion: typeof data.version === "number" ? data.version : null,
+      sharingAccessRole: data.sharingAccessRole,
+      sharingEnabled: data.sharingEnabled,
       updatedAt: data.updatedAt,
     },
     update: decodeBase64ToUpdate(chunks.map((chunk) => chunk.data).join("")),

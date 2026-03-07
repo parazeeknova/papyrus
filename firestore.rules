@@ -13,5 +13,16 @@ service cloud.firestore {
         }
       }
     }
+
+    match /sharedWorkbooks/{workbookId} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if request.auth != null
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+    }
   }
 }
