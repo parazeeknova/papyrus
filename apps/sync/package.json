@@ -5,7 +5,9 @@
     "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
-    "elysia": "^1.4.27"
+    "@papyrus/core": "workspace:*",
+    "elysia": "^1.4.27",
+    "yjs": "^13.6.29"
   },
   "devDependencies": {
     "bun-types": "^1.3.10"
