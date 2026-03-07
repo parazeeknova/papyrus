@@ -12,11 +12,20 @@ import { useSpreadsheet } from "@/web/features/spreadsheet/hooks/use-spreadsheet
 export default function Home() {
   const {
     activeCell,
+    activeWorkbook,
+    activeSheetId,
     canExpandRows,
+    createSheet,
+    createWorkbook,
     editingCell,
     columnCount,
     expandRowCount,
+    hydrationState,
+    renameWorkbook,
     rowCount,
+    saveState,
+    setActiveSheet,
+    sheets,
     selection,
     setSelectionRange,
     showAllRows,
@@ -55,9 +64,17 @@ export default function Home() {
     <div className="flex h-screen flex-col bg-background font-sans">
       <SpreadsheetMenuBar
         isGalleryOpen={isGalleryOpen}
+        onCreateWorkbook={() => {
+          createWorkbook().catch(() => undefined);
+        }}
+        onRenameWorkbook={(name) => {
+          renameWorkbook(name).catch(() => undefined);
+        }}
         onToggleGallery={() => {
           setIsGalleryOpen((prev) => !prev);
         }}
+        saveState={saveState}
+        workbookName={activeWorkbook?.name ?? "Untitled spreadsheet"}
       />
       {isGalleryOpen && <TemplateGalleryPanel />}
       <Toolbar />
@@ -84,7 +101,17 @@ export default function Home() {
         startEditing={startEditing}
         stopEditing={stopEditing}
       />
-      <SheetTabs />
+      <SheetTabs
+        activeSheetId={activeSheetId}
+        disabled={hydrationState !== "ready"}
+        onAddSheet={() => {
+          createSheet().catch(() => undefined);
+        }}
+        onSelectSheet={(sheetId) => {
+          setActiveSheet(sheetId).catch(() => undefined);
+        }}
+        sheets={sheets}
+      />
     </div>
   );
 }

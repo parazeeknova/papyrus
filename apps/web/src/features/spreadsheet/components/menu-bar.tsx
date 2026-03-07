@@ -8,7 +8,9 @@ import {
 } from "@phosphor-icons/react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
+import { useEffect, useState } from "react";
 import { Button } from "@/web/components/ui/button";
+import { Input } from "@/web/components/ui/input";
 import {
   Menubar,
   MenubarContent,
@@ -30,7 +32,11 @@ import {
 
 interface SpreadsheetMenuBarProps {
   isGalleryOpen: boolean;
+  onCreateWorkbook: () => void;
+  onRenameWorkbook: (name: string) => void;
   onToggleGallery: () => void;
+  saveState: "error" | "saved" | "saving";
+  workbookName: string;
 }
 
 function AccountButtonFallback() {
@@ -62,8 +68,24 @@ const GoogleAuthDialog = dynamic(
 
 export function SpreadsheetMenuBar({
   isGalleryOpen,
+  onCreateWorkbook,
+  onRenameWorkbook,
   onToggleGallery,
+  saveState,
+  workbookName,
 }: SpreadsheetMenuBarProps) {
+  const [isRenamingWorkbook, setIsRenamingWorkbook] = useState(false);
+  const [workbookNameDraft, setWorkbookNameDraft] = useState(workbookName);
+
+  useEffect(() => {
+    setWorkbookNameDraft(workbookName);
+  }, [workbookName]);
+
+  const commitWorkbookRename = () => {
+    setIsRenamingWorkbook(false);
+    onRenameWorkbook(workbookNameDraft);
+  };
+
   return (
     <div
       className="flex shrink-0 flex-col border-border border-b bg-background"
@@ -79,12 +101,39 @@ export function SpreadsheetMenuBar({
         />
 
         <div className="flex items-center gap-1">
-          <button
-            className="rounded-sm px-1.5 py-0.5 font-medium text-sm transition-colors hover:bg-accent"
-            type="button"
-          >
-            Untitled spreadsheet
-          </button>
+          {isRenamingWorkbook ? (
+            <Input
+              autoFocus
+              className="h-7 w-48 border-transparent px-1.5 py-0.5 font-medium text-sm shadow-none focus-visible:border-ring"
+              onBlur={commitWorkbookRename}
+              onChange={(event) => {
+                setWorkbookNameDraft(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commitWorkbookRename();
+                }
+
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setWorkbookNameDraft(workbookName);
+                  setIsRenamingWorkbook(false);
+                }
+              }}
+              value={workbookNameDraft}
+            />
+          ) : (
+            <button
+              className="rounded-sm px-1.5 py-0.5 font-medium text-sm transition-colors hover:bg-accent"
+              onClick={() => {
+                setIsRenamingWorkbook(true);
+              }}
+              type="button"
+            >
+              {workbookName}
+            </button>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -102,7 +151,13 @@ export function SpreadsheetMenuBar({
 
         <div className="flex items-center gap-1 text-muted-foreground text-xs">
           <CloudCheckIcon className="size-3.5" weight="fill" />
-          <span>Saved</span>
+          <span>
+            {saveState === "saving"
+              ? "Saving..."
+              : saveState === "error"
+                ? "Save error"
+                : "Saved"}
+          </span>
         </div>
 
         <div className="flex-1" />
@@ -154,7 +209,11 @@ export function SpreadsheetMenuBar({
         <MenubarMenu>
           <MenubarTrigger>File</MenubarTrigger>
           <MenubarContent>
-            <MenubarItem>
+            <MenubarItem
+              onSelect={() => {
+                onCreateWorkbook();
+              }}
+            >
               New <MenubarShortcut>⌘N</MenubarShortcut>
             </MenubarItem>
             <MenubarItem>
@@ -172,7 +231,13 @@ export function SpreadsheetMenuBar({
               </MenubarSubContent>
             </MenubarSub>
             <MenubarSeparator />
-            <MenubarItem>Rename</MenubarItem>
+            <MenubarItem
+              onSelect={() => {
+                setIsRenamingWorkbook(true);
+              }}
+            >
+              Rename
+            </MenubarItem>
             <MenubarItem>
               Print <MenubarShortcut>⌘P</MenubarShortcut>
             </MenubarItem>

@@ -15,6 +15,46 @@ let cells = new Map<string, CellData>();
 let dependencies = new Map<string, Set<string>>();
 let dependents = new Map<string, Set<string>>();
 
+const recomputeAll = (): SpreadsheetPatch => {
+  const patch: SpreadsheetPatch = { deletions: [], updates: {} };
+  const cellKeys = [...cells.keys()];
+
+  if (cellKeys.length === 0) {
+    return patch;
+  }
+
+  for (const _ of cellKeys) {
+    let hasChanges = false;
+    const snapshot = Object.fromEntries(cells);
+
+    for (const cellKey of cellKeys) {
+      const currentCell = cells.get(cellKey);
+      if (!currentCell) {
+        continue;
+      }
+
+      const nextComputed = computeCell(currentCell.raw, snapshot, cellKey);
+      const nextCell =
+        nextComputed === currentCell.computed
+          ? currentCell
+          : { raw: currentCell.raw, computed: nextComputed };
+
+      if (nextCell !== currentCell) {
+        hasChanges = true;
+      }
+
+      upsertCell(cellKey, nextCell);
+      patch.updates[cellKey] = nextCell;
+    }
+
+    if (!hasChanges) {
+      break;
+    }
+  }
+
+  return patch;
+};
+
 const removeDependencyEdges = (cellKey: string) => {
   const previousDependencies = dependencies.get(cellKey);
   if (!previousDependencies) {
@@ -125,13 +165,11 @@ const handleInit = (message: SpreadsheetWorkerMessage) => {
   }
 
   resetState(message.payload.cells ?? {});
+  const patch = recomputeAll();
   self.postMessage({
     type: "READY",
     payload: {
-      patch: {
-        deletions: [],
-        updates: Object.fromEntries(cells),
-      },
+      patch,
     },
   } satisfies SpreadsheetWorkerResponse);
 };

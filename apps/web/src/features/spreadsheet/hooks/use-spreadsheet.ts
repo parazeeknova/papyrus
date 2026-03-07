@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cellId } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 import type {
   CellData,
@@ -10,6 +10,7 @@ import type {
   SpreadsheetPatch,
   SpreadsheetWorkerResponse,
 } from "@/web/features/spreadsheet/lib/spreadsheet-types";
+import { useSpreadsheetStore } from "@/web/features/spreadsheet/store/spreadsheet-store";
 
 // biome-ignore lint/performance/noBarrelFile: skip re-exporting from index for better path clarity
 export {
@@ -53,15 +54,51 @@ const applySpreadsheetPatch = (
 };
 
 export function useSpreadsheet() {
-  const [cells, setCells] = useState<Record<string, CellData>>({});
+  const activeSheetCells = useSpreadsheetStore(
+    (state) => state.activeSheetCells
+  );
+  const activeSheetId = useSpreadsheetStore((state) => state.activeSheetId);
+  const activeWorkbook = useSpreadsheetStore((state) => state.activeWorkbook);
+  const createSheet = useSpreadsheetStore((state) => state.createSheet);
+  const createWorkbook = useSpreadsheetStore((state) => state.createWorkbook);
+  const hydrationState = useSpreadsheetStore((state) => state.hydrationState);
+  const hydrateWorkbookList = useSpreadsheetStore(
+    (state) => state.hydrateWorkbookList
+  );
+  const renameWorkbook = useSpreadsheetStore((state) => state.renameWorkbook);
+  const saveState = useSpreadsheetStore((state) => state.saveState);
+  const setActiveSheet = useSpreadsheetStore((state) => state.setActiveSheet);
+  const setPersistedCellValue = useSpreadsheetStore(
+    (state) => state.setCellValue
+  );
+  const sheets = useSpreadsheetStore((state) => state.sheets);
+  const workerResetKey = useSpreadsheetStore((state) => state.workerResetKey);
   const [activeCell, setActiveCell] = useState<CellPosition | null>(null);
   const [editingCell, setEditingCell] = useState<CellPosition | null>(null);
   const [selection, setSelection] = useState<SelectionRange | null>(null);
+  const [computedCells, setComputedCells] = useState<Record<string, CellData>>(
+    {}
+  );
   const [columnCount] = useState(DEFAULT_COLS);
   const [totalRowCount] = useState(DEFAULT_ROWS);
   const [rowCount, setRowCount] = useState(DEFAULT_VISIBLE_ROWS);
 
   const workerRef = useRef<Worker | null>(null);
+  const workerCellsRef = useRef<Record<string, CellData>>({});
+  const workerResetKeyRef = useRef(workerResetKey);
+  const activeSheetCellsForWorker = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(activeSheetCells).map(([cellKey, cellData]) => [
+          cellKey,
+          {
+            raw: cellData.raw,
+            computed: cellData.raw,
+          },
+        ])
+      ),
+    [activeSheetCells]
+  );
 
   // Initialize Worker
   useEffect(() => {
@@ -75,49 +112,69 @@ export function useSpreadsheet() {
       e: MessageEvent<SpreadsheetWorkerResponse>
     ) => {
       if (e.data.type === "READY" || e.data.type === "CELLS_PATCH") {
-        setCells((prev) => applySpreadsheetPatch(prev, e.data.payload.patch));
+        setComputedCells((prev) =>
+          applySpreadsheetPatch(prev, e.data.payload.patch)
+        );
       }
     };
-
-    workerRef.current.postMessage({ type: "INIT", payload: { cells: {} } });
 
     return () => {
       workerRef.current?.terminate();
     };
   }, []);
 
+  useEffect(() => {
+    hydrateWorkbookList().catch(() => undefined);
+  }, [hydrateWorkbookList]);
+
+  useEffect(() => {
+    workerCellsRef.current = activeSheetCellsForWorker;
+  }, [activeSheetCellsForWorker]);
+
+  useEffect(() => {
+    workerResetKeyRef.current = workerResetKey;
+    setComputedCells({});
+    workerRef.current?.postMessage({
+      type: "INIT",
+      payload: { cells: workerCellsRef.current },
+    });
+    setActiveCell(null);
+    setEditingCell(null);
+    setSelection(null);
+  }, [workerResetKey]);
+
   const getCellData = useCallback(
     (row: number, col: number): CellData => {
       const id = cellId(row, col);
-      return cells[id] ?? EMPTY_CELL;
-    },
-    [cells]
-  );
+      const computedCell = computedCells[id];
+      if (computedCell) {
+        return computedCell;
+      }
 
-  const setCellValue = useCallback((row: number, col: number, raw: string) => {
-    setCells((prev) => {
-      const id = cellId(row, col);
-      if (raw === "") {
-        if (!(id in prev)) {
-          return prev;
-        }
-
-        const next = { ...prev };
-        delete next[id];
-        return next;
+      const persistedCell = activeSheetCells[id];
+      if (!persistedCell) {
+        return EMPTY_CELL;
       }
 
       return {
-        ...prev,
-        [id]: { raw, computed: raw.startsWith("=") ? "..." : raw },
+        computed: persistedCell.raw,
+        raw: persistedCell.raw,
       };
-    });
+    },
+    [activeSheetCells, computedCells]
+  );
 
-    workerRef.current?.postMessage({
-      type: "UPDATE_CELL",
-      payload: { row, col, raw },
-    });
-  }, []);
+  const setCellValue = useCallback(
+    (row: number, col: number, raw: string) => {
+      setPersistedCellValue(row, col, raw).catch(() => undefined);
+
+      workerRef.current?.postMessage({
+        type: "UPDATE_CELL",
+        payload: { row, col, raw },
+      });
+    },
+    [setPersistedCellValue]
+  );
 
   const setSelectionRange = useCallback(
     (start: CellPosition, end: CellPosition, mode: SelectionMode = "cells") => {
@@ -203,19 +260,27 @@ export function useSpreadsheet() {
   );
 
   return {
-    cells,
     activeCell,
+    activeSheetId,
+    activeWorkbook,
+    createSheet,
+    createWorkbook,
     editingCell,
     selection,
     canExpandRows,
     columnCount,
     expandRowCount,
+    hydrationState,
+    renameWorkbook,
     rowCount,
+    saveState,
+    sheets,
     setSelectionRange,
     totalRowCount,
     getCellData,
     setCellValue,
     selectCell,
+    setActiveSheet,
     showAllRows,
     startEditing,
     stopEditing,

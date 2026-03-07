@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     ],
   },
   reactCompiler: true,
+  transpilePackages: ["@papyrus/core"],
 };
 
 export default nextConfig;

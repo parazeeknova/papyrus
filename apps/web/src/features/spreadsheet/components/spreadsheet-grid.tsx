@@ -432,7 +432,13 @@ export function SpreadsheetGrid({
         >
           <div className="absolute inset-0 border-border border-b bg-muted" />
           <div
-            className="sticky left-0 z-40 border-border border-r border-b bg-muted"
+            className={cn(
+              "sticky left-0 z-40 border-border border-r border-b bg-muted",
+              normalizedSelection?.mode === "rows" &&
+                "bg-primary/12 ring-1 ring-primary/30 ring-inset",
+              normalizedSelection?.mode === "columns" &&
+                "bg-primary/12 ring-1 ring-primary/30 ring-inset"
+            )}
             style={{ width: ROW_HEADER_WIDTH, height: COL_HEADER_HEIGHT }}
           />
           {firstVirtualCol ? (
