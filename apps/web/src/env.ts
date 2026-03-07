@@ -10,6 +10,7 @@ export const env = createEnv({
     NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: z.string().min(1),
     NEXT_PUBLIC_FIREBASE_PROJECT_ID: z.string().min(1),
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: z.string().min(1),
+    NEXT_PUBLIC_SYNC_SERVER_URL: z.string().url().optional(),
   },
   runtimeEnv: {
     NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -22,6 +23,7 @@ export const env = createEnv({
       process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:
       process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    NEXT_PUBLIC_SYNC_SERVER_URL: process.env.NEXT_PUBLIC_SYNC_SERVER_URL,
   },
   emptyStringAsUndefined: true,
 });

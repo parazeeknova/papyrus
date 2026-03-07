@@ -11,6 +11,7 @@
     "yjs": "^13.6.29"
   },
   "exports": {
+    "./collaboration-types": "./src/collaboration-types.ts",
     "./workbook-doc": "./src/workbook-doc.ts",
     "./workbook-persistence": "./src/workbook-persistence.ts",
     "./workbook-registry": "./src/workbook-registry.ts",

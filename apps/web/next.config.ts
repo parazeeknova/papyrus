@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
         hostname: "lh3.googleusercontent.com",
         protocol: "https",
       },
+      {
+        hostname: "raw.githubusercontent.com",
+        protocol: "https",
+      },
     ],
   },
   reactCompiler: true,
