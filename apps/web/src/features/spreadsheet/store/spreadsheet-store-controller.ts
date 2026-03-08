@@ -755,18 +755,10 @@ export const createSpreadsheetStoreController = (
           (column, index) =>
             column.name !== snapshot.activeSheetColumns[index]?.name
         );
-      const didColumnsShallowChange =
-        didColumnsChange ||
-        state.activeSheetColumns.some(
-          (column, index) =>
-            column.width !== snapshot.activeSheetColumns[index]?.width
-        );
 
       return {
         activeSheetCells: snapshot.activeSheetCells,
-        activeSheetColumns: didColumnsShallowChange
-          ? snapshot.activeSheetColumns
-          : state.activeSheetColumns,
+        activeSheetColumns: snapshot.activeSheetColumns,
         activeSheetFormats: snapshot.activeSheetFormats,
         activeSheetId: snapshot.activeSheetId,
         activeSheetRowHeights: snapshot.activeSheetRowHeights,
@@ -1058,6 +1050,7 @@ export const createSpreadsheetStoreController = (
         decodeBase64ToUpdate(message.payload.update),
         REALTIME_SYNC_ORIGIN
       );
+      applySnapshot(moduleState.activeWorkbookSession.doc);
     });
 
     socket.addEventListener("close", (event) => {

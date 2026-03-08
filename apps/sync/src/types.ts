@@ -15,6 +15,8 @@ export interface RoomPeer {
   isOwner: boolean;
   name: string;
   photoURL: string | null;
+  selection: CollaboratorPresence["selection"];
+  sheetId: CollaboratorPresence["sheetId"];
   typing: CollaboratorPresence["typing"];
   updatedAt: number;
   ws: {

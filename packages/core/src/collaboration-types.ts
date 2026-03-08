@@ -1,4 +1,5 @@
 export type CollaborationAccessRole = "editor" | "viewer";
+export type CollaboratorSelectionMode = "cells" | "columns" | "rows";
 
 export interface CollaboratorIdentity {
   clientId: string;
@@ -9,10 +10,18 @@ export interface CollaboratorIdentity {
   photoURL: string | null;
 }
 
+export interface CollaboratorSelectionRange {
+  end: { col: number; row: number };
+  mode: CollaboratorSelectionMode;
+  start: { col: number; row: number };
+}
+
 export interface CollaboratorPresence {
   accessRole: CollaborationAccessRole;
   activeCell: { col: number; row: number } | null;
   identity: CollaboratorIdentity;
+  selection: CollaboratorSelectionRange | null;
+  sheetId: string | null;
   typing: {
     cell: { col: number; row: number };
     draft: string;
@@ -26,6 +35,8 @@ export type CollaborationClientMessage =
       type: "presence";
       payload: {
         activeCell: { col: number; row: number } | null;
+        selection: CollaboratorSelectionRange | null;
+        sheetId: string | null;
       };
     }
   | {

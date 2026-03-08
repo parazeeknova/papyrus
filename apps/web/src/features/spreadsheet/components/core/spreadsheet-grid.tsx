@@ -83,6 +83,14 @@ interface ReorderPreview {
   sourceIndex: number;
 }
 
+interface NormalizedSelectionBounds {
+  endCol: number;
+  endRow: number;
+  mode: SelectionMode;
+  startCol: number;
+  startRow: number;
+}
+
 interface CellComponentProps {
   canEdit: boolean;
   col: number;
@@ -293,6 +301,53 @@ interface SpreadsheetGridProps {
   updateEditingValue: (value: string) => void;
 }
 
+function normalizeSelectionBounds(
+  selection: {
+    end: CellPosition;
+    mode: SelectionMode;
+    start: CellPosition;
+  } | null,
+  columnCount: number,
+  rowCount: number
+): NormalizedSelectionBounds | null {
+  if (!selection) {
+    return null;
+  }
+
+  const minRow = Math.min(selection.start.row, selection.end.row);
+  const maxRow = Math.max(selection.start.row, selection.end.row);
+  const minCol = Math.min(selection.start.col, selection.end.col);
+  const maxCol = Math.max(selection.start.col, selection.end.col);
+
+  if (selection.mode === "rows") {
+    return {
+      endCol: columnCount - 1,
+      endRow: maxRow,
+      mode: selection.mode,
+      startCol: 0,
+      startRow: minRow,
+    };
+  }
+
+  if (selection.mode === "columns") {
+    return {
+      endCol: maxCol,
+      endRow: rowCount - 1,
+      mode: selection.mode,
+      startCol: minCol,
+      startRow: 0,
+    };
+  }
+
+  return {
+    endCol: maxCol,
+    endRow: maxRow,
+    mode: selection.mode,
+    startCol: minCol,
+    startRow: minRow,
+  };
+}
+
 export function SpreadsheetGrid({
   activeCell,
   canEdit,
@@ -362,42 +417,7 @@ export function SpreadsheetGrid({
   const [columnNameDraft, setColumnNameDraft] = useState("");
 
   const normalizedSelection = useMemo(() => {
-    if (!selection) {
-      return null;
-    }
-
-    const minRow = Math.min(selection.start.row, selection.end.row);
-    const maxRow = Math.max(selection.start.row, selection.end.row);
-    const minCol = Math.min(selection.start.col, selection.end.col);
-    const maxCol = Math.max(selection.start.col, selection.end.col);
-
-    if (selection.mode === "rows") {
-      return {
-        mode: selection.mode,
-        startRow: minRow,
-        endRow: maxRow,
-        startCol: 0,
-        endCol: columnCount - 1,
-      };
-    }
-
-    if (selection.mode === "columns") {
-      return {
-        mode: selection.mode,
-        startRow: 0,
-        endRow: rowCount - 1,
-        startCol: minCol,
-        endCol: maxCol,
-      };
-    }
-
-    return {
-      mode: selection.mode,
-      startRow: minRow,
-      endRow: maxRow,
-      startCol: minCol,
-      endCol: maxCol,
-    };
+    return normalizeSelectionBounds(selection, columnCount, rowCount);
   }, [selection, columnCount, rowCount]);
 
   const getColumnWidth = useCallback(
@@ -1227,77 +1247,79 @@ export function SpreadsheetGrid({
   }, [normalizedSelection, virtualRows, virtualCols]);
 
   const visiblePresence = useMemo(() => {
-    const visibleRowsByIndex = new Map(
-      renderRows.map((row) => [row.index, row])
-    );
-    const visibleColumnsByIndex = new Map(
-      renderCols.map((column) => [column.index, column])
-    );
-    const presenceByCell = new Map<
-      string,
-      {
-        col: number;
-        peers: CollaboratorPresence[];
-        row: number;
-      }
-    >();
+    return collaborationPeers
+      .map((peer) => {
+        if (peer.sheetId !== sheetId) {
+          return null;
+        }
 
-    for (const peer of collaborationPeers) {
-      if (!peer.activeCell) {
-        continue;
-      }
+        const effectiveSelection =
+          peer.selection ??
+          (peer.activeCell
+            ? {
+                end: peer.activeCell,
+                mode: "cells" as const,
+                start: peer.activeCell,
+              }
+            : null);
+        const normalizedPeerSelection = normalizeSelectionBounds(
+          effectiveSelection,
+          columnCount,
+          rowCount
+        );
 
-      const visibleRow = visibleRowsByIndex.get(peer.activeCell.row);
-      const visibleColumn = visibleColumnsByIndex.get(peer.activeCell.col);
-      if (!(visibleRow && visibleColumn)) {
-        continue;
-      }
+        if (!normalizedPeerSelection) {
+          return null;
+        }
 
-      const presenceKey = `${peer.activeCell.row}:${peer.activeCell.col}`;
-      const existingPresence = presenceByCell.get(presenceKey);
+        const visibleSelectionRows = renderRows.filter(
+          (row) =>
+            row.index >= normalizedPeerSelection.startRow &&
+            row.index <= normalizedPeerSelection.endRow
+        );
+        const visibleSelectionCols = renderCols.filter(
+          (column) =>
+            column.index >= normalizedPeerSelection.startCol &&
+            column.index <= normalizedPeerSelection.endCol
+        );
 
-      if (existingPresence) {
-        existingPresence.peers.push(peer);
-        continue;
-      }
+        if (
+          visibleSelectionRows.length === 0 ||
+          visibleSelectionCols.length === 0
+        ) {
+          return null;
+        }
 
-      presenceByCell.set(presenceKey, {
-        col: peer.activeCell.col,
-        peers: [peer],
-        row: peer.activeCell.row,
-      });
-    }
+        const startRow = visibleSelectionRows[0];
+        const endRow = visibleSelectionRows.at(-1);
+        const startCol = visibleSelectionCols[0];
+        const endCol = visibleSelectionCols.at(-1);
 
-    return [...presenceByCell.values()]
-      .map((presence) => {
-        const row = visibleRowsByIndex.get(presence.row);
-        const column = visibleColumnsByIndex.get(presence.col);
-        const [primaryPeer] = presence.peers;
-
-        if (!(row && column && primaryPeer)) {
+        if (!(startRow && endRow && startCol && endCol)) {
           return null;
         }
 
         return {
-          color: primaryPeer.identity.color,
-          count: presence.peers.length,
-          height: row.size,
-          key: `${presence.row}:${presence.col}`,
-          left: ROW_HEADER_WIDTH + column.start,
-          name: primaryPeer.identity.name,
+          color: peer.identity.color,
+          height: endRow.start + endRow.size - startRow.start,
+          key: peer.identity.clientId,
+          left: ROW_HEADER_WIDTH + startCol.start,
+          name: peer.identity.name,
+          top: COL_HEADER_HEIGHT + startRow.start,
           typingDraft:
-            presence.peers.find(
-              (peer) =>
-                peer.typing?.sheetId === sheetId &&
-                peer.typing.cell.row === presence.row &&
-                peer.typing.cell.col === presence.col
-            )?.typing?.draft ?? null,
-          top: COL_HEADER_HEIGHT + row.start,
-          width: column.size,
+            peer.typing?.sheetId === sheetId ? peer.typing.draft : null,
+          width: endCol.start + endCol.size - startCol.start,
         };
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-  }, [collaborationPeers, renderCols, renderRows, sheetId]);
+  }, [
+    collaborationPeers,
+    columnCount,
+    renderCols,
+    renderRows,
+    rowCount,
+    sheetId,
+  ]);
 
   const columnReorderIndicator = useMemo(() => {
     if (reorderPreview?.axis !== "column") {
@@ -1737,7 +1759,6 @@ export function SpreadsheetGrid({
             >
               {presence.name}
               {presence.typingDraft ? `: ${presence.typingDraft}` : ""}
-              {presence.count > 1 ? ` +${presence.count - 1}` : ""}
             </div>
           </div>
         ))}

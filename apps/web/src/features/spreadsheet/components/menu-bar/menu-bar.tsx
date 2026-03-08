@@ -4,7 +4,10 @@ import type {
   CollaborationAccessRole,
   CollaboratorPresence,
 } from "@papyrus/core/collaboration-types";
-import type { WorkbookMeta } from "@papyrus/core/workbook-types";
+import type {
+  CellTextTransform,
+  WorkbookMeta,
+} from "@papyrus/core/workbook-types";
 import {
   ArrowClockwiseIcon,
   CloudCheckIcon,
@@ -58,10 +61,15 @@ import { ViewMenu } from "@/web/features/spreadsheet/components/menu-bar/view-me
 import { colToLetter } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 
 interface SpreadsheetMenuBarProps {
+  activeFontFamily: string | null;
+  activeFontSize: number | null;
+  activeTextColor: string | null;
+  boldActive: boolean;
   canEdit: boolean;
   canManageSharing: boolean;
   canManualSync: boolean;
   canRedo: boolean;
+  canSortSelection: boolean;
   canUndo: boolean;
   collaborationAccessRole: CollaborationAccessRole | null;
   collaborationErrorMessage: string | null;
@@ -69,6 +77,7 @@ interface SpreadsheetMenuBarProps {
   collaborationStatus: "connected" | "connecting" | "disconnected";
   isFavorite: boolean;
   isGalleryOpen: boolean;
+  italicActive: boolean;
   lastSyncErrorMessage: string | null;
   lastSyncedLabel: string | null;
   onCopy: () => void;
@@ -87,8 +96,18 @@ interface SpreadsheetMenuBarProps {
   onPaste: () => void;
   onRedo: () => void;
   onRenameWorkbook: (name: string) => void;
+  onSetFontFamily: (fontFamily: string | null) => void;
+  onSetFontSize: (fontSize: number | null) => void;
+  onSetTextColor: (textColor: string | null) => void;
+  onSetTextTransform: (textTransform: CellTextTransform | null) => void;
+  onSortSelectionAscending: () => void;
+  onSortSelectionDescending: () => void;
+  onToggleBold: () => void;
   onToggleFavorite: (isFavorite: boolean) => void;
   onToggleGallery: () => void;
+  onToggleItalic: () => void;
+  onToggleStrikethrough: () => void;
+  onToggleUnderline: () => void;
   onUndo: () => void;
   onUpdateSharingAccessRole: (accessRole: CollaborationAccessRole) => void;
   onUpdateSharingEnabled: (sharingEnabled: boolean) => void;
@@ -104,9 +123,12 @@ interface SpreadsheetMenuBarProps {
   saveState: "error" | "saved" | "saving";
   sharingAccessRole: CollaborationAccessRole;
   sharingEnabled: boolean;
+  strikethroughActive: boolean;
   syncServerUrl: string | null;
+  textTransform: CellTextTransform | null;
   transientStatusDetail: string | null;
   transientStatusLabel: string | null;
+  underlineActive: boolean;
   workbookId: string | null;
   workbookName: string;
 }
@@ -383,10 +405,15 @@ function TransientStatusIndicator({
 }
 
 export function SpreadsheetMenuBar({
+  activeFontFamily,
+  activeFontSize,
+  activeTextColor,
+  boldActive,
   canEdit,
   canManualSync,
   canManageSharing,
   canRedo,
+  canSortSelection,
   canUndo,
   collaborationAccessRole,
   collaborationErrorMessage,
@@ -394,6 +421,7 @@ export function SpreadsheetMenuBar({
   collaborationStatus,
   isGalleryOpen,
   isFavorite,
+  italicActive,
   lastSyncErrorMessage,
   lastSyncedLabel,
   onCopy,
@@ -412,10 +440,20 @@ export function SpreadsheetMenuBar({
   onPaste,
   onRedo,
   onRenameWorkbook,
+  onSetFontFamily,
+  onSetFontSize,
+  onSetTextColor,
+  onSetTextTransform,
+  onSortSelectionAscending,
+  onSortSelectionDescending,
   onToggleFavorite,
   onUpdateSharingAccessRole,
   onUpdateSharingEnabled,
   onToggleGallery,
+  onToggleBold,
+  onToggleItalic,
+  onToggleStrikethrough,
+  onToggleUnderline,
   onUndo,
   recentWorkbooks,
   remoteSyncStatus,
@@ -424,8 +462,11 @@ export function SpreadsheetMenuBar({
   sharingAccessRole,
   sharingEnabled,
   syncServerUrl,
+  strikethroughActive,
+  textTransform,
   transientStatusDetail,
   transientStatusLabel,
+  underlineActive,
   workbookId,
   workbookName,
 }: SpreadsheetMenuBarProps) {
@@ -969,8 +1010,30 @@ export function SpreadsheetMenuBar({
           />
           <ViewMenu />
           <InsertMenu />
-          <FormatMenu />
-          <DataMenu />
+          <FormatMenu
+            activeFontFamily={activeFontFamily}
+            activeFontSize={activeFontSize}
+            activeTextColor={activeTextColor}
+            boldActive={boldActive}
+            canEdit={canEdit}
+            italicActive={italicActive}
+            onSetFontFamily={onSetFontFamily}
+            onSetFontSize={onSetFontSize}
+            onSetTextColor={onSetTextColor}
+            onSetTextTransform={onSetTextTransform}
+            onToggleBold={onToggleBold}
+            onToggleItalic={onToggleItalic}
+            onToggleStrikethrough={onToggleStrikethrough}
+            onToggleUnderline={onToggleUnderline}
+            strikethroughActive={strikethroughActive}
+            textTransform={textTransform}
+            underlineActive={underlineActive}
+          />
+          <DataMenu
+            canSortSelection={canSortSelection}
+            onSortSelectionAscending={onSortSelectionAscending}
+            onSortSelectionDescending={onSortSelectionDescending}
+          />
           <HelpMenu
             onOpenAbout={() => {
               setIsAboutDialogOpen(true);

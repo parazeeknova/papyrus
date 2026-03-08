@@ -43,11 +43,9 @@ export const createRealtimeSlice = (
     stopRealtime: () => {
       controller.stopRealtime();
     },
-    updateRealtimePresence: (activeCell) => {
+    updateRealtimePresence: (presence) => {
       controller.sendRealtimeMessage({
-        payload: {
-          activeCell,
-        },
+        payload: presence,
         type: "presence",
       } satisfies CollaborationClientMessage);
     },

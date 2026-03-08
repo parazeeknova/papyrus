@@ -52,6 +52,10 @@ const LAST_SYNC_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "2-digit",
 });
+const SORT_VALUE_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
 
 type CellFormatFlag = "bold" | "italic" | "strikethrough" | "underline";
 
@@ -291,6 +295,31 @@ function normalizeCellFormat(
   return Object.keys(normalizedFormat).length > 0 ? normalizedFormat : null;
 }
 
+function compareCellValues(left: string, right: string): number {
+  const leftTrimmed = left.trim();
+  const rightTrimmed = right.trim();
+
+  if (leftTrimmed.length === 0 && rightTrimmed.length === 0) {
+    return 0;
+  }
+
+  if (leftTrimmed.length === 0) {
+    return 1;
+  }
+
+  if (rightTrimmed.length === 0) {
+    return -1;
+  }
+
+  const leftNumber = Number(leftTrimmed);
+  const rightNumber = Number(rightTrimmed);
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+    return leftNumber - rightNumber;
+  }
+
+  return SORT_VALUE_COLLATOR.compare(leftTrimmed, rightTrimmed);
+}
+
 const applySpreadsheetPatch = (
   prev: Record<string, CellData>,
   patch: SpreadsheetPatch
@@ -398,6 +427,9 @@ export function useSpreadsheet({
   const setActiveSheet = useSpreadsheetStore((state) => state.setActiveSheet);
   const setPersistedCellFormats = useSpreadsheetStore(
     (state) => state.setCellFormats
+  );
+  const setPersistedCellValuesAndFormats = useSpreadsheetStore(
+    (state) => state.setCellValuesAndFormats
   );
   const setCellValuesByKey = useSpreadsheetStore(
     (state) => state.setCellValuesByKey
@@ -1107,6 +1139,99 @@ export function useSpreadsheet({
     return true;
   }, [activeCell, canEdit, deleteColumns, normalizedSelection, selectCell]);
 
+  const canSortSelection = useMemo(() => {
+    const bounds = getSelectionBounds();
+    if (!(canEdit && activeCell && bounds)) {
+      return false;
+    }
+
+    if (bounds.mode === "columns" || bounds.startRow === bounds.endRow) {
+      return false;
+    }
+
+    return activeCell.col >= bounds.startCol && activeCell.col <= bounds.endCol;
+  }, [activeCell, canEdit, getSelectionBounds]);
+
+  const sortSelectionByActiveColumn = useCallback(
+    async (direction: "asc" | "desc"): Promise<boolean> => {
+      const bounds = getSelectionBounds();
+      if (!(canEdit && activeCell && bounds)) {
+        return false;
+      }
+
+      if (bounds.mode === "columns" || bounds.startRow === bounds.endRow) {
+        return false;
+      }
+
+      if (activeCell.col < bounds.startCol || activeCell.col > bounds.endCol) {
+        return false;
+      }
+
+      const rowSnapshots = Array.from(
+        { length: bounds.endRow - bounds.startRow + 1 },
+        (_unused, rowOffset) => {
+          const sourceRow = bounds.startRow + rowOffset;
+
+          return {
+            rowOffset,
+            sortValue: getCellData(sourceRow, activeCell.col).computed,
+            values: Array.from(
+              { length: bounds.endCol - bounds.startCol + 1 },
+              (_unusedCell, colOffset) => {
+                const col = bounds.startCol + colOffset;
+                const key = cellId(sourceRow, col);
+                return {
+                  format: activeSheetFormats[key] ?? null,
+                  raw: getRawCellValue(sourceRow, col),
+                };
+              }
+            ),
+          };
+        }
+      );
+
+      const sortedRows = [...rowSnapshots].sort((left, right) => {
+        const comparison = compareCellValues(left.sortValue, right.sortValue);
+        if (comparison === 0) {
+          return left.rowOffset - right.rowOffset;
+        }
+
+        return direction === "asc" ? comparison : comparison * -1;
+      });
+
+      const hasChanged = sortedRows.some(
+        (rowSnapshot, index) => rowSnapshot.rowOffset !== index
+      );
+      if (!hasChanged) {
+        return true;
+      }
+
+      const nextValues: Record<string, string> = {};
+      const nextFormats: Record<string, CellFormat | null> = {};
+      for (const [targetOffset, rowSnapshot] of sortedRows.entries()) {
+        const targetRow = bounds.startRow + targetOffset;
+
+        for (const [colOffset, cellSnapshot] of rowSnapshot.values.entries()) {
+          const targetKey = cellId(targetRow, bounds.startCol + colOffset);
+          nextValues[targetKey] = cellSnapshot.raw;
+          nextFormats[targetKey] = cellSnapshot.format;
+        }
+      }
+
+      await setPersistedCellValuesAndFormats(nextValues, nextFormats);
+      return true;
+    },
+    [
+      activeCell,
+      activeSheetFormats,
+      canEdit,
+      getCellData,
+      getRawCellValue,
+      getSelectionBounds,
+      setPersistedCellValuesAndFormats,
+    ]
+  );
+
   const findNext = useCallback(
     (query: string, caseSensitive = false): boolean => {
       if (query.trim().length === 0) {
@@ -1392,8 +1517,20 @@ export function useSpreadsheet({
   );
 
   useEffect(() => {
-    updateRealtimePresence(activeCell);
-  }, [activeCell, updateRealtimePresence]);
+    updateRealtimePresence({
+      activeCell,
+      selection:
+        selection ??
+        (activeCell
+          ? {
+              end: activeCell,
+              mode: "cells",
+              start: activeCell,
+            }
+          : null),
+      sheetId: activeSheetId,
+    });
+  }, [activeCell, activeSheetId, selection, updateRealtimePresence]);
 
   useEffect(() => {
     if (!(editingCell && activeSheetId)) {
@@ -1504,6 +1641,7 @@ export function useSpreadsheet({
     canRedo,
     canUndo,
     canEdit,
+    canSortSelection,
     createSheet: async () => {
       if (!canEdit) {
         return;
@@ -1604,6 +1742,7 @@ export function useSpreadsheet({
     sharingAccessRole: activeWorkbook?.sharingAccessRole ?? "viewer",
     sharingEnabled: activeWorkbook?.sharingEnabled ?? false,
     sheets,
+    sortSelectionByActiveColumn,
     syncNow,
     setSelectionRange,
     setCellFontFamily,

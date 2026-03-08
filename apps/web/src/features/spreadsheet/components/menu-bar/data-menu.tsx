@@ -7,13 +7,33 @@ import {
   MenubarTrigger,
 } from "@/web/components/ui/menubar";
 
-export function DataMenu() {
+interface DataMenuProps {
+  canSortSelection: boolean;
+  onSortSelectionAscending: () => void;
+  onSortSelectionDescending: () => void;
+}
+
+export function DataMenu({
+  canSortSelection,
+  onSortSelectionAscending,
+  onSortSelectionDescending,
+}: DataMenuProps) {
   return (
     <MenubarMenu>
       <MenubarTrigger>Data</MenubarTrigger>
       <MenubarContent>
-        <MenubarItem>Sort range A {">"} Z</MenubarItem>
-        <MenubarItem>Sort range Z {">"} A</MenubarItem>
+        <MenubarItem
+          disabled={!canSortSelection}
+          onClick={onSortSelectionAscending}
+        >
+          Sort selection A {">"} Z
+        </MenubarItem>
+        <MenubarItem
+          disabled={!canSortSelection}
+          onClick={onSortSelectionDescending}
+        >
+          Sort selection Z {">"} A
+        </MenubarItem>
       </MenubarContent>
     </MenubarMenu>
   );

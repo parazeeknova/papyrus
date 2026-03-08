@@ -2,6 +2,7 @@ import type {
   CollaborationClientMessage,
   CollaborationServerMessage,
   CollaboratorPresence,
+  CollaboratorSelectionMode,
 } from "@papyrus/core/collaboration-types";
 import type { RoomState } from "./types";
 
@@ -20,6 +21,30 @@ function isCellPosition(value: unknown): value is { col: number; row: number } {
 
   const candidate = value as { col?: unknown; row?: unknown };
   return typeof candidate.col === "number" && typeof candidate.row === "number";
+}
+
+function isSelectionMode(value: unknown): value is CollaboratorSelectionMode {
+  return value === "cells" || value === "columns" || value === "rows";
+}
+
+function isSelectionRange(
+  value: unknown
+): value is CollaboratorPresence["selection"] {
+  if (!(typeof value === "object" && value !== null)) {
+    return false;
+  }
+
+  const candidate = value as {
+    end?: unknown;
+    mode?: unknown;
+    start?: unknown;
+  };
+
+  return (
+    isSelectionMode(candidate.mode) &&
+    isCellPosition(candidate.start) &&
+    isCellPosition(candidate.end)
+  );
 }
 
 export function parseClientMessage(
@@ -41,9 +66,20 @@ export function parseClientMessage(
     if (payload.type === "presence") {
       const presencePayload = payload.payload as {
         activeCell?: unknown;
+        selection?: unknown;
+        sheetId?: unknown;
       };
-      return presencePayload?.activeCell === null ||
-        isCellPosition(presencePayload?.activeCell)
+      const hasValidActiveCell =
+        presencePayload?.activeCell === null ||
+        isCellPosition(presencePayload?.activeCell);
+      const hasValidSelection =
+        presencePayload?.selection === null ||
+        isSelectionRange(presencePayload?.selection);
+      const hasValidSheetId =
+        presencePayload?.sheetId === null ||
+        typeof presencePayload?.sheetId === "string";
+
+      return hasValidActiveCell && hasValidSelection && hasValidSheetId
         ? {
             payload: {
               activeCell:
@@ -51,6 +87,10 @@ export function parseClientMessage(
                   col: number;
                   row: number;
                 } | null) ?? null,
+              selection:
+                (presencePayload?.selection as CollaboratorPresence["selection"]) ??
+                null,
+              sheetId: (presencePayload?.sheetId as string | null) ?? null,
             },
             type: "presence",
           }
@@ -116,6 +156,8 @@ export function getRoomPresence(room: RoomState): CollaboratorPresence[] {
       name: peer.name,
       photoURL: peer.photoURL,
     },
+    selection: peer.selection,
+    sheetId: peer.sheetId,
     typing: peer.typing,
     updatedAt: peer.updatedAt,
   }));

@@ -86,6 +86,10 @@ export interface SpreadsheetStoreState {
   setActiveSheet: (sheetId: string) => Promise<void>;
   setCellFormats: (values: Record<string, CellFormat | null>) => Promise<void>;
   setCellValue: (row: number, col: number, raw: string) => Promise<void>;
+  setCellValuesAndFormats: (
+    values: Record<string, string>,
+    formats: Record<string, CellFormat | null>
+  ) => Promise<void>;
   setCellValuesByKey: (values: Record<string, string>) => Promise<void>;
   setWorkbookFavorite: (isFavorite: boolean) => Promise<void>;
   setWorkbookSharingAccessRole: (
@@ -96,9 +100,15 @@ export interface SpreadsheetStoreState {
   stopRealtime: () => void;
   syncNow: () => Promise<boolean>;
   undo: () => Promise<void>;
-  updateRealtimePresence: (
-    activeCell: { col: number; row: number } | null
-  ) => void;
+  updateRealtimePresence: (presence: {
+    activeCell: { col: number; row: number } | null;
+    selection: {
+      end: { col: number; row: number };
+      mode: "cells" | "columns" | "rows";
+      start: { col: number; row: number };
+    } | null;
+    sheetId: string | null;
+  }) => void;
   updateRealtimeTyping: (typing: {
     cell: { col: number; row: number } | null;
     draft: string | null;

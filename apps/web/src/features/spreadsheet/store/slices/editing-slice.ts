@@ -56,6 +56,7 @@ type EditingSliceState = Pick<
   | "setActiveSheet"
   | "setCellFormats"
   | "setCellValue"
+  | "setCellValuesAndFormats"
   | "setCellValuesByKey"
   | "setWorkbookFavorite"
   | "setWorkbookSharingAccessRole"
@@ -735,6 +736,22 @@ export const createEditingSlice = (
         cellId(row, col),
         raw
       );
+      await controller.persistActiveWorkbookMeta();
+    },
+    setCellValuesAndFormats: async (values, formats) => {
+      if (controller.isViewerAccess()) {
+        return;
+      }
+
+      const activeWorkbookSession = controller.getActiveWorkbookSession();
+      const activeSheetId = get().activeSheetId;
+      if (!(activeWorkbookSession && activeSheetId)) {
+        return;
+      }
+
+      set({ saveState: "saving" });
+      setSheetCellValues(activeWorkbookSession.doc, activeSheetId, values);
+      setSheetFormats(activeWorkbookSession.doc, activeSheetId, formats);
       await controller.persistActiveWorkbookMeta();
     },
     setCellValuesByKey: async (values) => {

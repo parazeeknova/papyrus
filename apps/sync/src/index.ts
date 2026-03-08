@@ -94,6 +94,8 @@ const app = new Elysia()
         isOwner,
         name: query.name,
         photoURL: query.photoURL || null,
+        selection: null,
+        sheetId: null,
         typing: null,
         updatedAt: Date.now(),
         ws: {
@@ -158,6 +160,8 @@ const app = new Elysia()
 
       if (message.type === "presence") {
         peer.activeCell = message.payload.activeCell;
+        peer.selection = message.payload.selection;
+        peer.sheetId = message.payload.sheetId;
         peer.updatedAt = Date.now();
         broadcastPresence(room);
         return;

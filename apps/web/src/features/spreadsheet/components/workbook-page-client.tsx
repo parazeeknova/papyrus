@@ -57,6 +57,7 @@ function WorkbookPageContent({
     activeSheetRowHeights,
     canEdit,
     canRedo,
+    canSortSelection,
     canUndo,
     canExpandRows,
     canManualSync,
@@ -115,6 +116,7 @@ function WorkbookPageContent({
     setCellTextColor,
     setCellTextTransform,
     showAllRows,
+    sortSelectionByActiveColumn,
     syncNow,
     getCellData,
     getCellFormat,
@@ -161,6 +163,17 @@ function WorkbookPageContent({
   const activeSheetName = useMemo(() => {
     return sheets.find((sheet) => sheet.id === activeSheetId)?.name ?? null;
   }, [activeSheetId, sheets]);
+  const gridLayoutKey = useMemo(() => {
+    const columnLayoutSignature = activeSheetColumns
+      .map((column) => `${column.index}:${column.name}:${column.width}`)
+      .join("|");
+    const rowLayoutSignature = Object.entries(activeSheetRowHeights)
+      .sort(([left], [right]) => Number(left) - Number(right))
+      .map(([rowIndex, height]) => `${rowIndex}:${height}`)
+      .join("|");
+
+    return `${activeSheetId ?? "none"}:${columnLayoutSignature}:${rowLayoutSignature}`;
+  }, [activeSheetColumns, activeSheetId, activeSheetRowHeights]);
   const visibleSheets = isInitialLoad ? [INITIAL_LOADING_SHEET] : sheets;
   const visibleActiveSheetId = isInitialLoad
     ? INITIAL_LOADING_SHEET.id
@@ -228,10 +241,15 @@ function WorkbookPageContent({
   return (
     <div className="flex h-screen flex-col bg-background font-sans">
       <SpreadsheetMenuBar
+        activeFontFamily={activeSelectionFormat?.fontFamily ?? null}
+        activeFontSize={activeSelectionFormat?.fontSize ?? null}
+        activeTextColor={activeSelectionFormat?.textColor ?? null}
+        boldActive={activeSelectionFormat?.bold ?? false}
         canEdit={canEdit}
         canManageSharing={canManageSharing}
         canManualSync={canManualSync}
         canRedo={canRedo}
+        canSortSelection={canSortSelection}
         canUndo={canUndo}
         collaborationAccessRole={collaborationAccessRole}
         collaborationErrorMessage={collaborationErrorMessage}
@@ -239,6 +257,7 @@ function WorkbookPageContent({
         collaborationStatus={collaborationStatus}
         isFavorite={activeWorkbook?.isFavorite ?? false}
         isGalleryOpen={isGalleryOpen}
+        italicActive={activeSelectionFormat?.italic ?? false}
         lastSyncErrorMessage={lastSyncErrorMessage}
         lastSyncedLabel={lastSyncedLabel}
         onCopy={() => {
@@ -297,11 +316,41 @@ function WorkbookPageContent({
         onRenameWorkbook={(name) => {
           renameWorkbook(name).catch(() => undefined);
         }}
+        onSetFontFamily={(fontFamily) => {
+          setCellFontFamily(fontFamily).catch(() => undefined);
+        }}
+        onSetFontSize={(fontSize) => {
+          setCellFontSize(fontSize).catch(() => undefined);
+        }}
+        onSetTextColor={(textColor) => {
+          setCellTextColor(textColor).catch(() => undefined);
+        }}
+        onSetTextTransform={(textTransform) => {
+          setCellTextTransform(textTransform).catch(() => undefined);
+        }}
+        onSortSelectionAscending={() => {
+          sortSelectionByActiveColumn("asc").catch(() => undefined);
+        }}
+        onSortSelectionDescending={() => {
+          sortSelectionByActiveColumn("desc").catch(() => undefined);
+        }}
+        onToggleBold={() => {
+          toggleCellFormat("bold").catch(() => undefined);
+        }}
         onToggleFavorite={(isFavorite) => {
           setWorkbookFavorite(isFavorite).catch(() => undefined);
         }}
         onToggleGallery={() => {
           setIsGalleryOpen((prev) => !prev);
+        }}
+        onToggleItalic={() => {
+          toggleCellFormat("italic").catch(() => undefined);
+        }}
+        onToggleStrikethrough={() => {
+          toggleCellFormat("strikethrough").catch(() => undefined);
+        }}
+        onToggleUnderline={() => {
+          toggleCellFormat("underline").catch(() => undefined);
         }}
         onUndo={() => {
           undo().catch(() => undefined);
@@ -318,9 +367,12 @@ function WorkbookPageContent({
         saveState={saveState}
         sharingAccessRole={sharingAccessRole}
         sharingEnabled={sharingEnabled}
+        strikethroughActive={activeSelectionFormat?.strikethrough ?? false}
         syncServerUrl={syncServerUrl}
+        textTransform={activeSelectionFormat?.textTransform ?? null}
         transientStatusDetail={transientStatusDetail}
         transientStatusLabel={transientStatusLabel}
+        underlineActive={activeSelectionFormat?.underline ?? false}
         workbookId={activeWorkbook?.id ?? null}
         workbookName={activeWorkbook?.name ?? "Untitled spreadsheet"}
       />
@@ -436,6 +488,7 @@ function WorkbookPageContent({
           expandRowCount={expandRowCount}
           getCellData={isInitialLoad ? getLoadingCellData : getCellData}
           getCellFormat={isInitialLoad ? () => ({}) : getCellFormat}
+          key={gridLayoutKey}
           navigateFromActive={
             isInitialLoad ? navigateWhileLoading : navigateFromActive
           }

@@ -36,31 +36,15 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/web/components/ui/tooltip";
-
-const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72];
-const FONT_FAMILIES = [
-  "Nunito Sans",
-  "Arial",
-  "Courier New",
-  "Georgia",
-  "Times New Roman",
-  "Verdana",
-  "Trebuchet MS",
-];
-const TEXT_COLOR_OPTIONS = [
-  { label: "Default", value: null },
-  { label: "Slate", value: "#334155" },
-  { label: "Crimson", value: "#b91c1c" },
-  { label: "Amber", value: "#b45309" },
-  { label: "Emerald", value: "#047857" },
-  { label: "Blue", value: "#2563eb" },
-  { label: "Violet", value: "#7c3aed" },
-  { label: "Pink", value: "#db2777" },
-] as const;
-const DEFAULT_FONT_FAMILY = FONT_FAMILIES[0] ?? "Nunito Sans";
-const DEFAULT_FONT_SIZE = 10;
-const MIN_FONT_SIZE = 8;
-const MAX_FONT_SIZE = 200;
+import {
+  DEFAULT_FONT_FAMILY,
+  DEFAULT_FONT_SIZE,
+  FONT_FAMILIES,
+  FONT_SIZES,
+  MAX_FONT_SIZE,
+  MIN_FONT_SIZE,
+  TEXT_COLOR_OPTIONS,
+} from "@/web/features/spreadsheet/lib/format-options";
 
 interface ToolbarButtonProps {
   active?: boolean;
