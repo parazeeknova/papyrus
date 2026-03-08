@@ -19,6 +19,7 @@
       "version": "1.0.50",
       "dependencies": {
         "@papyrus/core": "workspace:*",
+        "@papyrus/logs": "workspace:*",
         "elysia": "^1.4.27",
         "yjs": "^13.6.29",
       },

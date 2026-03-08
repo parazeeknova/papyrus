@@ -2,10 +2,12 @@
   "name": "@papyrus/sync",
   "version": "1.0.50",
   "scripts": {
-    "dev": "bun run --watch src/index.ts"
+    "dev": "bun run --watch src/index.ts",
+    "check-types": "tsc --noEmit --pretty"
   },
   "dependencies": {
     "@papyrus/core": "workspace:*",
+    "@papyrus/logs": "workspace:*",
     "elysia": "^1.4.27",
     "yjs": "^13.6.29"
   },
