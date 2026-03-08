@@ -342,6 +342,8 @@ export function useSpreadsheet({
     (state) => state.hydrateWorkbookList
   );
   const openWorkbook = useSpreadsheetStore((state) => state.openWorkbook);
+  const reorderColumn = useSpreadsheetStore((state) => state.reorderColumn);
+  const reorderRow = useSpreadsheetStore((state) => state.reorderRow);
   const renameColumn = useSpreadsheetStore((state) => state.renameColumn);
   const renameWorkbook = useSpreadsheetStore((state) => state.renameWorkbook);
   const redo = useSpreadsheetStore((state) => state.redo);
@@ -385,6 +387,8 @@ export function useSpreadsheet({
   const workerResetKey = useSpreadsheetStore((state) => state.workerResetKey);
   const [activeCell, setActiveCell] = useState<CellPosition | null>(null);
   const [editingCell, setEditingCell] = useState<CellPosition | null>(null);
+  const [editingDraft, setEditingDraft] = useState("");
+  const [editingOriginalValue, setEditingOriginalValue] = useState("");
   const [selection, setSelection] = useState<SelectionRange | null>(null);
   const [computedCells, setComputedCells] = useState<Record<string, CellData>>(
     {}
@@ -470,6 +474,10 @@ export function useSpreadsheet({
 
   useEffect(() => {
     if (workbookId) {
+      if (activeWorkbook?.id === workbookId) {
+        return;
+      }
+
       openWorkbook(workbookId, undefined, isSharedSession).catch(
         () => undefined
       );
@@ -477,7 +485,13 @@ export function useSpreadsheet({
     }
 
     hydrateWorkbookList().catch(() => undefined);
-  }, [hydrateWorkbookList, isSharedSession, openWorkbook, workbookId]);
+  }, [
+    activeWorkbook?.id,
+    hydrateWorkbookList,
+    isSharedSession,
+    openWorkbook,
+    workbookId,
+  ]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -512,7 +526,8 @@ export function useSpreadsheet({
       resolvedRequestedAccessRole,
       collaborationIdentity,
       syncServerUrl,
-      isSharedSession
+      isSharedSession,
+      workbookId
     );
 
     return () => {
@@ -539,10 +554,6 @@ export function useSpreadsheet({
   }, []);
 
   useEffect(() => {
-    if (workerResetKey.length === 0) {
-      return;
-    }
-
     workerCellsRef.current = activeSheetCellsForWorker;
     workerColumnNamesRef.current = activeColumnNames;
     workerRef.current?.postMessage({
@@ -552,7 +563,7 @@ export function useSpreadsheet({
         columnNames: workerColumnNamesRef.current,
       },
     });
-  }, [activeColumnNames, activeSheetCellsForWorker, workerResetKey]);
+  }, [activeColumnNames, activeSheetCellsForWorker]);
 
   useEffect(() => {
     if (workerResetKey.length === 0) {
@@ -566,6 +577,13 @@ export function useSpreadsheet({
 
   const getCellData = useCallback(
     (row: number, col: number): CellData => {
+      if (editingCell?.row === row && editingCell.col === col) {
+        return {
+          computed: editingDraft,
+          raw: editingDraft,
+        };
+      }
+
       const id = cellId(row, col);
       const computedCell = computedCells[id];
       if (computedCell) {
@@ -582,7 +600,7 @@ export function useSpreadsheet({
         raw: persistedCell.raw,
       };
     },
-    [activeSheetCells, computedCells]
+    [activeSheetCells, computedCells, editingCell, editingDraft]
   );
 
   const setCellValue = useCallback(
@@ -605,6 +623,8 @@ export function useSpreadsheet({
     setActiveCell(pos);
     setSelection(pos ? { start: pos, end: pos, mode: "cells" } : null);
     setEditingCell(null);
+    setEditingDraft("");
+    setEditingOriginalValue("");
   }, []);
 
   const getRawCellValue = useCallback(
@@ -1062,6 +1082,8 @@ export function useSpreadsheet({
 
       setSelection({ start: nextStart, end: nextEnd, mode });
       setEditingCell(null);
+      setEditingDraft("");
+      setEditingOriginalValue("");
 
       if (mode === "rows") {
         setActiveCell({ row: nextStart.row, col: 0 });
@@ -1079,19 +1101,28 @@ export function useSpreadsheet({
   );
 
   const startEditing = useCallback(
-    (pos: CellPosition) => {
+    (pos: CellPosition, initialDraft?: string) => {
       if (!canEdit) {
         return;
       }
 
+      const currentRaw = activeSheetCells[cellId(pos.row, pos.col)]?.raw ?? "";
       setActiveCell(pos);
       setEditingCell(pos);
+      setEditingOriginalValue(currentRaw);
+      setEditingDraft(initialDraft ?? currentRaw);
     },
-    [canEdit]
+    [activeSheetCells, canEdit]
   );
+
+  const updateEditingValue = useCallback((value: string) => {
+    setEditingDraft(value);
+  }, []);
 
   const stopEditing = useCallback(() => {
     setEditingCell(null);
+    setEditingDraft("");
+    setEditingOriginalValue("");
   }, []);
 
   const expandRowCount = useCallback(() => {
@@ -1138,6 +1169,46 @@ export function useSpreadsheet({
     [activeCell, rowCount, columnCount, selectCell]
   );
 
+  const commitEditing = useCallback(
+    async (direction?: "down" | "left" | "right" | "up") => {
+      const currentEditingCell = editingCell;
+      const nextDraft = editingDraft;
+      const previousValue = editingOriginalValue;
+
+      stopEditing();
+
+      if (currentEditingCell && canEdit && nextDraft !== previousValue) {
+        await setPersistedCellValue(
+          currentEditingCell.row,
+          currentEditingCell.col,
+          nextDraft
+        );
+
+        workerRef.current?.postMessage({
+          type: "UPDATE_CELL",
+          payload: {
+            col: currentEditingCell.col,
+            raw: nextDraft,
+            row: currentEditingCell.row,
+          },
+        });
+      }
+
+      if (direction) {
+        navigateFromActive(direction);
+      }
+    },
+    [
+      canEdit,
+      editingCell,
+      editingDraft,
+      editingOriginalValue,
+      navigateFromActive,
+      setPersistedCellValue,
+      stopEditing,
+    ]
+  );
+
   useEffect(() => {
     updateRealtimePresence(activeCell);
   }, [activeCell, updateRealtimePresence]);
@@ -1154,11 +1225,10 @@ export function useSpreadsheet({
 
     updateRealtimeTyping({
       cell: editingCell,
-      draft:
-        activeSheetCells[cellId(editingCell.row, editingCell.col)]?.raw ?? "",
+      draft: editingDraft,
       sheetId: activeSheetId,
     });
-  }, [activeSheetCells, activeSheetId, editingCell, updateRealtimeTyping]);
+  }, [activeSheetId, editingCell, editingDraft, updateRealtimeTyping]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1268,6 +1338,7 @@ export function useSpreadsheet({
     deleteSelectedRows,
     deleteWorkbook,
     editingCell,
+    editingDraft,
     selection,
     canExpandRows,
     columnCount,
@@ -1285,6 +1356,20 @@ export function useSpreadsheet({
       }
 
       return renameColumn(columnIndex, columnName);
+    },
+    reorderColumn: (sourceColumnIndex: number, targetColumnIndex: number) => {
+      if (!canEdit) {
+        return Promise.resolve();
+      }
+
+      return reorderColumn(sourceColumnIndex, targetColumnIndex);
+    },
+    reorderRow: (sourceRowIndex: number, targetRowIndex: number) => {
+      if (!canEdit) {
+        return Promise.resolve();
+      }
+
+      return reorderRow(sourceRowIndex, targetRowIndex);
     },
     resizeColumn: (columnIndex: number, width: number) => {
       if (!canEdit) {
@@ -1322,9 +1407,11 @@ export function useSpreadsheet({
     setCellFontSize,
     setCellTextColor,
     setCellTextTransform,
+    updateEditingValue,
     totalRowCount,
     getCellData,
     getCellFormat,
+    commitEditing,
     setCellValue,
     selectCell,
     setActiveSheet,

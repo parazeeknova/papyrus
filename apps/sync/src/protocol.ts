@@ -23,15 +23,20 @@ function isCellPosition(value: unknown): value is { col: number; row: number } {
 }
 
 export function parseClientMessage(
-  rawMessage: string | Buffer | Uint8Array
+  rawMessage: string | Buffer | Uint8Array | Record<string, unknown>
 ): CollaborationClientMessage | null {
-  const text =
-    typeof rawMessage === "string"
-      ? rawMessage
-      : Buffer.from(rawMessage).toString();
-
   try {
-    const payload = JSON.parse(text) as Record<string, unknown>;
+    const payload: Record<string, unknown> =
+      typeof rawMessage === "object" &&
+      rawMessage !== null &&
+      !(rawMessage instanceof Uint8Array) &&
+      !Buffer.isBuffer(rawMessage)
+        ? rawMessage
+        : JSON.parse(
+            typeof rawMessage === "string"
+              ? rawMessage
+              : Buffer.from(rawMessage).toString()
+          );
 
     if (payload.type === "presence") {
       const presencePayload = payload.payload as {

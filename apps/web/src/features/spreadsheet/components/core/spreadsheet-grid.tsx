@@ -22,6 +22,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type CSSProperties,
   memo,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -53,6 +54,7 @@ const COLUMN_RESIZE_HANDLE_WIDTH = 8;
 const ROW_RESIZE_HANDLE_HEIGHT = 8;
 const MIN_COLUMN_WIDTH = 48;
 const MIN_ROW_HEIGHT = 20;
+const GRIP_DOT_KEYS = ["a", "b", "c", "d", "e", "f"] as const;
 
 interface GridItem {
   index: number;
@@ -75,28 +77,37 @@ interface ResizeState {
   type: "column" | "row";
 }
 
+interface ReorderPreview {
+  axis: "column" | "row";
+  insertionIndex: number;
+  sourceIndex: number;
+}
+
 interface CellComponentProps {
   canEdit: boolean;
   col: number;
   data: CellData;
   disabled?: boolean;
+  editValue: string;
   format: CellFormat;
   isActive: boolean;
   isEditing: boolean;
   isSelected: boolean;
+  onBeginTyping: (pos: CellPosition, value: string) => void;
+  onCancel: () => void;
   onCommit: (direction?: "down" | "left" | "right" | "up") => void;
   onContextMenu: (
     pos: CellPosition,
     event: ReactMouseEvent<HTMLButtonElement>
   ) => void;
   onDoubleClick: (pos: CellPosition) => void;
+  onEditValueChange: (value: string) => void;
   onKeyDown: (e: ReactKeyboardEvent) => void;
   onSelect: (
     pos: CellPosition,
     event: ReactMouseEvent<HTMLButtonElement>
   ) => void;
   onSelectHover: (pos: CellPosition) => void;
-  onValueChange: (row: number, col: number, value: string) => void;
   row: number;
 }
 
@@ -106,15 +117,18 @@ const CellComponent = memo(function CellComponent({
   col,
   data,
   disabled = false,
+  editValue,
   format,
   isActive,
   isEditing,
   isSelected,
+  onBeginTyping,
+  onCancel,
   onSelect,
   onSelectHover,
   onContextMenu,
   onDoubleClick,
-  onValueChange,
+  onEditValueChange,
   onCommit,
   onKeyDown,
 }: CellComponentProps) {
@@ -162,7 +176,7 @@ const CellComponent = memo(function CellComponent({
           onCommit();
         }}
         onChange={(e) => {
-          onValueChange(row, col, e.target.value);
+          onEditValueChange(e.target.value);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
@@ -170,14 +184,14 @@ const CellComponent = memo(function CellComponent({
             onCommit(e.shiftKey ? "up" : "down");
           } else if (e.key === "Escape") {
             e.preventDefault();
-            onCommit();
+            onCancel();
           } else if (e.key === "Tab") {
             e.preventDefault();
             onCommit(e.shiftKey ? "left" : "right");
           }
         }}
         ref={inputRef}
-        value={data.raw}
+        value={editValue}
       />
     );
   }
@@ -205,8 +219,7 @@ const CellComponent = memo(function CellComponent({
           e.key.length === 1
         ) {
           e.preventDefault();
-          onValueChange(row, col, e.key);
-          onDoubleClick({ row, col });
+          onBeginTyping({ row, col }, e.key);
         } else {
           onKeyDown(e);
         }
@@ -237,8 +250,10 @@ interface SpreadsheetGridProps {
   columnCount: number;
   columnNames: string[];
   columnWidths: number[];
+  commitEditing: (direction?: "down" | "left" | "right" | "up") => void;
   disabled?: boolean;
   editingCell: CellPosition | null;
+  editingValue: string;
   expandRowCount: () => void;
   getCellData: (row: number, col: number) => CellData;
   getCellFormat: (row: number, col: number) => CellFormat;
@@ -253,6 +268,11 @@ interface SpreadsheetGridProps {
   onPaste: () => void;
   onRedo: () => void;
   onRenameColumn: (columnIndex: number, columnName: string) => Promise<boolean>;
+  onReorderColumn: (
+    sourceColumnIndex: number,
+    targetColumnIndex: number
+  ) => void;
+  onReorderRow: (sourceRowIndex: number, targetRowIndex: number) => void;
   onResizeColumn: (columnIndex: number, width: number) => void;
   onResizeRow: (rowIndex: number, height: number) => void;
   onUndo: () => void;
@@ -268,8 +288,9 @@ interface SpreadsheetGridProps {
   ) => void;
   sheetId: string | null;
   showAllRows: () => void;
-  startEditing: (pos: CellPosition) => void;
+  startEditing: (pos: CellPosition, initialDraft?: string) => void;
   stopEditing: () => void;
+  updateEditingValue: (value: string) => void;
 }
 
 export function SpreadsheetGrid({
@@ -283,6 +304,7 @@ export function SpreadsheetGrid({
   columnWidths,
   disabled = false,
   editingCell,
+  editingValue,
   columnCount,
   expandRowCount,
   rowCount,
@@ -302,6 +324,8 @@ export function SpreadsheetGrid({
   onDeleteRow,
   onOpenFindReplace,
   onPaste,
+  onReorderColumn,
+  onReorderRow,
   onRenameColumn,
   onResizeColumn,
   onResizeRow,
@@ -309,15 +333,28 @@ export function SpreadsheetGrid({
   onUndo,
   sheetId,
   rowHeights,
+  commitEditing,
+  updateEditingValue,
 }: SpreadsheetGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const resizeFrameRef = useRef<number | null>(null);
   const resizeStateRef = useRef<ResizeState | null>(null);
+  const reorderDragRef = useRef<{
+    axis: "column" | "row";
+    sourceIndex: number;
+  } | null>(null);
+  const rowPointerReorderRef = useRef<{
+    pointerId: number;
+    sourceIndex: number;
+  } | null>(null);
   const selectionDragRef = useRef<{
     mode: SelectionMode;
     start: CellPosition;
   } | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [reorderPreview, setReorderPreview] = useState<ReorderPreview | null>(
+    null
+  );
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
   const [renamingColumnIndex, setRenamingColumnIndex] = useState<number | null>(
     null
@@ -420,12 +457,56 @@ export function SpreadsheetGrid({
 
   const handleCellEditCommit = useCallback(
     (direction?: "down" | "left" | "right" | "up") => {
-      stopEditing();
-      if (direction) {
-        navigateFromActive(direction);
-      }
+      commitEditing(direction);
     },
-    [navigateFromActive, stopEditing]
+    [commitEditing]
+  );
+
+  const moveIndex = useCallback(
+    (index: number, fromIndex: number, toIndex: number): number => {
+      if (fromIndex === toIndex) {
+        return index;
+      }
+
+      if (index === fromIndex) {
+        return toIndex;
+      }
+
+      if (fromIndex < toIndex && index > fromIndex && index <= toIndex) {
+        return index - 1;
+      }
+
+      if (fromIndex > toIndex && index >= toIndex && index < fromIndex) {
+        return index + 1;
+      }
+
+      return index;
+    },
+    []
+  );
+
+  const getDropTargetIndex = useCallback(
+    (
+      sourceIndex: number,
+      insertionIndex: number,
+      itemCount: number
+    ): number | null => {
+      const boundedInsertionIndex = Math.max(
+        0,
+        Math.min(itemCount, insertionIndex)
+      );
+      const targetIndex =
+        boundedInsertionIndex > sourceIndex
+          ? boundedInsertionIndex - 1
+          : boundedInsertionIndex;
+
+      if (targetIndex === sourceIndex || targetIndex >= itemCount) {
+        return null;
+      }
+
+      return targetIndex;
+    },
+    []
   );
 
   const rowVirtualizer = useVirtualizer({
@@ -561,6 +642,9 @@ export function SpreadsheetGrid({
       if (event.key === "Escape") {
         setContextMenu(null);
         setRenamingColumnIndex(null);
+        rowPointerReorderRef.current = null;
+        reorderDragRef.current = null;
+        setReorderPreview(null);
       }
     };
 
@@ -752,6 +836,10 @@ export function SpreadsheetGrid({
 
   const updateDraggedSelection = useCallback(
     (end: CellPosition) => {
+      if (reorderDragRef.current) {
+        return;
+      }
+
       const dragState = selectionDragRef.current;
       if (!dragState) {
         return;
@@ -762,9 +850,282 @@ export function SpreadsheetGrid({
     [setSelectionRange]
   );
 
+  const clearReorderDrag = useCallback(() => {
+    rowPointerReorderRef.current = null;
+    reorderDragRef.current = null;
+    setReorderPreview(null);
+  }, []);
+
+  const updateRowPointerReorderPreview = useCallback(
+    (clientY: number) => {
+      const dragState = reorderDragRef.current;
+      const scrollElement = scrollRef.current;
+      const firstRow = renderRows[0];
+      const lastRow = renderRows.at(-1);
+      if (
+        !(
+          dragState &&
+          dragState.axis === "row" &&
+          scrollElement &&
+          firstRow &&
+          lastRow
+        )
+      ) {
+        return;
+      }
+
+      const scrollBounds = scrollElement.getBoundingClientRect();
+      const rowAreaY =
+        clientY -
+        scrollBounds.top +
+        scrollElement.scrollTop -
+        COL_HEADER_HEIGHT;
+
+      let insertionIndex = firstRow.index;
+      if (rowAreaY <= firstRow.start) {
+        insertionIndex = firstRow.index;
+      } else if (rowAreaY >= lastRow.start + lastRow.size) {
+        insertionIndex = lastRow.index + 1;
+      } else {
+        insertionIndex = lastRow.index + 1;
+        for (const row of renderRows) {
+          if (rowAreaY < row.start + row.size / 2) {
+            insertionIndex = row.index;
+            break;
+          }
+
+          if (rowAreaY < row.start + row.size) {
+            insertionIndex = row.index + 1;
+            break;
+          }
+        }
+      }
+
+      setReorderPreview({
+        axis: "row",
+        insertionIndex: Math.max(0, Math.min(rowCount, insertionIndex)),
+        sourceIndex: dragState.sourceIndex,
+      });
+    },
+    [renderRows, rowCount]
+  );
+
+  const beginHeaderReorder = useCallback(
+    (
+      axis: "column" | "row",
+      sourceIndex: number,
+      event: ReactDragEvent<HTMLButtonElement>
+    ) => {
+      if (!(canEdit && !disabled)) {
+        event.preventDefault();
+        return;
+      }
+
+      selectionDragRef.current = null;
+      setContextMenu(null);
+      setRenamingColumnIndex(null);
+      reorderDragRef.current = { axis, sourceIndex };
+      setReorderPreview({
+        axis,
+        insertionIndex: sourceIndex,
+        sourceIndex,
+      });
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", `${axis}:${sourceIndex}`);
+    },
+    [canEdit, disabled]
+  );
+
+  const beginRowPointerReorder = useCallback(
+    (sourceIndex: number, event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (!(canEdit && !disabled)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      selectionDragRef.current = null;
+      setContextMenu(null);
+      setRenamingColumnIndex(null);
+      rowPointerReorderRef.current = {
+        pointerId: event.pointerId,
+        sourceIndex,
+      };
+      reorderDragRef.current = { axis: "row", sourceIndex };
+      setReorderPreview({
+        axis: "row",
+        insertionIndex: sourceIndex,
+        sourceIndex,
+      });
+      event.currentTarget.setPointerCapture(event.pointerId);
+      updateRowPointerReorderPreview(event.clientY);
+    },
+    [canEdit, disabled, updateRowPointerReorderPreview]
+  );
+
+  const updateHeaderReorderPreview = useCallback(
+    (
+      axis: "column" | "row",
+      targetIndex: number,
+      event: ReactDragEvent<HTMLButtonElement>
+    ) => {
+      const dragState = reorderDragRef.current;
+      if (!dragState || dragState.axis !== axis) {
+        return;
+      }
+
+      event.preventDefault();
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const pointerOffset =
+        axis === "column"
+          ? event.clientX - bounds.left
+          : event.clientY - bounds.top;
+      const size = axis === "column" ? bounds.width : bounds.height;
+      const insertionIndex =
+        pointerOffset < size / 2 ? targetIndex : targetIndex + 1;
+
+      setReorderPreview({
+        axis,
+        insertionIndex,
+        sourceIndex: dragState.sourceIndex,
+      });
+    },
+    []
+  );
+
+  const commitHeaderReorder = useCallback(
+    (axis: "column" | "row", insertionIndex: number) => {
+      const dragState = reorderDragRef.current;
+      if (!dragState || dragState.axis !== axis) {
+        return;
+      }
+
+      const itemCount = axis === "column" ? columnCount : rowCount;
+      const targetIndex = getDropTargetIndex(
+        dragState.sourceIndex,
+        insertionIndex,
+        itemCount
+      );
+
+      if (targetIndex === null) {
+        clearReorderDrag();
+        return;
+      }
+
+      if (axis === "column") {
+        onReorderColumn(dragState.sourceIndex, targetIndex);
+        if (activeCell) {
+          selectCell({
+            col: moveIndex(activeCell.col, dragState.sourceIndex, targetIndex),
+            row: activeCell.row,
+          });
+        }
+        setSelectionRange(
+          { col: targetIndex, row: 0 },
+          { col: targetIndex, row: rowCount - 1 },
+          "columns"
+        );
+      } else {
+        onReorderRow(dragState.sourceIndex, targetIndex);
+        if (activeCell) {
+          selectCell({
+            col: activeCell.col,
+            row: moveIndex(activeCell.row, dragState.sourceIndex, targetIndex),
+          });
+        }
+        setSelectionRange(
+          { col: 0, row: targetIndex },
+          { col: columnCount - 1, row: targetIndex },
+          "rows"
+        );
+      }
+
+      clearReorderDrag();
+    },
+    [
+      activeCell,
+      clearReorderDrag,
+      columnCount,
+      getDropTargetIndex,
+      moveIndex,
+      onReorderColumn,
+      onReorderRow,
+      rowCount,
+      selectCell,
+      setSelectionRange,
+    ]
+  );
+
+  useEffect(() => {
+    const activeRowPointerReorder = rowPointerReorderRef.current;
+    if (!(activeRowPointerReorder && reorderPreview?.axis === "row")) {
+      return;
+    }
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "grabbing";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (rowPointerReorderRef.current?.pointerId !== event.pointerId) {
+        return;
+      }
+
+      updateRowPointerReorderPreview(event.clientY);
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const currentRowPointerReorder = rowPointerReorderRef.current;
+      if (
+        !(
+          currentRowPointerReorder &&
+          currentRowPointerReorder.pointerId === event.pointerId
+        )
+      ) {
+        return;
+      }
+
+      const insertionIndex =
+        reorderPreview.axis === "row"
+          ? reorderPreview.insertionIndex
+          : currentRowPointerReorder.sourceIndex;
+      commitHeaderReorder("row", insertionIndex);
+    };
+
+    const handlePointerCancel = (event: PointerEvent) => {
+      if (rowPointerReorderRef.current?.pointerId !== event.pointerId) {
+        return;
+      }
+
+      clearReorderDrag();
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, [
+    clearReorderDrag,
+    commitHeaderReorder,
+    reorderPreview,
+    updateRowPointerReorderPreview,
+  ]);
+
   const handleCellSelect = useCallback(
     (pos: CellPosition, event: ReactMouseEvent<HTMLButtonElement>) => {
       setContextMenu(null);
+      if (editingCell) {
+        commitEditing();
+      }
+
       if (event.shiftKey && activeCell) {
         selectionDragRef.current = { start: activeCell, mode: "cells" };
         setSelectionRange(activeCell, pos, "cells");
@@ -774,11 +1135,15 @@ export function SpreadsheetGrid({
       selectionDragRef.current = { start: pos, mode: "cells" };
       selectCell(pos);
     },
-    [activeCell, selectCell, setSelectionRange]
+    [activeCell, commitEditing, editingCell, selectCell, setSelectionRange]
   );
 
   const handleCellContextMenu = useCallback(
     (pos: CellPosition, event: ReactMouseEvent<HTMLButtonElement>) => {
+      if (editingCell) {
+        commitEditing();
+      }
+
       selectCell(pos);
       setContextMenu({
         col: pos.col,
@@ -787,7 +1152,7 @@ export function SpreadsheetGrid({
         y: event.clientY,
       });
     },
-    [selectCell]
+    [commitEditing, editingCell, selectCell]
   );
 
   const beginColumnRename = useCallback(
@@ -934,6 +1299,62 @@ export function SpreadsheetGrid({
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
   }, [collaborationPeers, renderCols, renderRows, sheetId]);
 
+  const columnReorderIndicator = useMemo(() => {
+    if (reorderPreview?.axis !== "column") {
+      return null;
+    }
+
+    if (reorderPreview.insertionIndex === 0) {
+      return ROW_HEADER_WIDTH;
+    }
+
+    if (reorderPreview.insertionIndex === columnCount) {
+      const lastColumn = renderCols.at(-1);
+      if (!(lastColumn && lastColumn.index === columnCount - 1)) {
+        return null;
+      }
+
+      return ROW_HEADER_WIDTH + lastColumn.start + lastColumn.size;
+    }
+
+    const targetColumn = renderCols.find(
+      (column) => column.index === reorderPreview.insertionIndex
+    );
+    if (!targetColumn) {
+      return null;
+    }
+
+    return ROW_HEADER_WIDTH + targetColumn.start;
+  }, [columnCount, renderCols, reorderPreview]);
+
+  const rowReorderIndicator = useMemo(() => {
+    if (reorderPreview?.axis !== "row") {
+      return null;
+    }
+
+    if (reorderPreview.insertionIndex === 0) {
+      return COL_HEADER_HEIGHT;
+    }
+
+    if (reorderPreview.insertionIndex === rowCount) {
+      const lastRow = renderRows.at(-1);
+      if (!(lastRow && lastRow.index === rowCount - 1)) {
+        return null;
+      }
+
+      return COL_HEADER_HEIGHT + lastRow.start + lastRow.size;
+    }
+
+    const targetRow = renderRows.find(
+      (row) => row.index === reorderPreview.insertionIndex
+    );
+    if (!targetRow) {
+      return null;
+    }
+
+    return COL_HEADER_HEIGHT + targetRow.start;
+  }, [renderRows, reorderPreview, rowCount]);
+
   return (
     <div
       className={cn(
@@ -947,6 +1368,27 @@ export function SpreadsheetGrid({
         className="relative"
         style={{ width: totalGridWidth, height: totalGridHeight }}
       >
+        {columnReorderIndicator !== null ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute top-0 z-50 w-0.5 bg-primary"
+            style={{
+              height: totalGridHeight,
+              left: columnReorderIndicator,
+            }}
+          />
+        ) : null}
+        {rowReorderIndicator !== null ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute left-0 z-50 h-0.5 bg-primary"
+            style={{
+              top: rowReorderIndicator,
+              width: totalGridWidth,
+            }}
+          />
+        ) : null}
+
         <div
           className="sticky top-0 z-30"
           style={{ width: totalGridWidth, height: COL_HEADER_HEIGHT }}
@@ -1031,10 +1473,22 @@ export function SpreadsheetGrid({
                     style={headerStyle}
                   >
                     <button
-                      className="flex h-full w-full items-center justify-center pr-2"
+                      className="flex h-full w-full items-center justify-center px-4"
                       disabled={disabled}
                       onDoubleClick={() => {
                         beginColumnRename(vc.index);
+                      }}
+                      onDragOver={(event) => {
+                        updateHeaderReorderPreview("column", vc.index, event);
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        commitHeaderReorder(
+                          "column",
+                          reorderPreview?.axis === "column"
+                            ? reorderPreview.insertionIndex
+                            : vc.index
+                        );
                       }}
                       onMouseDown={(event) => {
                         event.preventDefault();
@@ -1053,6 +1507,33 @@ export function SpreadsheetGrid({
                     >
                       {columnNames[vc.index]}
                     </button>
+                    {canEdit && !disabled ? (
+                      <button
+                        aria-label={`Reorder column ${columnNames[vc.index]}`}
+                        className="absolute top-1/2 left-1 z-20 flex h-4 w-3 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-border/80 hover:text-foreground focus-visible:opacity-100 active:cursor-grabbing group-hover:opacity-100"
+                        draggable
+                        onDragEnd={clearReorderDrag}
+                        onDragStart={(event) => {
+                          beginHeaderReorder("column", vc.index, event);
+                        }}
+                        onMouseDown={(event) => {
+                          event.stopPropagation();
+                        }}
+                        type="button"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="grid grid-cols-2 gap-0.5"
+                        >
+                          {GRIP_DOT_KEYS.map((dotKey) => (
+                            <span
+                              className="size-0.5 rounded-full bg-current"
+                              key={`col-grip-${vc.index}-${dotKey}`}
+                            />
+                          ))}
+                        </span>
+                      </button>
+                    ) : null}
                     {canEdit && !disabled ? (
                       <button
                         aria-label={`Resize column ${columnNames[vc.index]}`}
@@ -1086,7 +1567,7 @@ export function SpreadsheetGrid({
             >
               <div
                 className={cn(
-                  "sticky left-0 z-20 border-border border-r border-b bg-muted text-muted-foreground text-xs",
+                  "group sticky left-0 z-20 border-border border-r border-b bg-muted text-muted-foreground text-xs",
                   isRowHeaderSelected(row) &&
                     "z-30 bg-primary/12 font-semibold text-primary ring-1 ring-primary/30 ring-inset",
                   activeCell?.row === row &&
@@ -1095,7 +1576,7 @@ export function SpreadsheetGrid({
                 style={{ width: ROW_HEADER_WIDTH, height: vr.size }}
               >
                 <button
-                  className="flex h-full w-full select-none items-center justify-center pb-1"
+                  className="flex h-full w-full select-none items-center justify-center py-2 pr-2 pl-4"
                   disabled={disabled}
                   onMouseDown={(event) => {
                     event.preventDefault();
@@ -1108,6 +1589,28 @@ export function SpreadsheetGrid({
                 >
                   {row + 1}
                 </button>
+                {canEdit && !disabled ? (
+                  <button
+                    aria-label={`Reorder row ${row + 1}`}
+                    className="absolute top-1/2 left-1 z-20 flex h-4 w-3 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-border/80 hover:text-foreground focus-visible:opacity-100 active:cursor-grabbing group-hover:opacity-100"
+                    onPointerDown={(event) => {
+                      beginRowPointerReorder(row, event);
+                    }}
+                    type="button"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="grid grid-cols-2 gap-0.5"
+                    >
+                      {GRIP_DOT_KEYS.map((dotKey) => (
+                        <span
+                          className="size-0.5 rounded-full bg-current"
+                          key={`row-grip-${row}-${dotKey}`}
+                        />
+                      ))}
+                    </span>
+                  </button>
+                ) : null}
                 {canEdit && !disabled ? (
                   <button
                     aria-label={`Resize row ${row + 1}`}
@@ -1158,10 +1661,13 @@ export function SpreadsheetGrid({
                           col={col}
                           data={data}
                           disabled={disabled}
+                          editValue={editingValue}
                           format={format}
                           isActive={isActive}
                           isEditing={isEditing}
                           isSelected={isSelected}
+                          onBeginTyping={startEditing}
+                          onCancel={stopEditing}
                           onCommit={handleCellEditCommit}
                           onContextMenu={handleCellContextMenu}
                           onDoubleClick={(position) => {
@@ -1169,10 +1675,10 @@ export function SpreadsheetGrid({
                               startEditing(position);
                             }
                           }}
+                          onEditValueChange={updateEditingValue}
                           onKeyDown={handleCellKeyDown}
                           onSelect={handleCellSelect}
                           onSelectHover={updateDraggedSelection}
-                          onValueChange={setCellValue}
                           row={row}
                         />
                       </div>

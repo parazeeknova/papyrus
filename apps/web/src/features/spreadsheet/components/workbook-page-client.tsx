@@ -73,6 +73,7 @@ function WorkbookPageContent({
     deleteSelectedRows,
     deleteWorkbook,
     editingCell,
+    editingDraft,
     columnCount,
     expandRowCount,
     findNext,
@@ -81,6 +82,8 @@ function WorkbookPageContent({
     lastSyncedLabel,
     pasteSelection,
     redo,
+    reorderColumn,
+    reorderRow,
     renameColumn,
     resizeColumn,
     resizeRow,
@@ -109,10 +112,12 @@ function WorkbookPageContent({
     getCellData,
     getCellFormat,
     getCellReferenceLabel,
+    commitEditing,
     setCellValue,
     selectCell,
     startEditing,
     stopEditing,
+    updateEditingValue,
     toggleCellFormat,
     undo,
     navigateFromActive,
@@ -144,20 +149,25 @@ function WorkbookPageContent({
   const handleFormulaChange = useCallback(
     (value: string) => {
       if (activeCell) {
-        setCellValue(activeCell.row, activeCell.col, value);
+        const isEditingActiveCell =
+          editingCell?.row === activeCell.row &&
+          editingCell.col === activeCell.col;
+
+        if (!isEditingActiveCell) {
+          startEditing(activeCell);
+        }
+
+        updateEditingValue(value);
       }
     },
-    [activeCell, setCellValue]
+    [activeCell, editingCell, startEditing, updateEditingValue]
   );
 
   const handleFormulaCommit = useCallback(
     (direction: "down" | "up" = "down") => {
-      stopEditing();
-      if (activeCell) {
-        navigateFromActive(direction);
-      }
+      commitEditing(direction).catch(() => undefined);
     },
-    [activeCell, navigateFromActive, stopEditing]
+    [commitEditing]
   );
 
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
@@ -190,18 +200,6 @@ function WorkbookPageContent({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
-
-  useEffect(() => {
-    if (
-      isSharedSession ||
-      !activeWorkbook?.id ||
-      activeWorkbook.id === workbookId
-    ) {
-      return;
-    }
-
-    router.replace(`/workbook/${activeWorkbook.id}`);
-  }, [activeWorkbook?.id, isSharedSession, router, workbookId]);
 
   return (
     <div className="flex h-screen flex-col bg-background font-sans">
@@ -345,9 +343,15 @@ function WorkbookPageContent({
       />
       <FormulaBar
         activeCell={activeCell}
-        cellRaw={activeCellData.raw}
+        cellRaw={
+          editingCell?.row === activeCell?.row &&
+          editingCell?.col === activeCell?.col
+            ? editingDraft
+            : activeCellData.raw
+        }
         disabled={!canEdit || isInitialLoad}
         getCellReferenceLabel={getCellReferenceLabel}
+        onCancel={stopEditing}
         onCommit={handleFormulaCommit}
         onValueChange={handleFormulaChange}
         primaryColumnName={activeSheetColumns[0]?.name ?? "A"}
@@ -366,8 +370,16 @@ function WorkbookPageContent({
             : activeSheetColumns.map((column) => column.name)
         }
         columnWidths={activeSheetColumns.map((column) => column.width)}
+        commitEditing={
+          isInitialLoad
+            ? () => undefined
+            : (direction) => {
+                commitEditing(direction).catch(() => undefined);
+              }
+        }
         disabled={isInitialLoad}
         editingCell={isInitialLoad ? null : editingCell}
+        editingValue={isInitialLoad ? "" : editingDraft}
         expandRowCount={expandRowCount}
         getCellData={isInitialLoad ? getLoadingCellData : getCellData}
         getCellFormat={isInitialLoad ? () => ({}) : getCellFormat}
@@ -398,6 +410,14 @@ function WorkbookPageContent({
         onRenameColumn={(columnIndex, columnName) =>
           renameColumn(columnIndex, columnName)
         }
+        onReorderColumn={(sourceColumnIndex, targetColumnIndex) => {
+          reorderColumn(sourceColumnIndex, targetColumnIndex).catch(
+            () => undefined
+          );
+        }}
+        onReorderRow={(sourceRowIndex, targetRowIndex) => {
+          reorderRow(sourceRowIndex, targetRowIndex).catch(() => undefined);
+        }}
         onResizeColumn={(columnIndex, width) => {
           resizeColumn(columnIndex, width).catch(() => undefined);
         }}
@@ -417,6 +437,9 @@ function WorkbookPageContent({
         showAllRows={showAllRows}
         startEditing={isInitialLoad ? () => undefined : startEditing}
         stopEditing={isInitialLoad ? () => undefined : stopEditing}
+        updateEditingValue={
+          isInitialLoad ? () => undefined : updateEditingValue
+        }
       />
       <SheetTabs
         activeSheetId={visibleActiveSheetId}

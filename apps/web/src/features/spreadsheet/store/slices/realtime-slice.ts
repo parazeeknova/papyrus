@@ -25,12 +25,19 @@ export const createRealtimeSlice = (
     collaborationErrorMessage: null,
     collaborationPeers: [],
     collaborationStatus: "disconnected",
-    connectRealtime: (accessRole, identity, serverUrl, isSharedSession) => {
+    connectRealtime: (
+      accessRole,
+      identity,
+      serverUrl,
+      isSharedSession,
+      workbookId
+    ) => {
       controller.setRealtimeConnection(
         accessRole,
         identity,
         serverUrl,
-        isSharedSession
+        isSharedSession,
+        workbookId
       );
     },
     stopRealtime: () => {

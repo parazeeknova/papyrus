@@ -1,4 +1,4 @@
-import { WorkbookPageClient } from "@/web/features/spreadsheet/components/workbook-page-client";
+import { WorkbookPageShell } from "./workbook-page-shell";
 
 interface WorkbookPageProps {
   params: Promise<{
@@ -18,7 +18,7 @@ export default async function WorkbookPage({
   const { access, shared } = await searchParams;
 
   return (
-    <WorkbookPageClient
+    <WorkbookPageShell
       isSharedSession={shared === "1"}
       requestedAccessRole={access === "viewer" ? "viewer" : "editor"}
       workbookId={workbookId}

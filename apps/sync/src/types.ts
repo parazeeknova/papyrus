@@ -19,6 +19,7 @@ export interface RoomPeer {
   updatedAt: number;
   ws: {
     close: (code?: number, reason?: string) => unknown;
+    raw: unknown;
     send: (data: CollaborationServerMessage) => unknown;
   };
 }

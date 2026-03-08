@@ -43,7 +43,8 @@ export interface SpreadsheetStoreState {
     accessRole: CollaborationAccessRole,
     identity: CollaboratorIdentity,
     serverUrl: string,
-    isSharedSession: boolean
+    isSharedSession: boolean,
+    workbookId: string
   ) => void;
   createSheet: () => Promise<void>;
   createWorkbook: () => Promise<void>;
@@ -66,6 +67,11 @@ export interface SpreadsheetStoreState {
   remoteVersion: number | null;
   renameColumn: (columnIndex: number, columnName: string) => Promise<boolean>;
   renameWorkbook: (name: string) => Promise<void>;
+  reorderColumn: (
+    sourceColumnIndex: number,
+    targetColumnIndex: number
+  ) => Promise<void>;
+  reorderRow: (sourceRowIndex: number, targetRowIndex: number) => Promise<void>;
   resizeColumn: (columnIndex: number, width: number) => Promise<void>;
   resizeRow: (rowIndex: number, height: number) => Promise<void>;
   saveState: SaveState;

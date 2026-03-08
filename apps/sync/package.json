@@ -2,7 +2,10 @@
   "name": "@papyrus/sync",
   "version": "1.0.50",
   "scripts": {
+    "build": "bun run build:minify",
+    "build:minify": "bun build --target bun --minify --outfile ./dist/index.js ./src/index.ts",
     "dev": "bun run --watch src/index.ts",
+    "start": "bun ./dist/index.js",
     "check-types": "tsc --noEmit --pretty"
   },
   "dependencies": {

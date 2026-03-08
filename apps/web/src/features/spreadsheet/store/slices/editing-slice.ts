@@ -50,6 +50,8 @@ type EditingSliceState = Pick<
   | "renameColumn"
   | "resizeColumn"
   | "resizeRow"
+  | "reorderColumn"
+  | "reorderRow"
   | "renameWorkbook"
   | "setActiveSheet"
   | "setCellFormats"
@@ -62,6 +64,41 @@ type EditingSliceState = Pick<
   | "undo"
   | "workerResetKey"
 >;
+
+function moveIndex(index: number, fromIndex: number, toIndex: number): number {
+  if (fromIndex === toIndex) {
+    return index;
+  }
+
+  if (index === fromIndex) {
+    return toIndex;
+  }
+
+  if (fromIndex < toIndex && index > fromIndex && index <= toIndex) {
+    return index - 1;
+  }
+
+  if (fromIndex > toIndex && index >= toIndex && index < fromIndex) {
+    return index + 1;
+  }
+
+  return index;
+}
+
+function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
+  if (fromIndex === toIndex) {
+    return items;
+  }
+
+  const nextItems = [...items];
+  const [movedItem] = nextItems.splice(fromIndex, 1);
+  if (movedItem === undefined) {
+    return items;
+  }
+
+  nextItems.splice(toIndex, 0, movedItem);
+  return nextItems;
+}
 
 const updateSharingState = async (
   controller: SpreadsheetStoreController,
@@ -408,6 +445,200 @@ export const createEditingSlice = (
 
       await controller.persistActiveWorkbookMeta();
       return true;
+    },
+    reorderColumn: async (sourceColumnIndex, targetColumnIndex) => {
+      if (controller.isViewerAccess()) {
+        return;
+      }
+
+      const activeWorkbookSession = controller.getActiveWorkbookSession();
+      const activeSheetId = get().activeSheetId;
+      const currentSheetColumns = get().activeSheetColumns;
+      const currentColumnCount = currentSheetColumns.length;
+      if (!(activeWorkbookSession && activeSheetId)) {
+        return;
+      }
+
+      if (
+        sourceColumnIndex < 0 ||
+        targetColumnIndex < 0 ||
+        sourceColumnIndex >= currentColumnCount ||
+        targetColumnIndex >= currentColumnCount ||
+        sourceColumnIndex === targetColumnIndex
+      ) {
+        return;
+      }
+
+      const currentColumnNames =
+        controller.buildColumnNames(currentSheetColumns);
+      const movedColumns = moveItem(
+        currentSheetColumns,
+        sourceColumnIndex,
+        targetColumnIndex
+      );
+      const nextColumns = movedColumns.map((column, index) => ({
+        ...column,
+        index,
+      }));
+      const nextColumnNames = nextColumns.map((column) => column.name);
+      const nextCells: Record<string, string> = {};
+      const nextFormats: SpreadsheetStoreState["activeSheetFormats"] = {};
+
+      for (const [storedCellKey, cellValue] of Object.entries(
+        get().activeSheetCells
+      )) {
+        const position = parseStoredCellId(storedCellKey);
+        if (!position) {
+          continue;
+        }
+
+        const nextCol = moveIndex(
+          position.col,
+          sourceColumnIndex,
+          targetColumnIndex
+        );
+        nextCells[cellId(position.row, nextCol)] = rewriteFormulaReferences(
+          cellValue.raw,
+          currentColumnNames,
+          nextColumnNames,
+          (referencePosition) => ({
+            col: moveIndex(
+              referencePosition.col,
+              sourceColumnIndex,
+              targetColumnIndex
+            ),
+            row: referencePosition.row,
+          })
+        );
+      }
+
+      for (const [storedCellKey, cellFormat] of Object.entries(
+        get().activeSheetFormats
+      )) {
+        const position = parseStoredCellId(storedCellKey);
+        if (!position) {
+          continue;
+        }
+
+        const nextCol = moveIndex(
+          position.col,
+          sourceColumnIndex,
+          targetColumnIndex
+        );
+        nextFormats[cellId(position.row, nextCol)] = cellFormat;
+      }
+
+      set({ saveState: "saving" });
+      replaceSheetColumns(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextColumns
+      );
+      replaceSheetCells(activeWorkbookSession.doc, activeSheetId, nextCells);
+      replaceSheetFormats(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextFormats
+      );
+      await controller.persistActiveWorkbookMeta();
+    },
+    reorderRow: async (sourceRowIndex, targetRowIndex) => {
+      if (controller.isViewerAccess()) {
+        return;
+      }
+
+      const activeWorkbookSession = controller.getActiveWorkbookSession();
+      const activeSheetId = get().activeSheetId;
+      if (!(activeWorkbookSession && activeSheetId)) {
+        return;
+      }
+
+      if (
+        sourceRowIndex < 0 ||
+        targetRowIndex < 0 ||
+        sourceRowIndex === targetRowIndex
+      ) {
+        return;
+      }
+
+      const currentColumns = controller.buildColumnNames(
+        get().activeSheetColumns
+      );
+      const currentFormats = get().activeSheetFormats;
+      const currentRowHeights = get().activeSheetRowHeights;
+      const nextCells: Record<string, string> = {};
+
+      for (const [storedCellKey, cellValue] of Object.entries(
+        get().activeSheetCells
+      )) {
+        const position = parseStoredCellId(storedCellKey);
+        if (!position) {
+          continue;
+        }
+
+        const nextRow = moveIndex(position.row, sourceRowIndex, targetRowIndex);
+        nextCells[cellId(nextRow, position.col)] = rewriteFormulaReferences(
+          cellValue.raw,
+          currentColumns,
+          currentColumns,
+          (referencePosition) => ({
+            col: referencePosition.col,
+            row: moveIndex(
+              referencePosition.row,
+              sourceRowIndex,
+              targetRowIndex
+            ),
+          })
+        );
+      }
+
+      const nextRowHeights = Object.fromEntries(
+        Object.entries(currentRowHeights).flatMap(([rowKey, height]) => {
+          const rowIndex = Number(rowKey);
+          if (!Number.isInteger(rowIndex)) {
+            return [];
+          }
+
+          return [
+            [
+              String(moveIndex(rowIndex, sourceRowIndex, targetRowIndex)),
+              height,
+            ] as const,
+          ];
+        })
+      );
+      const nextFormats = Object.fromEntries(
+        Object.entries(currentFormats).flatMap(([cellKey, format]) => {
+          const position = parseStoredCellId(cellKey);
+          if (!position) {
+            return [];
+          }
+
+          return [
+            [
+              cellId(
+                moveIndex(position.row, sourceRowIndex, targetRowIndex),
+                position.col
+              ),
+              format,
+            ] as const,
+          ];
+        })
+      );
+
+      set({ saveState: "saving" });
+      replaceSheetCells(activeWorkbookSession.doc, activeSheetId, nextCells);
+      replaceSheetFormats(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextFormats
+      );
+      replaceSheetRowHeights(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextRowHeights
+      );
+      await controller.persistActiveWorkbookMeta();
     },
     resizeColumn: async (columnIndex, width) => {
       if (controller.isViewerAccess()) {

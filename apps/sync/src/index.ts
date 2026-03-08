@@ -75,8 +75,14 @@ const app = new Elysia()
       }
 
       const room = getRoom(decodedWorkbookId);
-      const shouldInitializeFromClient = isOwner;
+      const shouldInitializeFromClient = isOwner && room.peers.size === 0;
+      const snapshotUpdate = encodeUpdate(encodeStateAsUpdate(room.doc));
       ensureRoomPolicyRefresh(decodedWorkbookId, room);
+
+      const existingPeer = room.peers.get(query.clientId);
+      if (existingPeer && existingPeer.ws.raw !== ws.raw) {
+        existingPeer.ws.close(4409, "replaced-client");
+      }
 
       const peer: RoomPeer = {
         accessRole,
@@ -92,22 +98,31 @@ const app = new Elysia()
         updatedAt: Date.now(),
         ws: {
           close: (code, reason) => ws.raw.close(code, reason),
-          send: (message) => ws.send(message),
+          raw: ws.raw,
+          send: (message) => ws.raw.send(JSON.stringify(message)),
         },
       };
 
       room.peers.set(peer.clientId, peer);
 
-      log.info("peer joined", decodedWorkbookId, query.clientId);
+      log.info(
+        "peer joined",
+        decodedWorkbookId,
+        query.clientId,
+        `role=${accessRole}`,
+        `isOwner=${isOwner}`
+      );
 
-      ws.send({
-        type: "snapshot",
-        payload: {
-          peers: getRoomPresence(room),
-          shouldInitializeFromClient,
-          update: encodeUpdate(encodeStateAsUpdate(room.doc)),
-        },
-      });
+      ws.raw.send(
+        JSON.stringify({
+          type: "snapshot",
+          payload: {
+            peers: getRoomPresence(room),
+            shouldInitializeFromClient,
+            update: snapshotUpdate,
+          },
+        })
+      );
       broadcastPresence(room);
     },
 
@@ -122,14 +137,22 @@ const app = new Elysia()
       }
 
       const peer = room.peers.get(clientId);
-      if (!peer) {
+      if (!peer || peer.ws.raw !== ws.raw) {
         return;
       }
 
       const message = parseClientMessage(
-        rawMessage as string | Buffer | Uint8Array
+        rawMessage as string | Buffer | Uint8Array | Record<string, unknown>
       );
       if (!message) {
+        log.warn(
+          "message dropped: parse failed",
+          clientId,
+          typeof rawMessage,
+          typeof rawMessage === "object"
+            ? JSON.stringify(rawMessage).slice(0, 200)
+            : String(rawMessage).slice(0, 200)
+        );
         return;
       }
 
@@ -175,6 +198,12 @@ const app = new Elysia()
 
       const room = findRoom(decodedWorkbookId);
       if (!room) {
+        return;
+      }
+
+      const peer = room.peers.get(clientId);
+      if (!peer || peer.ws.raw !== ws.raw) {
+        log.debug("stale close ignored", decodedWorkbookId, clientId);
         return;
       }
 

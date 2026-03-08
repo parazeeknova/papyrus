@@ -10,6 +10,7 @@ interface FormulaBarProps {
   cellRaw: string;
   disabled?: boolean;
   getCellReferenceLabel: (row: number, col: number) => string;
+  onCancel: () => void;
   onCommit: (direction?: "down" | "up") => void;
   onValueChange: (value: string) => void;
   primaryColumnName: string;
@@ -20,6 +21,7 @@ export function FormulaBar({
   cellRaw,
   disabled = false,
   getCellReferenceLabel,
+  onCancel,
   onValueChange,
   onCommit,
   primaryColumnName,
@@ -59,7 +61,7 @@ export function FormulaBar({
           }
           if (e.key === "Escape") {
             e.preventDefault();
-            onCommit();
+            onCancel();
           }
         }}
         placeholder={`Enter value or formula (e.g. =SUM(${primaryColumnName}1:${primaryColumnName}5))`}
