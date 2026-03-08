@@ -666,6 +666,7 @@ export const createSpreadsheetStoreController = (
         activeSheetCells: snapshot.activeSheetCells,
         activeSheetColumns: snapshot.activeSheetColumns,
         activeSheetId: snapshot.activeSheetId,
+        activeSheetRowHeights: snapshot.activeSheetRowHeights,
         activeWorkbook: buildPersistedWorkbookMeta(
           snapshot.workbook,
           persistedWorkbookMeta?.lastSyncedAt ?? null,
@@ -979,17 +980,16 @@ export const createSpreadsheetStoreController = (
         scheduleRemoteWorkbookSync(session);
       }
 
+      const socket = moduleState.collaborationSocket;
       if (
-        !(
-          origin !== REALTIME_SYNC_ORIGIN &&
-          moduleState.collaborationSocket?.readyState === WebSocket.OPEN &&
-          get().collaborationAccessRole === "editor"
-        )
+        origin === REALTIME_SYNC_ORIGIN ||
+        !socket ||
+        socket.readyState !== WebSocket.OPEN
       ) {
         return;
       }
 
-      moduleState.collaborationSocket.send(
+      socket.send(
         JSON.stringify({
           payload: {
             update: encodeUpdateToBase64(update),

@@ -29,6 +29,7 @@ export interface SpreadsheetStoreState {
   activeSheetCells: Record<string, PersistedCellRecord>;
   activeSheetColumns: SheetColumn[];
   activeSheetId: string | null;
+  activeSheetRowHeights: Record<string, number>;
   activeWorkbook: WorkbookMeta | null;
   canRedo: boolean;
   canUndo: boolean;
@@ -63,6 +64,8 @@ export interface SpreadsheetStoreState {
   remoteVersion: number | null;
   renameColumn: (columnIndex: number, columnName: string) => Promise<boolean>;
   renameWorkbook: (name: string) => Promise<void>;
+  resizeColumn: (columnIndex: number, width: number) => Promise<void>;
+  resizeRow: (rowIndex: number, height: number) => Promise<void>;
   saveState: SaveState;
   setActiveSheet: (sheetId: string) => Promise<void>;
   setCellValue: (row: number, col: number, raw: string) => Promise<void>;

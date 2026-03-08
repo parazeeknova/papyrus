@@ -54,6 +54,7 @@ function WorkbookPageContent({
     activeSheetColumns,
     activeWorkbook,
     activeSheetId,
+    activeSheetRowHeights,
     canEdit,
     canRedo,
     canUndo,
@@ -80,6 +81,8 @@ function WorkbookPageContent({
     pasteSelection,
     redo,
     renameColumn,
+    resizeColumn,
+    resizeRow,
     renameWorkbook,
     remoteSyncStatus,
     remoteVersion,
@@ -321,6 +324,7 @@ function WorkbookPageContent({
             ? loadingColumnNames
             : activeSheetColumns.map((column) => column.name)
         }
+        columnWidths={activeSheetColumns.map((column) => column.width)}
         disabled={isInitialLoad}
         editingCell={isInitialLoad ? null : editingCell}
         expandRowCount={expandRowCount}
@@ -352,10 +356,17 @@ function WorkbookPageContent({
         onRenameColumn={(columnIndex, columnName) =>
           renameColumn(columnIndex, columnName)
         }
+        onResizeColumn={(columnIndex, width) => {
+          resizeColumn(columnIndex, width).catch(() => undefined);
+        }}
+        onResizeRow={(rowIndex, height) => {
+          resizeRow(rowIndex, height).catch(() => undefined);
+        }}
         onUndo={() => {
           undo().catch(() => undefined);
         }}
         rowCount={rowCount}
+        rowHeights={isInitialLoad ? {} : activeSheetRowHeights}
         selectCell={isInitialLoad ? () => undefined : selectCell}
         selection={isInitialLoad ? null : selection}
         setCellValue={setCellValue}

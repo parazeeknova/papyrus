@@ -1,5 +1,8 @@
 import type { CollaborationAccessRole } from "./collaboration-types";
 
+export const DEFAULT_SHEET_COLUMN_WIDTH = 100;
+export const DEFAULT_SHEET_ROW_HEIGHT = 20;
+
 export interface PersistedCellRecord {
   raw: string;
 }
@@ -7,6 +10,7 @@ export interface PersistedCellRecord {
 export interface SheetColumn {
   index: number;
   name: string;
+  width: number;
 }
 
 export interface SheetMeta {
@@ -33,6 +37,7 @@ export interface WorkbookSnapshot {
   activeSheetCells: Record<string, PersistedCellRecord>;
   activeSheetColumns: SheetColumn[];
   activeSheetId: string | null;
+  activeSheetRowHeights: Record<string, number>;
   sheets: SheetMeta[];
   workbook: WorkbookMeta;
 }

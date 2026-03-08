@@ -8,14 +8,18 @@ import {
   renameWorkbook as renameWorkbookInDoc,
   replaceSheetCells,
   replaceSheetColumns,
+  replaceSheetRowHeights,
   setActiveSheet as setActiveSheetInDoc,
   setSheetCellRaw,
   setSheetCellValues,
+  setSheetColumnWidth,
+  setSheetRowHeight,
   setWorkbookFavorite,
   setWorkbookSharingAccessRole,
   setWorkbookSharingEnabled,
   touchWorkbook,
 } from "@papyrus/core/workbook-doc";
+import { DEFAULT_SHEET_COLUMN_WIDTH } from "@papyrus/core/workbook-types";
 import type { StateCreator } from "zustand";
 import {
   cellId,
@@ -33,6 +37,7 @@ type EditingSliceState = Pick<
   | "activeSheetCells"
   | "activeSheetColumns"
   | "activeSheetId"
+  | "activeSheetRowHeights"
   | "canRedo"
   | "canUndo"
   | "createSheet"
@@ -40,6 +45,8 @@ type EditingSliceState = Pick<
   | "deleteRows"
   | "redo"
   | "renameColumn"
+  | "resizeColumn"
+  | "resizeRow"
   | "renameWorkbook"
   | "setActiveSheet"
   | "setCellValue"
@@ -82,6 +89,7 @@ export const createEditingSlice = (
     activeSheetCells: {},
     activeSheetColumns: [],
     activeSheetId: null,
+    activeSheetRowHeights: {},
     canRedo: false,
     canUndo: false,
     createSheet: async () => {
@@ -107,10 +115,9 @@ export const createEditingSlice = (
         return;
       }
 
-      const currentColumns = controller.buildColumnNames(
-        get().activeSheetColumns
-      );
-      const currentColumnCount = currentColumns.length;
+      const currentSheetColumns = get().activeSheetColumns;
+      const currentColumns = controller.buildColumnNames(currentSheetColumns);
+      const currentColumnCount = currentSheetColumns.length;
       if (
         columnCount <= 0 ||
         startColumn < 0 ||
@@ -121,12 +128,18 @@ export const createEditingSlice = (
 
       const endColumn = Math.min(currentColumnCount, startColumn + columnCount);
       const removedColumnCount = endColumn - startColumn;
-      const nextColumns = controller.fillColumnNames(
-        currentColumns.filter(
-          (_columnName, index) => index < startColumn || index >= endColumn
-        ),
+      const remainingColumns = currentSheetColumns.filter(
+        (_column, index) => index < startColumn || index >= endColumn
+      );
+      const nextColumnNames = controller.fillColumnNames(
+        remainingColumns.map((column) => column.name),
         currentColumnCount
       );
+      const nextColumns = nextColumnNames.map((name, index) => ({
+        index,
+        name,
+        width: remainingColumns[index]?.width ?? DEFAULT_SHEET_COLUMN_WIDTH,
+      }));
 
       const nextCells: Record<string, string> = {};
       for (const [storedCellKey, cellValue] of Object.entries(
@@ -148,7 +161,7 @@ export const createEditingSlice = (
         nextCells[cellId(position.row, nextCol)] = rewriteFormulaReferences(
           cellValue.raw,
           currentColumns,
-          nextColumns,
+          nextColumnNames,
           (referencePosition) => {
             if (
               referencePosition.col >= startColumn &&
@@ -197,6 +210,7 @@ export const createEditingSlice = (
       const currentColumns = controller.buildColumnNames(
         get().activeSheetColumns
       );
+      const currentRowHeights = get().activeSheetRowHeights;
       const nextCells: Record<string, string> = {};
 
       for (const [storedCellKey, cellValue] of Object.entries(
@@ -237,8 +251,32 @@ export const createEditingSlice = (
         );
       }
 
+      const nextRowHeights = Object.fromEntries(
+        Object.entries(currentRowHeights).flatMap(([rowKey, height]) => {
+          const rowIndex = Number(rowKey);
+          if (!Number.isInteger(rowIndex)) {
+            return [];
+          }
+
+          if (rowIndex >= startRow && rowIndex < endRow) {
+            return [];
+          }
+
+          if (rowIndex >= endRow) {
+            return [[String(rowIndex - rowCount), height] as const];
+          }
+
+          return [[rowKey, height] as const];
+        })
+      );
+
       set({ saveState: "saving" });
       replaceSheetCells(activeWorkbookSession.doc, activeSheetId, nextCells);
+      replaceSheetRowHeights(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextRowHeights
+      );
       await controller.persistActiveWorkbookMeta();
     },
     redo: async () => {
@@ -314,6 +352,46 @@ export const createEditingSlice = (
 
       await controller.persistActiveWorkbookMeta();
       return true;
+    },
+    resizeColumn: async (columnIndex, width) => {
+      if (controller.isViewerAccess()) {
+        return;
+      }
+
+      const activeWorkbookSession = controller.getActiveWorkbookSession();
+      const activeSheetId = get().activeSheetId;
+      if (!(activeWorkbookSession && activeSheetId)) {
+        return;
+      }
+
+      set({ saveState: "saving" });
+      setSheetColumnWidth(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        columnIndex,
+        width
+      );
+      await controller.persistActiveWorkbookMeta();
+    },
+    resizeRow: async (rowIndex, height) => {
+      if (controller.isViewerAccess()) {
+        return;
+      }
+
+      const activeWorkbookSession = controller.getActiveWorkbookSession();
+      const activeSheetId = get().activeSheetId;
+      if (!(activeWorkbookSession && activeSheetId)) {
+        return;
+      }
+
+      set({ saveState: "saving" });
+      setSheetRowHeight(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        rowIndex,
+        height
+      );
+      await controller.persistActiveWorkbookMeta();
     },
     renameWorkbook: async (name) => {
       const activeWorkbookSession = controller.getActiveWorkbookSession();

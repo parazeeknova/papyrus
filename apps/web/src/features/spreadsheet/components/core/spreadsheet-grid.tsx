@@ -2,6 +2,10 @@
 
 import type { CollaboratorPresence } from "@papyrus/core/collaboration-types";
 import {
+  DEFAULT_SHEET_COLUMN_WIDTH,
+  DEFAULT_SHEET_ROW_HEIGHT,
+} from "@papyrus/core/workbook-types";
+import {
   ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
   ClipboardTextIcon,
@@ -18,6 +22,7 @@ import {
   memo,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -36,14 +41,16 @@ import {
 import { cn } from "@/web/lib/utils";
 
 const ROW_HEADER_WIDTH = 46;
-const DEFAULT_COL_WIDTH = 100;
-const DEFAULT_ROW_HEIGHT = 20;
 const COL_HEADER_HEIGHT = 24;
 const ROW_OVERSCAN = 20;
 const COL_OVERSCAN = 4;
 const EXPANSION_PROMPT_HEIGHT = 56;
 const INITIAL_VISIBLE_COL_COUNT = 12;
 const INITIAL_VISIBLE_ROW_COUNT = 40;
+const COLUMN_RESIZE_HANDLE_WIDTH = 8;
+const ROW_RESIZE_HANDLE_HEIGHT = 8;
+const MIN_COLUMN_WIDTH = 48;
+const MIN_ROW_HEIGHT = 20;
 
 interface GridItem {
   index: number;
@@ -56,6 +63,14 @@ interface ContextMenuState {
   row: number;
   x: number;
   y: number;
+}
+
+interface ResizeState {
+  index: number;
+  originPointerOffset: number;
+  originSize: number;
+  size: number;
+  type: "column" | "row";
 }
 
 interface CellComponentProps {
@@ -188,6 +203,7 @@ interface SpreadsheetGridProps {
   collaborationPeers: CollaboratorPresence[];
   columnCount: number;
   columnNames: string[];
+  columnWidths: number[];
   disabled?: boolean;
   editingCell: CellPosition | null;
   expandRowCount: () => void;
@@ -203,8 +219,11 @@ interface SpreadsheetGridProps {
   onPaste: () => void;
   onRedo: () => void;
   onRenameColumn: (columnIndex: number, columnName: string) => Promise<boolean>;
+  onResizeColumn: (columnIndex: number, width: number) => void;
+  onResizeRow: (rowIndex: number, height: number) => void;
   onUndo: () => void;
   rowCount: number;
+  rowHeights: Record<string, number>;
   selectCell: (pos: CellPosition | null) => void;
   selection: SelectionRange | null;
   setCellValue: (row: number, col: number, value: string) => void;
@@ -227,6 +246,7 @@ export function SpreadsheetGrid({
   canExpandRows,
   collaborationPeers,
   columnNames,
+  columnWidths,
   disabled = false,
   editingCell,
   columnCount,
@@ -248,9 +268,12 @@ export function SpreadsheetGrid({
   onOpenFindReplace,
   onPaste,
   onRenameColumn,
+  onResizeColumn,
+  onResizeRow,
   onRedo,
   onUndo,
   sheetId,
+  rowHeights,
 }: SpreadsheetGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionDragRef = useRef<{
@@ -258,6 +281,7 @@ export function SpreadsheetGrid({
     start: CellPosition;
   } | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [resizeState, setResizeState] = useState<ResizeState | null>(null);
   const [renamingColumnIndex, setRenamingColumnIndex] = useState<number | null>(
     null
   );
@@ -302,6 +326,28 @@ export function SpreadsheetGrid({
     };
   }, [selection, columnCount, rowCount]);
 
+  const getColumnWidth = useCallback(
+    (columnIndex: number): number => {
+      if (resizeState?.type === "column" && resizeState.index === columnIndex) {
+        return resizeState.size;
+      }
+
+      return columnWidths[columnIndex] ?? DEFAULT_SHEET_COLUMN_WIDTH;
+    },
+    [columnWidths, resizeState]
+  );
+
+  const getRowHeight = useCallback(
+    (rowIndex: number): number => {
+      if (resizeState?.type === "row" && resizeState.index === rowIndex) {
+        return resizeState.size;
+      }
+
+      return rowHeights[String(rowIndex)] ?? DEFAULT_SHEET_ROW_HEIGHT;
+    },
+    [resizeState, rowHeights]
+  );
+
   const handleCellKeyDown = useCallback(
     (e: ReactKeyboardEvent) => {
       if (e.key === "ArrowUp") {
@@ -332,7 +378,7 @@ export function SpreadsheetGrid({
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => DEFAULT_ROW_HEIGHT,
+    estimateSize: getRowHeight,
     overscan: ROW_OVERSCAN,
     scrollPaddingStart: COL_HEADER_HEIGHT,
   });
@@ -341,37 +387,58 @@ export function SpreadsheetGrid({
     horizontal: true,
     count: columnCount,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => DEFAULT_COL_WIDTH,
+    estimateSize: getColumnWidth,
     overscan: COL_OVERSCAN,
     scrollPaddingStart: ROW_HEADER_WIDTH,
   });
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const virtualCols = colVirtualizer.getVirtualItems();
-  const fallbackRows = useMemo<GridItem[]>(
-    () =>
-      Array.from(
-        { length: Math.min(rowCount, INITIAL_VISIBLE_ROW_COUNT) },
-        (_unused, index) => ({
-          index,
-          size: DEFAULT_ROW_HEIGHT,
-          start: index * DEFAULT_ROW_HEIGHT,
-        })
-      ),
-    [rowCount]
-  );
-  const fallbackCols = useMemo<GridItem[]>(
-    () =>
-      Array.from(
-        { length: Math.min(columnCount, INITIAL_VISIBLE_COL_COUNT) },
-        (_unused, index) => ({
-          index,
-          size: DEFAULT_COL_WIDTH,
-          start: index * DEFAULT_COL_WIDTH,
-        })
-      ),
-    [columnCount]
-  );
+  const fallbackRows = useMemo<GridItem[]>(() => {
+    let nextStart = 0;
+    return Array.from(
+      { length: Math.min(rowCount, INITIAL_VISIBLE_ROW_COUNT) },
+      (_unused, index) => {
+        const size = getRowHeight(index);
+        const item = { index, size, start: nextStart };
+        nextStart += size;
+        return item;
+      }
+    );
+  }, [getRowHeight, rowCount]);
+  const fallbackCols = useMemo<GridItem[]>(() => {
+    let nextStart = 0;
+    return Array.from(
+      { length: Math.min(columnCount, INITIAL_VISIBLE_COL_COUNT) },
+      (_unused, index) => {
+        const size = getColumnWidth(index);
+        const item = { index, size, start: nextStart };
+        nextStart += size;
+        return item;
+      }
+    );
+  }, [columnCount, getColumnWidth]);
+  const rowSizingSignature = useMemo(() => {
+    const persistedRowHeights = Object.entries(rowHeights)
+      .sort(([left], [right]) => Number(left) - Number(right))
+      .map(([rowIndex, height]) => `${rowIndex}:${height}`)
+      .join("|");
+    const rowResizePreview =
+      resizeState?.type === "row"
+        ? `${resizeState.index}:${resizeState.size}`
+        : "";
+
+    return `${rowCount}:${persistedRowHeights}:${rowResizePreview}`;
+  }, [resizeState, rowCount, rowHeights]);
+  const columnSizingSignature = useMemo(() => {
+    const persistedColumnWidths = columnWidths.join("|");
+    const columnResizePreview =
+      resizeState?.type === "column"
+        ? `${resizeState.index}:${resizeState.size}`
+        : "";
+
+    return `${columnCount}:${persistedColumnWidths}:${columnResizePreview}`;
+  }, [columnCount, columnWidths, resizeState]);
   const renderRows = virtualRows.length > 0 ? virtualRows : fallbackRows;
   const renderCols = virtualCols.length > 0 ? virtualCols : fallbackCols;
   const firstVirtualRow = renderRows[0];
@@ -394,6 +461,22 @@ export function SpreadsheetGrid({
     COL_HEADER_HEIGHT +
     totalRowHeight +
     (canExpandRows ? EXPANSION_PROMPT_HEIGHT : 0);
+
+  useEffect(() => {
+    if (rowSizingSignature === "") {
+      return;
+    }
+
+    rowVirtualizer.measure();
+  }, [rowSizingSignature, rowVirtualizer]);
+
+  useEffect(() => {
+    if (columnSizingSignature === "") {
+      return;
+    }
+
+    colVirtualizer.measure();
+  }, [colVirtualizer, columnSizingSignature]);
 
   useEffect(() => {
     if (activeCell) {
@@ -432,6 +515,99 @@ export function SpreadsheetGrid({
       window.removeEventListener("keydown", handleEscape);
     };
   }, []);
+
+  useEffect(() => {
+    if (!resizeState) {
+      return;
+    }
+
+    const nextCursor =
+      resizeState.type === "column" ? "col-resize" : "row-resize";
+    const previousCursor = document.body.style.cursor;
+    document.body.style.cursor = nextCursor;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      setResizeState((currentState) => {
+        if (!currentState) {
+          return null;
+        }
+
+        const pointerOffset =
+          currentState.type === "column" ? event.clientX : event.clientY;
+        const minimumSize =
+          currentState.type === "column" ? MIN_COLUMN_WIDTH : MIN_ROW_HEIGHT;
+
+        return {
+          ...currentState,
+          size: Math.max(
+            minimumSize,
+            currentState.originSize +
+              (pointerOffset - currentState.originPointerOffset)
+          ),
+        };
+      });
+    };
+
+    const handlePointerUp = () => {
+      setResizeState((currentState) => {
+        if (!currentState) {
+          return null;
+        }
+
+        if (currentState.size !== currentState.originSize) {
+          if (currentState.type === "column") {
+            onResizeColumn(currentState.index, currentState.size);
+          } else {
+            onResizeRow(currentState.index, currentState.size);
+          }
+        }
+
+        return null;
+      });
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      document.body.style.cursor = previousCursor;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [onResizeColumn, onResizeRow, resizeState]);
+
+  const beginColumnResize = useCallback(
+    (columnIndex: number, event: ReactPointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setContextMenu(null);
+      setRenamingColumnIndex(null);
+      setResizeState({
+        index: columnIndex,
+        originPointerOffset: event.clientX,
+        originSize: getColumnWidth(columnIndex),
+        size: getColumnWidth(columnIndex),
+        type: "column",
+      });
+    },
+    [getColumnWidth]
+  );
+
+  const beginRowResize = useCallback(
+    (rowIndex: number, event: ReactPointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setContextMenu(null);
+      setResizeState({
+        index: rowIndex,
+        originPointerOffset: event.clientY,
+        originSize: getRowHeight(rowIndex),
+        size: getRowHeight(rowIndex),
+        type: "row",
+      });
+    },
+    [getRowHeight]
+  );
 
   const isCellSelected = useCallback(
     (row: number, col: number) => {
@@ -721,7 +897,7 @@ export function SpreadsheetGrid({
                 if (renamingColumnIndex === vc.index) {
                   return (
                     <div
-                      className={headerClassName}
+                      className={cn(headerClassName, "group")}
                       key={`col-${vc.index}`}
                       style={headerStyle}
                     >
@@ -758,28 +934,46 @@ export function SpreadsheetGrid({
                 }
 
                 return (
-                  <button
-                    className={headerClassName}
-                    disabled={disabled}
+                  <div
+                    className={cn(headerClassName, "group")}
                     key={`col-${vc.index}`}
-                    onDoubleClick={() => {
-                      beginColumnRename(vc.index);
-                    }}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      beginSelectionDrag({ row: 0, col: vc.index }, "columns");
-                    }}
-                    onMouseEnter={() => {
-                      updateDraggedSelection({
-                        row: rowCount - 1,
-                        col: vc.index,
-                      });
-                    }}
                     style={headerStyle}
-                    type="button"
                   >
-                    {columnNames[vc.index]}
-                  </button>
+                    <button
+                      className="flex h-full w-full items-center justify-center pr-2"
+                      disabled={disabled}
+                      onDoubleClick={() => {
+                        beginColumnRename(vc.index);
+                      }}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        beginSelectionDrag(
+                          { row: 0, col: vc.index },
+                          "columns"
+                        );
+                      }}
+                      onMouseEnter={() => {
+                        updateDraggedSelection({
+                          row: rowCount - 1,
+                          col: vc.index,
+                        });
+                      }}
+                      type="button"
+                    >
+                      {columnNames[vc.index]}
+                    </button>
+                    {canEdit && !disabled ? (
+                      <button
+                        aria-label={`Resize column ${columnNames[vc.index]}`}
+                        className="absolute top-0 right-0 z-30 h-full cursor-col-resize touch-none bg-transparent transition-colors group-hover:bg-border/80"
+                        onPointerDown={(event) => {
+                          beginColumnResize(vc.index, event);
+                        }}
+                        style={{ width: COLUMN_RESIZE_HANDLE_WIDTH }}
+                        type="button"
+                      />
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
@@ -799,27 +993,42 @@ export function SpreadsheetGrid({
                 height: vr.size,
               }}
             >
-              <button
+              <div
                 className={cn(
-                  "sticky left-0 z-20 flex select-none items-center justify-center border-border border-r border-b bg-muted text-muted-foreground text-xs",
+                  "sticky left-0 z-20 border-border border-r border-b bg-muted text-muted-foreground text-xs",
                   isRowHeaderSelected(row) &&
                     "z-30 bg-primary/12 font-semibold text-primary ring-1 ring-primary/30 ring-inset",
                   activeCell?.row === row &&
                     "z-40 bg-primary/18 text-primary ring-1 ring-primary/50 ring-inset"
                 )}
-                disabled={disabled}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  beginSelectionDrag({ row, col: 0 }, "rows");
-                }}
-                onMouseEnter={() => {
-                  updateDraggedSelection({ row, col: columnCount - 1 });
-                }}
                 style={{ width: ROW_HEADER_WIDTH, height: vr.size }}
-                type="button"
               >
-                {row + 1}
-              </button>
+                <button
+                  className="flex h-full w-full select-none items-center justify-center pb-1"
+                  disabled={disabled}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    beginSelectionDrag({ row, col: 0 }, "rows");
+                  }}
+                  onMouseEnter={() => {
+                    updateDraggedSelection({ row, col: columnCount - 1 });
+                  }}
+                  type="button"
+                >
+                  {row + 1}
+                </button>
+                {canEdit && !disabled ? (
+                  <button
+                    aria-label={`Resize row ${row + 1}`}
+                    className="absolute bottom-0 left-0 z-30 w-full cursor-row-resize touch-none bg-transparent transition-colors hover:bg-border/80"
+                    onPointerDown={(event) => {
+                      beginRowResize(row, event);
+                    }}
+                    style={{ height: ROW_RESIZE_HANDLE_HEIGHT }}
+                    type="button"
+                  />
+                ) : null}
+              </div>
 
               {firstVirtualCol ? (
                 <div

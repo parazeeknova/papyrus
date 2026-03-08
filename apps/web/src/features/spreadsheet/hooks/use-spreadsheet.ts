@@ -248,6 +248,9 @@ export function useSpreadsheet({
   const activeSheetColumns = useSpreadsheetStore(
     (state) => state.activeSheetColumns
   );
+  const activeSheetRowHeights = useSpreadsheetStore(
+    (state) => state.activeSheetRowHeights
+  );
   const activeSheetId = useSpreadsheetStore((state) => state.activeSheetId);
   const activeWorkbook = useSpreadsheetStore((state) => state.activeWorkbook);
   const canRedo = useSpreadsheetStore((state) => state.canRedo);
@@ -292,6 +295,8 @@ export function useSpreadsheet({
   const remoteSyncStatus = useSpreadsheetStore(
     (state) => state.remoteSyncStatus
   );
+  const resizeColumn = useSpreadsheetStore((state) => state.resizeColumn);
+  const resizeRow = useSpreadsheetStore((state) => state.resizeRow);
   const saveState = useSpreadsheetStore((state) => state.saveState);
   const setActiveSheet = useSpreadsheetStore((state) => state.setActiveSheet);
   const setCellValuesByKey = useSpreadsheetStore(
@@ -1027,6 +1032,7 @@ export function useSpreadsheet({
     activeCell,
     activeSheetColumns,
     activeSheetId,
+    activeSheetRowHeights,
     activeWorkbook,
     collaborationAccessRole: effectiveCollaborationAccessRole,
     collaborationErrorMessage,
@@ -1070,6 +1076,20 @@ export function useSpreadsheet({
       }
 
       return renameColumn(columnIndex, columnName);
+    },
+    resizeColumn: (columnIndex: number, width: number) => {
+      if (!canEdit) {
+        return Promise.resolve();
+      }
+
+      return resizeColumn(columnIndex, width);
+    },
+    resizeRow: (rowIndex: number, height: number) => {
+      if (!canEdit) {
+        return Promise.resolve();
+      }
+
+      return resizeRow(rowIndex, height);
     },
     renameWorkbook: async (name: string) => {
       if (!canEdit) {

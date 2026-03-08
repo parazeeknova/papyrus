@@ -1,11 +1,13 @@
 import { type Doc, UndoManager, type Array as YArray, Map as YMap } from "yjs";
 import type { CollaborationAccessRole } from "./collaboration-types";
-import type {
-  PersistedCellRecord,
-  SheetColumn,
-  SheetMeta,
-  WorkbookMeta,
-  WorkbookSnapshot,
+import {
+  DEFAULT_SHEET_COLUMN_WIDTH,
+  DEFAULT_SHEET_ROW_HEIGHT,
+  type PersistedCellRecord,
+  type SheetColumn,
+  type SheetMeta,
+  type WorkbookMeta,
+  type WorkbookSnapshot,
 } from "./workbook-types";
 
 const ROOT_META_KEY = "meta";
@@ -13,6 +15,8 @@ const ROOT_SHEETS_KEY = "sheets";
 const ROOT_SHEET_ORDER_KEY = "sheetOrder";
 const SHEET_CELLS_KEY = "cells";
 const SHEET_COLUMNS_KEY = "columns";
+const SHEET_COLUMN_WIDTHS_KEY = "columnWidths";
+const SHEET_ROW_HEIGHTS_KEY = "rowHeights";
 const DEFAULT_WORKBOOK_NAME = "Untitled spreadsheet";
 const DEFAULT_SHEET_NAME_PREFIX = "Sheet";
 const DEFAULT_COLUMN_COUNT = 100;
@@ -66,6 +70,37 @@ function getSheetColumnsMap(doc: Doc, sheetId: string): YMap<string> | null {
   return null;
 }
 
+function getSheetColumnWidthsMap(
+  doc: Doc,
+  sheetId: string
+): YMap<number> | null {
+  const sheet = getSheetMap(doc, sheetId);
+  if (!sheet) {
+    return null;
+  }
+
+  const columnWidths = sheet.get(SHEET_COLUMN_WIDTHS_KEY);
+  if (columnWidths instanceof YMap) {
+    return columnWidths as YMap<number>;
+  }
+
+  return null;
+}
+
+function getSheetRowHeightsMap(doc: Doc, sheetId: string): YMap<number> | null {
+  const sheet = getSheetMap(doc, sheetId);
+  if (!sheet) {
+    return null;
+  }
+
+  const rowHeights = sheet.get(SHEET_ROW_HEIGHTS_KEY);
+  if (rowHeights instanceof YMap) {
+    return rowHeights as YMap<number>;
+  }
+
+  return null;
+}
+
 function getStringValue(
   map: YMap<unknown>,
   key: string,
@@ -84,6 +119,11 @@ function getBooleanValue(
   return typeof value === "boolean" ? value : fallback;
 }
 
+function getNumberValue(map: YMap<number> | null, key: string): number | null {
+  const value = map?.get(key);
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function ensureSheet(doc: Doc, sheetId: string, name: string): void {
   const sheets = getSheetsMap(doc);
   if (sheets.has(sheetId)) {
@@ -94,6 +134,8 @@ function ensureSheet(doc: Doc, sheetId: string, name: string): void {
   const sheet = new YMap<unknown>();
   const cells = new YMap<string>();
   const columns = new YMap<string>();
+  const columnWidths = new YMap<number>();
+  const rowHeights = new YMap<number>();
 
   sheet.set("id", sheetId);
   sheet.set("name", name);
@@ -101,6 +143,8 @@ function ensureSheet(doc: Doc, sheetId: string, name: string): void {
   sheet.set("updatedAt", now);
   sheet.set(SHEET_CELLS_KEY, cells);
   sheet.set(SHEET_COLUMNS_KEY, columns);
+  sheet.set(SHEET_COLUMN_WIDTHS_KEY, columnWidths);
+  sheet.set(SHEET_ROW_HEIGHTS_KEY, rowHeights);
   sheets.set(sheetId, sheet);
 }
 
@@ -293,14 +337,43 @@ export function getSheetColumns(
     return Array.from({ length: columnCount }, (_, index) => ({
       index,
       name: getDefaultColumnName(index),
+      width: DEFAULT_SHEET_COLUMN_WIDTH,
     }));
   }
 
   const columns = getSheetColumnsMap(doc, sheetId);
+  const columnWidths = getSheetColumnWidthsMap(doc, sheetId);
   return Array.from({ length: columnCount }, (_, index) => ({
     index,
     name: columns?.get(String(index)) ?? getDefaultColumnName(index),
+    width:
+      getNumberValue(columnWidths, String(index)) ?? DEFAULT_SHEET_COLUMN_WIDTH,
   }));
+}
+
+export function getSheetRowHeights(
+  doc: Doc,
+  sheetId: string | null
+): Record<string, number> {
+  if (!sheetId) {
+    return {};
+  }
+
+  const rowHeights = getSheetRowHeightsMap(doc, sheetId);
+  if (!rowHeights) {
+    return {};
+  }
+
+  const result: Record<string, number> = {};
+  for (const [rowKey, height] of rowHeights.entries()) {
+    if (!Number.isFinite(height)) {
+      continue;
+    }
+
+    result[rowKey] = height;
+  }
+
+  return result;
 }
 
 export function renameSheetColumn(
@@ -331,6 +404,62 @@ export function renameSheetColumn(
   });
 
   return normalizedName;
+}
+
+export function setSheetColumnWidth(
+  doc: Doc,
+  sheetId: string,
+  columnIndex: number,
+  width: number
+): number | null {
+  const columnWidths = getSheetColumnWidthsMap(doc, sheetId);
+  const sheet = getSheetMap(doc, sheetId);
+  if (!(columnWidths && sheet)) {
+    return null;
+  }
+
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    if (width === DEFAULT_SHEET_COLUMN_WIDTH) {
+      columnWidths.delete(String(columnIndex));
+    } else {
+      columnWidths.set(String(columnIndex), width);
+    }
+
+    sheet.set("updatedAt", now);
+    getMetaMap(doc).set("updatedAt", now);
+  });
+
+  return width;
+}
+
+export function setSheetRowHeight(
+  doc: Doc,
+  sheetId: string,
+  rowIndex: number,
+  height: number
+): number | null {
+  const rowHeights = getSheetRowHeightsMap(doc, sheetId);
+  const sheet = getSheetMap(doc, sheetId);
+  if (!(rowHeights && sheet)) {
+    return null;
+  }
+
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    if (height === DEFAULT_SHEET_ROW_HEIGHT) {
+      rowHeights.delete(String(rowIndex));
+    } else {
+      rowHeights.set(String(rowIndex), height);
+    }
+
+    sheet.set("updatedAt", now);
+    getMetaMap(doc).set("updatedAt", now);
+  });
+
+  return height;
 }
 
 export function renameSheet(
@@ -460,11 +589,12 @@ export function replaceSheetCells(
 export function replaceSheetColumns(
   doc: Doc,
   sheetId: string,
-  columnNames: string[]
+  nextColumns: SheetColumn[]
 ): void {
   const columns = getSheetColumnsMap(doc, sheetId);
+  const columnWidths = getSheetColumnWidthsMap(doc, sheetId);
   const sheet = getSheetMap(doc, sheetId);
-  if (!(columns && sheet)) {
+  if (!(columns && columnWidths && sheet)) {
     return;
   }
 
@@ -474,14 +604,54 @@ export function replaceSheetColumns(
     for (const columnKey of [...columns.keys()]) {
       columns.delete(columnKey);
     }
+    for (const columnKey of [...columnWidths.keys()]) {
+      columnWidths.delete(columnKey);
+    }
 
-    for (const [index, columnName] of columnNames.entries()) {
+    for (const column of nextColumns) {
+      const index = column.index;
+      const columnName = column.name;
       const defaultName = getDefaultColumnName(index);
       if (columnName === defaultName) {
+        // Skip storing default names.
+      } else {
+        columns.set(String(index), columnName);
+      }
+
+      if (column.width !== DEFAULT_SHEET_COLUMN_WIDTH) {
+        columnWidths.set(String(index), column.width);
+      }
+    }
+
+    sheet.set("updatedAt", now);
+    getMetaMap(doc).set("updatedAt", now);
+  });
+}
+
+export function replaceSheetRowHeights(
+  doc: Doc,
+  sheetId: string,
+  nextRowHeights: Record<string, number>
+): void {
+  const rowHeights = getSheetRowHeightsMap(doc, sheetId);
+  const sheet = getSheetMap(doc, sheetId);
+  if (!(rowHeights && sheet)) {
+    return;
+  }
+
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    for (const rowKey of [...rowHeights.keys()]) {
+      rowHeights.delete(rowKey);
+    }
+
+    for (const [rowKey, height] of Object.entries(nextRowHeights)) {
+      if (height === DEFAULT_SHEET_ROW_HEIGHT) {
         continue;
       }
 
-      columns.set(String(index), columnName);
+      rowHeights.set(rowKey, height);
     }
 
     sheet.set("updatedAt", now);
@@ -499,11 +669,13 @@ export function createSheetUndoManager(
 
   const cells = getSheetCellsMap(doc, sheetId);
   const columns = getSheetColumnsMap(doc, sheetId);
-  if (!(cells && columns)) {
+  const columnWidths = getSheetColumnWidthsMap(doc, sheetId);
+  const rowHeights = getSheetRowHeightsMap(doc, sheetId);
+  if (!(cells && columns && columnWidths && rowHeights)) {
     return null;
   }
 
-  return new UndoManager([cells, columns]);
+  return new UndoManager([cells, columns, columnWidths, rowHeights]);
 }
 
 export function getWorkbookMeta(doc: Doc): WorkbookMeta {
@@ -579,6 +751,7 @@ export function getWorkbookSnapshot(doc: Doc): WorkbookSnapshot {
   return {
     activeSheetCells: getSheetCells(doc, activeSheetId),
     activeSheetColumns: getSheetColumns(doc, activeSheetId),
+    activeSheetRowHeights: getSheetRowHeights(doc, activeSheetId),
     activeSheetId,
     sheets: getSheets(doc),
     workbook,
