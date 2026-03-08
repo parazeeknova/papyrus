@@ -15,6 +15,7 @@ import type {
 import type { StoreApi } from "zustand";
 
 export type HydrationState = "error" | "idle" | "loading" | "ready";
+export type ImportPhase = "applying" | "error" | "idle" | "parsing" | "reading";
 
 export type RemoteSyncStatus =
   | "disabled"
@@ -51,8 +52,15 @@ export interface SpreadsheetStoreState {
   deleteColumns: (startColumn: number, columnCount: number) => Promise<void>;
   deleteRows: (startRow: number, rowCount: number) => Promise<void>;
   deleteWorkbook: () => Promise<void>;
+  exportActiveSheetToCsv: () => Promise<void>;
+  exportWorkbookToExcel: () => Promise<void>;
   hydrateWorkbookList: () => Promise<void>;
   hydrationState: HydrationState;
+  importActiveSheetFromCsv: (file: File) => Promise<void>;
+  importErrorMessage: string | null;
+  importFileName: string | null;
+  importPhase: ImportPhase;
+  importWorkbookFromExcel: (file: File) => Promise<void>;
   isRemoteSyncAuthenticated: boolean;
   lastSyncErrorMessage: string | null;
   lastSyncedAt: number | null;

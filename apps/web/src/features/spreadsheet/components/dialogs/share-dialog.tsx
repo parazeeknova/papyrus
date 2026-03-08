@@ -9,6 +9,7 @@ import {
   CopyIcon,
   EyeIcon,
   PencilSimpleIcon,
+  ShareNetworkIcon,
   WarningCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -116,7 +117,7 @@ export function ShareDialog({
     <DropdownMenu onOpenChange={setOpen} open={open}>
       <DropdownMenuTrigger asChild>
         <Button className="gap-1 text-xs" size="sm" variant="ghost">
-          <PencilSimpleIcon className="size-3.5" weight="bold" />
+          <ShareNetworkIcon className="size-3.5" weight="bold" />
           <span className="hidden sm:inline">Share</span>
         </Button>
       </DropdownMenuTrigger>

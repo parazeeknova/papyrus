@@ -14,6 +14,7 @@ import {
 const ROOT_META_KEY = "meta";
 const ROOT_SHEETS_KEY = "sheets";
 const ROOT_SHEET_ORDER_KEY = "sheetOrder";
+const STORED_CELL_KEY_PATTERN = /^C(\d+)R\d+$/;
 const SHEET_CELLS_KEY = "cells";
 const SHEET_COLUMNS_KEY = "columns";
 const SHEET_COLUMN_WIDTHS_KEY = "columnWidths";
@@ -22,7 +23,7 @@ const SHEET_ROW_HEIGHTS_KEY = "rowHeights";
 const DEFAULT_WORKBOOK_NAME = "Untitled spreadsheet";
 const DEFAULT_SHEET_NAME_PREFIX = "Sheet";
 const DEFAULT_COLUMN_COUNT = 100;
-const DEFAULT_SHARING_ACCESS_ROLE: CollaborationAccessRole = "viewer";
+const DEFAULT_SHARING_ACCESS_ROLE: CollaborationAccessRole = "editor";
 
 function getNowIsoString(): string {
   return new Date().toISOString();
@@ -144,6 +145,73 @@ function getBooleanValue(
 function getNumberValue(map: YMap<number> | null, key: string): number | null {
   const value = map?.get(key);
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getLargestNumericKeyIndex(map: YMap<unknown> | null): number {
+  if (!map) {
+    return -1;
+  }
+
+  let largestIndex = -1;
+
+  for (const key of map.keys()) {
+    const index = Number.parseInt(key, 10);
+    if (!Number.isNaN(index)) {
+      largestIndex = Math.max(largestIndex, index);
+    }
+  }
+
+  return largestIndex;
+}
+
+function getLargestStoredCellColumnIndex(map: YMap<unknown> | null): number {
+  if (!map) {
+    return -1;
+  }
+
+  let largestIndex = -1;
+
+  for (const key of map.keys()) {
+    const match = STORED_CELL_KEY_PATTERN.exec(key);
+    if (!match?.[1]) {
+      continue;
+    }
+
+    const index = Number.parseInt(match[1], 10);
+    if (!Number.isNaN(index)) {
+      largestIndex = Math.max(largestIndex, index);
+    }
+  }
+
+  return largestIndex;
+}
+
+function getSheetColumnCount(doc: Doc, sheetId: string | null): number {
+  if (!sheetId) {
+    return DEFAULT_COLUMN_COUNT;
+  }
+
+  const sheet = getSheetMap(doc, sheetId);
+  if (!sheet) {
+    return DEFAULT_COLUMN_COUNT;
+  }
+
+  const cells = sheet.get(SHEET_CELLS_KEY);
+  const columns = sheet.get(SHEET_COLUMNS_KEY);
+  const columnWidths = sheet.get(SHEET_COLUMN_WIDTHS_KEY);
+  const formats = sheet.get(SHEET_FORMATS_KEY);
+
+  const largestColumnIndex = Math.max(
+    DEFAULT_COLUMN_COUNT - 1,
+    getLargestStoredCellColumnIndex(cells instanceof YMap ? cells : null),
+    getLargestNumericKeyIndex(columns instanceof YMap ? columns : null),
+    getLargestNumericKeyIndex(
+      columnWidths instanceof YMap ? columnWidths : null
+    ),
+    getLargestStoredCellColumnIndex(formats instanceof YMap ? formats : null)
+  );
+
+  return largestColumnIndex + 1;
 }
 
 function normalizeCellFormat(
@@ -916,10 +984,15 @@ export function getSheetCells(
 export function getWorkbookSnapshot(doc: Doc): WorkbookSnapshot {
   const workbook = getWorkbookMeta(doc);
   const activeSheetId = getActiveSheetId(doc);
+  const activeSheetColumnCount = getSheetColumnCount(doc, activeSheetId);
 
   return {
     activeSheetCells: getSheetCells(doc, activeSheetId),
-    activeSheetColumns: getSheetColumns(doc, activeSheetId),
+    activeSheetColumns: getSheetColumns(
+      doc,
+      activeSheetId,
+      activeSheetColumnCount
+    ),
     activeSheetFormats: getSheetFormats(doc, activeSheetId),
     activeSheetRowHeights: getSheetRowHeights(doc, activeSheetId),
     activeSheetId,

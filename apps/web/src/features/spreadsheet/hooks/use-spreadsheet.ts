@@ -139,6 +139,27 @@ function normalizeSelectionRange(
   };
 }
 
+function getRequiredVisibleRowCount(
+  cells: Record<string, { raw: string }>
+): number {
+  let largestRowIndex = -1;
+
+  for (const [cellKey, cell] of Object.entries(cells)) {
+    if (cell.raw === "") {
+      continue;
+    }
+
+    const position = parseStoredCellId(cellKey);
+    if (!position) {
+      continue;
+    }
+
+    largestRowIndex = Math.max(largestRowIndex, position.row);
+  }
+
+  return Math.max(DEFAULT_VISIBLE_ROWS, largestRowIndex + 1);
+}
+
 function serializeClipboardMatrix(matrix: string[][]): string {
   return matrix.map((row) => row.join("\t")).join("\n");
 }
@@ -327,7 +348,24 @@ export function useSpreadsheet({
   const deleteColumns = useSpreadsheetStore((state) => state.deleteColumns);
   const deleteRows = useSpreadsheetStore((state) => state.deleteRows);
   const deleteWorkbook = useSpreadsheetStore((state) => state.deleteWorkbook);
+  const exportActiveSheetToCsv = useSpreadsheetStore(
+    (state) => state.exportActiveSheetToCsv
+  );
+  const exportWorkbookToExcel = useSpreadsheetStore(
+    (state) => state.exportWorkbookToExcel
+  );
   const hydrationState = useSpreadsheetStore((state) => state.hydrationState);
+  const importActiveSheetFromCsv = useSpreadsheetStore(
+    (state) => state.importActiveSheetFromCsv
+  );
+  const importErrorMessage = useSpreadsheetStore(
+    (state) => state.importErrorMessage
+  );
+  const importFileName = useSpreadsheetStore((state) => state.importFileName);
+  const importPhase = useSpreadsheetStore((state) => state.importPhase);
+  const importWorkbookFromExcel = useSpreadsheetStore(
+    (state) => state.importWorkbookFromExcel
+  );
   const isRemoteSyncAuthenticated = useSpreadsheetStore(
     (state) => state.isRemoteSyncAuthenticated
   );
@@ -409,6 +447,9 @@ export function useSpreadsheet({
   const workerCellsRef = useRef<Record<string, CellData>>({});
   const clipboardRef = useRef<ClipboardPayload | null>(null);
   const workerColumnNamesRef = useRef<string[]>([]);
+  const previousSheetIdRef = useRef<string | null>(null);
+  const stopRealtimeRef = useRef(stopRealtime);
+  stopRealtimeRef.current = stopRealtime;
   const resolvedRequestedAccessRole = requestedAccessRole ?? "editor";
   const effectiveCollaborationAccessRole = isSharedSession
     ? collaborationAccessRole
@@ -494,6 +535,25 @@ export function useSpreadsheet({
   ]);
 
   useEffect(() => {
+    const minimumVisibleRowCount = Math.min(
+      totalRowCount,
+      getRequiredVisibleRowCount(activeSheetCells)
+    );
+    const hasSheetChanged = previousSheetIdRef.current !== activeSheetId;
+
+    setRowCount((previousRowCount) => {
+      if (hasSheetChanged) {
+        return minimumVisibleRowCount;
+      }
+
+      return previousRowCount < minimumVisibleRowCount
+        ? minimumVisibleRowCount
+        : previousRowCount;
+    });
+    previousSheetIdRef.current = activeSheetId;
+  }, [activeSheetCells, activeSheetId, totalRowCount]);
+
+  useEffect(() => {
     let isCancelled = false;
 
     const unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
@@ -517,6 +577,9 @@ export function useSpreadsheet({
     };
   }, []);
 
+  // Connection-only effect: idempotently (re)connects when deps change.
+  // No cleanup — teardown is handled by the unmount-only effect below.
+  // This prevents StrictMode / dep-change cleanup from cycling the socket.
   useEffect(() => {
     if (!(workbookId && collaborationIdentity && syncServerUrl)) {
       return;
@@ -529,19 +592,22 @@ export function useSpreadsheet({
       isSharedSession,
       workbookId
     );
-
-    return () => {
-      stopRealtime();
-    };
   }, [
     collaborationIdentity,
     connectRealtime,
     isSharedSession,
     resolvedRequestedAccessRole,
-    stopRealtime,
     syncServerUrl,
     workbookId,
   ]);
+
+  // Unmount-only cleanup: tears down the WebSocket only when the component
+  // truly unmounts (navigating away), not on every effect re-fire.
+  useEffect(() => {
+    return () => {
+      stopRealtimeRef.current();
+    };
+  }, []);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -1337,6 +1403,8 @@ export function useSpreadsheet({
     deleteSelectedColumns,
     deleteSelectedRows,
     deleteWorkbook,
+    exportCsv: exportActiveSheetToCsv,
+    exportExcel: exportWorkbookToExcel,
     editingCell,
     editingDraft,
     selection,
@@ -1344,6 +1412,23 @@ export function useSpreadsheet({
     columnCount,
     expandRowCount,
     hydrationState,
+    importActiveSheetFromCsv: async (file: File) => {
+      if (!canEdit) {
+        return;
+      }
+
+      await importActiveSheetFromCsv(file);
+    },
+    importWorkbookFromExcel: async (file: File) => {
+      if (!canEdit) {
+        return;
+      }
+
+      await importWorkbookFromExcel(file);
+    },
+    importErrorMessage,
+    importFileName,
+    importPhase,
     lastSyncErrorMessage,
     lastSyncedLabel,
     findNext,

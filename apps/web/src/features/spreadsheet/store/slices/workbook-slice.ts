@@ -1,6 +1,5 @@
 "use client";
 
-import { createWorkbookId } from "@papyrus/core/workbook-doc";
 import { deleteWorkbookPersistence } from "@papyrus/core/workbook-persistence";
 import {
   deleteWorkbookRegistryEntry,
@@ -20,8 +19,15 @@ type WorkbookSliceState = Pick<
   | "activeWorkbook"
   | "createWorkbook"
   | "deleteWorkbook"
+  | "exportActiveSheetToCsv"
+  | "exportWorkbookToExcel"
   | "hydrateWorkbookList"
   | "hydrationState"
+  | "importErrorMessage"
+  | "importFileName"
+  | "importPhase"
+  | "importActiveSheetFromCsv"
+  | "importWorkbookFromExcel"
   | "isRemoteSyncAuthenticated"
   | "lastSyncErrorMessage"
   | "lastSyncedAt"
@@ -48,6 +54,7 @@ export const createWorkbookSlice = (
   return (_set, get) => ({
     activeWorkbook: null,
     createWorkbook: async () => {
+      const { createWorkbookId } = await import("@papyrus/core/workbook-doc");
       const nextWorkbookId = createWorkbookId();
       await controller.activateWorkbook(nextWorkbookId);
     },
@@ -84,10 +91,33 @@ export const createWorkbookSlice = (
           return;
         }
 
-        await get().createWorkbook();
+        _set({
+          activeSheetCells: {},
+          activeSheetColumns: [],
+          activeSheetFormats: {},
+          activeSheetId: null,
+          activeSheetRowHeights: {},
+          activeWorkbook: null,
+          canRedo: false,
+          canUndo: false,
+          hydrationState: "ready",
+          lastSyncErrorMessage: null,
+          lastSyncedAt: null,
+          remoteSyncStatus: "idle",
+          remoteVersion: null,
+          saveState: "saved",
+          sheets: [],
+          workerResetKey: "initial",
+        });
       } catch {
         _set({ hydrationState: "error", saveState: "error" });
       }
+    },
+    exportActiveSheetToCsv: async () => {
+      await controller.exportActiveSheetToCsv();
+    },
+    exportWorkbookToExcel: async () => {
+      await controller.exportWorkbookToExcel();
     },
     hydrateWorkbookList: async () => {
       if (get().hydrationState !== "idle") {
@@ -120,6 +150,33 @@ export const createWorkbookSlice = (
       }
     },
     hydrationState: "idle",
+    importErrorMessage: null,
+    importFileName: null,
+    importPhase: "idle",
+    importActiveSheetFromCsv: async (file) => {
+      if (controller.isViewerAccess()) {
+        return;
+      }
+
+      _set({ saveState: "saving" });
+      try {
+        await controller.importActiveSheetFromCsv(file);
+      } catch {
+        return;
+      }
+    },
+    importWorkbookFromExcel: async (file) => {
+      if (controller.isViewerAccess()) {
+        return;
+      }
+
+      _set({ saveState: "saving" });
+      try {
+        await controller.importWorkbookFromExcel(file);
+      } catch {
+        return;
+      }
+    },
     isRemoteSyncAuthenticated: false,
     lastSyncErrorMessage: null,
     lastSyncedAt: null,

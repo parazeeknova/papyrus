@@ -72,12 +72,19 @@ function WorkbookPageContent({
     deleteSelectedColumns,
     deleteSelectedRows,
     deleteWorkbook,
+    exportCsv,
+    exportExcel,
     editingCell,
     editingDraft,
     columnCount,
     expandRowCount,
     findNext,
     hydrationState,
+    importActiveSheetFromCsv,
+    importErrorMessage,
+    importFileName,
+    importPhase,
+    importWorkbookFromExcel,
     lastSyncErrorMessage,
     lastSyncedLabel,
     pasteSelection,
@@ -134,6 +141,18 @@ function WorkbookPageContent({
     : { raw: "", computed: "" };
   const isInitialLoad =
     hydrationState === "idle" || hydrationState === "loading";
+  const isImporting =
+    importPhase === "reading" ||
+    importPhase === "parsing" ||
+    importPhase === "applying";
+  const importPhaseLabel =
+    importPhase === "reading"
+      ? "Reading file"
+      : importPhase === "parsing"
+        ? "Parsing workbook"
+        : importPhase === "applying"
+          ? "Applying workbook"
+          : null;
   const loadingColumnNames = useMemo(() => {
     return Array.from({ length: columnCount }, (_unused, index) =>
       colToLetter(index)
@@ -213,6 +232,8 @@ function WorkbookPageContent({
         collaborationErrorMessage={collaborationErrorMessage}
         collaborationPeers={collaborationPeers}
         collaborationStatus={collaborationStatus}
+        importFileName={importFileName}
+        importStatusLabel={importPhaseLabel}
         isFavorite={activeWorkbook?.isFavorite ?? false}
         isGalleryOpen={isGalleryOpen}
         lastSyncErrorMessage={lastSyncErrorMessage}
@@ -233,7 +254,27 @@ function WorkbookPageContent({
           deleteSelectedRows().catch(() => undefined);
         }}
         onDeleteWorkbook={() => {
-          deleteWorkbook().catch(() => undefined);
+          const shouldReturnHome = workbooks.length <= 1;
+
+          deleteWorkbook()
+            .then(() => {
+              if (shouldReturnHome) {
+                router.push("/");
+              }
+            })
+            .catch(() => undefined);
+        }}
+        onExportCsv={() => {
+          exportCsv().catch(() => undefined);
+        }}
+        onExportExcel={() => {
+          exportExcel().catch(() => undefined);
+        }}
+        onImportCsv={(file) => {
+          importActiveSheetFromCsv(file).catch(() => undefined);
+        }}
+        onImportExcel={(file) => {
+          importWorkbookFromExcel(file).catch(() => undefined);
         }}
         onManualSync={() => {
           syncNow().catch(() => undefined);
@@ -288,7 +329,7 @@ function WorkbookPageContent({
         canRedo={canRedo}
         canUndo={canUndo}
         italicActive={activeSelectionFormat?.italic ?? false}
-        loading={isInitialLoad}
+        loading={isInitialLoad || isImporting}
         onCopy={() => {
           copySelection().catch(() => undefined);
         }}
@@ -349,110 +390,121 @@ function WorkbookPageContent({
             ? editingDraft
             : activeCellData.raw
         }
-        disabled={!canEdit || isInitialLoad}
+        disabled={!canEdit || isInitialLoad || isImporting}
         getCellReferenceLabel={getCellReferenceLabel}
         onCancel={stopEditing}
         onCommit={handleFormulaCommit}
         onValueChange={handleFormulaChange}
         primaryColumnName={activeSheetColumns[0]?.name ?? "A"}
       />
-      <SpreadsheetGrid
-        activeCell={isInitialLoad ? null : activeCell}
-        canEdit={isInitialLoad ? false : canEdit}
-        canExpandRows={isInitialLoad ? false : canExpandRows}
-        canRedo={isInitialLoad ? false : canRedo}
-        canUndo={isInitialLoad ? false : canUndo}
-        collaborationPeers={isInitialLoad ? [] : collaborationPeers}
-        columnCount={columnCount}
-        columnNames={
-          isInitialLoad
-            ? loadingColumnNames
-            : activeSheetColumns.map((column) => column.name)
-        }
-        columnWidths={activeSheetColumns.map((column) => column.width)}
-        commitEditing={
-          isInitialLoad
-            ? () => undefined
-            : (direction) => {
-                commitEditing(direction).catch(() => undefined);
-              }
-        }
-        disabled={isInitialLoad}
-        editingCell={isInitialLoad ? null : editingCell}
-        editingValue={isInitialLoad ? "" : editingDraft}
-        expandRowCount={expandRowCount}
-        getCellData={isInitialLoad ? getLoadingCellData : getCellData}
-        getCellFormat={isInitialLoad ? () => ({}) : getCellFormat}
-        navigateFromActive={
-          isInitialLoad ? navigateWhileLoading : navigateFromActive
-        }
-        onCopy={() => {
-          copySelection().catch(() => undefined);
-        }}
-        onCut={() => {
-          cutSelection().catch(() => undefined);
-        }}
-        onDeleteColumn={() => {
-          deleteSelectedColumns().catch(() => undefined);
-        }}
-        onDeleteRow={() => {
-          deleteSelectedRows().catch(() => undefined);
-        }}
-        onOpenFindReplace={() => {
-          setIsFindReplaceOpen(true);
-        }}
-        onPaste={() => {
-          pasteSelection().catch(() => undefined);
-        }}
-        onRedo={() => {
-          redo().catch(() => undefined);
-        }}
-        onRenameColumn={(columnIndex, columnName) =>
-          renameColumn(columnIndex, columnName)
-        }
-        onReorderColumn={(sourceColumnIndex, targetColumnIndex) => {
-          reorderColumn(sourceColumnIndex, targetColumnIndex).catch(
-            () => undefined
-          );
-        }}
-        onReorderRow={(sourceRowIndex, targetRowIndex) => {
-          reorderRow(sourceRowIndex, targetRowIndex).catch(() => undefined);
-        }}
-        onResizeColumn={(columnIndex, width) => {
-          resizeColumn(columnIndex, width).catch(() => undefined);
-        }}
-        onResizeRow={(rowIndex, height) => {
-          resizeRow(rowIndex, height).catch(() => undefined);
-        }}
-        onUndo={() => {
-          undo().catch(() => undefined);
-        }}
-        rowCount={rowCount}
-        rowHeights={isInitialLoad ? {} : activeSheetRowHeights}
-        selectCell={isInitialLoad ? () => undefined : selectCell}
-        selection={isInitialLoad ? null : selection}
-        setCellValue={setCellValue}
-        setSelectionRange={isInitialLoad ? () => undefined : setSelectionRange}
-        sheetId={visibleActiveSheetId}
-        showAllRows={showAllRows}
-        startEditing={isInitialLoad ? () => undefined : startEditing}
-        stopEditing={isInitialLoad ? () => undefined : stopEditing}
-        updateEditingValue={
-          isInitialLoad ? () => undefined : updateEditingValue
-        }
-      />
-      <SheetTabs
-        activeSheetId={visibleActiveSheetId}
-        disableCreation={!canEdit}
-        disabled={hydrationState !== "ready"}
-        onAddSheet={() => {
-          createSheet().catch(() => undefined);
-        }}
-        onSelectSheet={(sheetId) => {
-          setActiveSheet(sheetId).catch(() => undefined);
-        }}
-        sheets={visibleSheets}
-      />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {importPhase === "error" && importErrorMessage ? (
+          <div className="border-destructive/20 border-b bg-destructive/8 px-4 py-2 text-destructive text-sm">
+            Failed to import
+            {importFileName ? ` ${importFileName}` : " file"}:{" "}
+            {importErrorMessage}
+          </div>
+        ) : null}
+        <SpreadsheetGrid
+          activeCell={isInitialLoad ? null : activeCell}
+          canEdit={isInitialLoad ? false : canEdit}
+          canExpandRows={isInitialLoad ? false : canExpandRows}
+          canRedo={isInitialLoad ? false : canRedo}
+          canUndo={isInitialLoad ? false : canUndo}
+          collaborationPeers={isInitialLoad ? [] : collaborationPeers}
+          columnCount={columnCount}
+          columnNames={
+            isInitialLoad
+              ? loadingColumnNames
+              : activeSheetColumns.map((column) => column.name)
+          }
+          columnWidths={activeSheetColumns.map((column) => column.width)}
+          commitEditing={
+            isInitialLoad
+              ? () => undefined
+              : (direction) => {
+                  commitEditing(direction).catch(() => undefined);
+                }
+          }
+          disabled={isInitialLoad || isImporting}
+          editingCell={isInitialLoad ? null : editingCell}
+          editingValue={isInitialLoad ? "" : editingDraft}
+          expandRowCount={expandRowCount}
+          getCellData={isInitialLoad ? getLoadingCellData : getCellData}
+          getCellFormat={isInitialLoad ? () => ({}) : getCellFormat}
+          navigateFromActive={
+            isInitialLoad ? navigateWhileLoading : navigateFromActive
+          }
+          onCopy={() => {
+            copySelection().catch(() => undefined);
+          }}
+          onCut={() => {
+            cutSelection().catch(() => undefined);
+          }}
+          onDeleteColumn={() => {
+            deleteSelectedColumns().catch(() => undefined);
+          }}
+          onDeleteRow={() => {
+            deleteSelectedRows().catch(() => undefined);
+          }}
+          onOpenFindReplace={() => {
+            setIsFindReplaceOpen(true);
+          }}
+          onPaste={() => {
+            pasteSelection().catch(() => undefined);
+          }}
+          onRedo={() => {
+            redo().catch(() => undefined);
+          }}
+          onRenameColumn={(columnIndex, columnName) =>
+            renameColumn(columnIndex, columnName)
+          }
+          onReorderColumn={(sourceColumnIndex, targetColumnIndex) => {
+            reorderColumn(sourceColumnIndex, targetColumnIndex).catch(
+              () => undefined
+            );
+          }}
+          onReorderRow={(sourceRowIndex, targetRowIndex) => {
+            reorderRow(sourceRowIndex, targetRowIndex).catch(() => undefined);
+          }}
+          onResizeColumn={(columnIndex, width) => {
+            resizeColumn(columnIndex, width).catch(() => undefined);
+          }}
+          onResizeRow={(rowIndex, height) => {
+            resizeRow(rowIndex, height).catch(() => undefined);
+          }}
+          onUndo={() => {
+            undo().catch(() => undefined);
+          }}
+          rowCount={rowCount}
+          rowHeights={isInitialLoad ? {} : activeSheetRowHeights}
+          selectCell={isInitialLoad ? () => undefined : selectCell}
+          selection={isInitialLoad ? null : selection}
+          setCellValue={setCellValue}
+          setSelectionRange={
+            isInitialLoad ? () => undefined : setSelectionRange
+          }
+          sheetId={visibleActiveSheetId}
+          showAllRows={showAllRows}
+          startEditing={isInitialLoad ? () => undefined : startEditing}
+          stopEditing={isInitialLoad ? () => undefined : stopEditing}
+          updateEditingValue={
+            isInitialLoad ? () => undefined : updateEditingValue
+          }
+        />
+        <SheetTabs
+          activeSheetId={visibleActiveSheetId}
+          disableCreation={!canEdit}
+          disabled={hydrationState !== "ready" || isImporting}
+          onAddSheet={() => {
+            createSheet().catch(() => undefined);
+          }}
+          onSelectSheet={(sheetId) => {
+            setActiveSheet(sheetId).catch(() => undefined);
+          }}
+          sheets={visibleSheets}
+        />
+      </div>
       <FindReplaceDialog
         onFindNext={findNext}
         onOpenChange={setIsFindReplaceOpen}

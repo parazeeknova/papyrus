@@ -68,6 +68,8 @@ interface SpreadsheetMenuBarProps {
   collaborationErrorMessage: string | null;
   collaborationPeers: CollaboratorPresence[];
   collaborationStatus: "connected" | "connecting" | "disconnected";
+  importFileName: string | null;
+  importStatusLabel: string | null;
   isFavorite: boolean;
   isGalleryOpen: boolean;
   lastSyncErrorMessage: string | null;
@@ -78,6 +80,10 @@ interface SpreadsheetMenuBarProps {
   onDeleteColumn: () => void;
   onDeleteRow: () => void;
   onDeleteWorkbook: () => void;
+  onExportCsv: () => void;
+  onExportExcel: () => void;
+  onImportCsv: (file: File) => void;
+  onImportExcel: (file: File) => void;
   onManualSync: () => void;
   onOpenFindReplace: () => void;
   onOpenWorkbook: (workbookId: string, workbookName: string) => void;
@@ -346,6 +352,37 @@ function PresenceDropdown({
   );
 }
 
+interface ImportStatusIndicatorProps {
+  fileName: string | null;
+  statusLabel: string | null;
+}
+
+function ImportStatusIndicator({
+  fileName,
+  statusLabel,
+}: ImportStatusIndicatorProps) {
+  if (!statusLabel) {
+    return null;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="flex items-center gap-1 rounded-sm px-1 py-0.5 text-muted-foreground text-xs transition-colors hover:bg-accent">
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-foreground/10" />
+            <span className="relative inline-flex size-2 rounded-full bg-muted-foreground/70" />
+          </span>
+          <span className="truncate">{statusLabel}</span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {fileName ? `${statusLabel}: ${fileName}` : statusLabel}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function SpreadsheetMenuBar({
   canEdit,
   canManualSync,
@@ -356,6 +393,8 @@ export function SpreadsheetMenuBar({
   collaborationErrorMessage,
   collaborationPeers,
   collaborationStatus,
+  importFileName,
+  importStatusLabel,
   isGalleryOpen,
   isFavorite,
   lastSyncErrorMessage,
@@ -366,6 +405,10 @@ export function SpreadsheetMenuBar({
   onDeleteColumn,
   onDeleteRow,
   onDeleteWorkbook,
+  onExportCsv,
+  onExportExcel,
+  onImportCsv,
+  onImportExcel,
   onManualSync,
   onOpenFindReplace,
   onOpenWorkbook,
@@ -736,6 +779,11 @@ export function SpreadsheetMenuBar({
             saveState={saveState}
           />
 
+          <ImportStatusIndicator
+            fileName={importFileName}
+            statusLabel={importStatusLabel}
+          />
+
           <PresenceDropdown
             collaborationErrorMessage={collaborationErrorMessage}
             collaborationPeers={collaborationPeers}
@@ -868,6 +916,11 @@ export function SpreadsheetMenuBar({
               remoteVersion={remoteVersion}
               saveState={saveState}
             />
+
+            <ImportStatusIndicator
+              fileName={importFileName}
+              statusLabel={importStatusLabel}
+            />
           </div>
 
           <div className="flex-1" />
@@ -925,6 +978,10 @@ export function SpreadsheetMenuBar({
           <FileMenu
             canEdit={canEdit}
             onCreateWorkbook={onCreateWorkbook}
+            onExportCsv={onExportCsv}
+            onExportExcel={onExportExcel}
+            onImportCsv={onImportCsv}
+            onImportExcel={onImportExcel}
             onOpenWorkbook={onOpenWorkbook}
             onPrint={handlePrint}
             onRequestDeleteWorkbook={() => {

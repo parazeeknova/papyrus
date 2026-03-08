@@ -8,12 +8,23 @@ import type {
   CollaboratorPresence,
 } from "@papyrus/core/collaboration-types";
 import {
+  createSheet,
   createSheetUndoManager,
   ensureWorkbookInitialized,
   getActiveSheetId,
+  getSheetCells,
+  getSheets,
   getWorkbookMeta,
   getWorkbookSnapshot,
+  replaceSheetCells,
+  replaceSheetColumns,
+  replaceSheetFormats,
+  replaceSheetRowHeights,
   resetWorkbook,
+  setActiveSheet as setActiveSheetInDoc,
+  setWorkbookFavorite as setWorkbookFavoriteInDoc,
+  setWorkbookSharingAccessRole as setWorkbookSharingAccessRoleInDoc,
+  setWorkbookSharingEnabled as setWorkbookSharingEnabledInDoc,
   touchWorkbook,
 } from "@papyrus/core/workbook-doc";
 import {
@@ -24,7 +35,7 @@ import {
   listWorkbookRegistryEntries,
   upsertWorkbookRegistryEntry,
 } from "@papyrus/core/workbook-registry";
-import type { WorkbookMeta } from "@papyrus/core/workbook-types";
+import type { SheetColumn, WorkbookMeta } from "@papyrus/core/workbook-types";
 import { createLogger } from "@papyrus/logs";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { applyUpdate, Doc, encodeStateAsUpdate, type UndoManager } from "yjs";
@@ -38,6 +49,13 @@ import {
 } from "@/web/features/spreadsheet/lib/firestore-workbook-sync";
 import { upsertSharedWorkbookAccess } from "@/web/features/spreadsheet/lib/share-registry";
 import { colToLetter } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
+import {
+  exportCsvFile,
+  exportExcelFile,
+  type ImportedSheetData,
+  parseCsvImport,
+  parseExcelImport,
+} from "@/web/features/spreadsheet/lib/workbook-file-format";
 import type {
   SpreadsheetStoreGetState,
   SpreadsheetStoreSetState,
@@ -63,6 +81,7 @@ interface SpreadsheetStoreModuleState {
   collaborationSocket: WebSocket | null;
   collaborationSocketWorkbookId: string | null;
   collaborationWorkbookId: string | null;
+  connectingRealtimeTransport: boolean;
   currentAuthenticatedUser: User | null;
   currentCollaborationIdentity: CollaboratorIdentity | null;
   currentCollaborationIsSharedSession: boolean;
@@ -83,6 +102,8 @@ export interface SpreadsheetStoreController {
   ) => Promise<void>;
   buildColumnNames: (columns: { name: string }[]) => string[];
   closeActiveWorkbookSession: () => Promise<void>;
+  exportActiveSheetToCsv: () => Promise<void>;
+  exportWorkbookToExcel: () => Promise<void>;
   fillColumnNames: (columnNames: string[], targetLength: number) => string[];
   flushActiveRemoteWorkbookSync: (options?: {
     retryDelayMs?: number;
@@ -90,6 +111,8 @@ export interface SpreadsheetStoreController {
   }) => Promise<boolean>;
   getActiveWorkbookSession: () => ActiveWorkbookSession | null;
   getCurrentAuthenticatedUser: () => User | null;
+  importActiveSheetFromCsv: (file: File) => Promise<void>;
+  importWorkbookFromExcel: (file: File) => Promise<void>;
   initializeAuthSync: () => void;
   isViewerAccess: () => boolean;
   persistActiveWorkbookMeta: () => Promise<void>;
@@ -113,6 +136,7 @@ const moduleState: SpreadsheetStoreModuleState = {
   collaborationSocket: null,
   collaborationSocketWorkbookId: null,
   collaborationWorkbookId: null,
+  connectingRealtimeTransport: false,
   currentAuthenticatedUser: null,
   currentCollaborationIdentity: null,
   currentCollaborationIsSharedSession: false,
@@ -129,6 +153,8 @@ const FIRESTORE_SYNC_DEBOUNCE_MS = 2500;
 const FIRESTORE_LEASE_RETRY_MS = 3000;
 const FIRESTORE_SYNC_ORIGIN = "firestore-sync";
 const FIRESTORE_SYNC_CLIENT_ID = crypto.randomUUID();
+const IMPORT_EXPORT_MIN_COLUMN_COUNT = 100;
+const IMPORT_EXPORT_SHEET_FALLBACK_NAME = "Sheet1";
 const REALTIME_SYNC_ORIGIN = "realtime-sync";
 const syncLogger = createLogger({ scope: "spreadsheet-sync" });
 
@@ -265,6 +291,39 @@ const fillColumnNames = (
   return nextColumnNames;
 };
 
+const getImportedColumnCount = (rows: string[][]): number => {
+  const widestRowLength = rows.reduce(
+    (maxColumnCount, row) => Math.max(maxColumnCount, row.length),
+    0
+  );
+
+  return Math.max(IMPORT_EXPORT_MIN_COLUMN_COUNT, widestRowLength);
+};
+
+const buildImportedSheetColumns = (columnCount: number): SheetColumn[] => {
+  return Array.from({ length: columnCount }, (_unused, index) => ({
+    index,
+    name: colToLetter(index),
+    width: 100,
+  }));
+};
+
+const buildImportedSheetCells = (rows: string[][]): Record<string, string> => {
+  const nextCells: Record<string, string> = {};
+
+  for (const [rowIndex, row] of rows.entries()) {
+    for (const [columnIndex, cellValue] of row.entries()) {
+      if (cellValue === "") {
+        continue;
+      }
+
+      nextCells[`C${columnIndex}R${rowIndex}`] = cellValue;
+    }
+  }
+
+  return nextCells;
+};
+
 const loadLocalWorkbookState = async (
   workbookId: string,
   fallbackName?: string
@@ -352,6 +411,7 @@ export const createSpreadsheetStoreController = (
 
   const stopRealtimeConnection = (): void => {
     clearCollaborationReconnectTimeout();
+    moduleState.connectingRealtimeTransport = false;
     moduleState.collaborationSocket?.close();
     moduleState.collaborationSocket = null;
     moduleState.collaborationSocketWorkbookId = null;
@@ -720,6 +780,49 @@ export const createSpreadsheetStoreController = (
     });
   };
 
+  const replaceSheetFromImportedRows = (
+    doc: Doc,
+    sheetId: string,
+    importedSheet: ImportedSheetData
+  ): void => {
+    replaceSheetColumns(
+      doc,
+      sheetId,
+      buildImportedSheetColumns(getImportedColumnCount(importedSheet.rows))
+    );
+    replaceSheetCells(
+      doc,
+      sheetId,
+      buildImportedSheetCells(importedSheet.rows)
+    );
+    replaceSheetFormats(doc, sheetId, {});
+    replaceSheetRowHeights(doc, sheetId, {});
+  };
+
+  const finalizeImportedWorkbookChange = async (doc: Doc): Promise<void> => {
+    syncUndoManager(doc);
+    applySnapshot(doc, { forceWorkerReset: true });
+    await syncActiveWorkbookShareAccess();
+    await persistActiveWorkbookMeta();
+  };
+
+  const setImportStatus = (
+    importPhase: "applying" | "error" | "idle" | "parsing" | "reading",
+    options?: {
+      errorMessage?: string | null;
+      fileName?: string | null;
+    }
+  ): void => {
+    set({
+      importErrorMessage: options?.errorMessage ?? null,
+      importFileName:
+        options && "fileName" in options
+          ? (options.fileName ?? null)
+          : get().importFileName,
+      importPhase,
+    });
+  };
+
   const connectRealtimeTransport = async (): Promise<void> => {
     if (
       !(
@@ -755,6 +858,11 @@ export const createSpreadsheetStoreController = (
       return;
     }
 
+    if (moduleState.connectingRealtimeTransport) {
+      return;
+    }
+    moduleState.connectingRealtimeTransport = true;
+
     moduleState.collaborationSocket?.close();
     moduleState.collaborationSocketWorkbookId = null;
 
@@ -765,6 +873,7 @@ export const createSpreadsheetStoreController = (
         activeWorkbookId
       )
     ) {
+      moduleState.connectingRealtimeTransport = false;
       return;
     }
 
@@ -786,6 +895,7 @@ export const createSpreadsheetStoreController = (
         activeWorkbookId
       )
     ) {
+      moduleState.connectingRealtimeTransport = false;
       return;
     }
 
@@ -834,6 +944,7 @@ export const createSpreadsheetStoreController = (
     let hasAppliedInitialSnapshot = false;
     moduleState.collaborationSocket = socket;
     moduleState.collaborationSocketWorkbookId = activeWorkbookId;
+    moduleState.connectingRealtimeTransport = false;
 
     socket.addEventListener("open", () => {
       if (
@@ -1259,6 +1370,40 @@ export const createSpreadsheetStoreController = (
     activateWorkbook,
     buildColumnNames,
     closeActiveWorkbookSession: destroyActiveWorkbookSession,
+    exportActiveSheetToCsv: () => {
+      const activeWorkbookSession = moduleState.activeWorkbookSession;
+      const activeSheetId = get().activeSheetId;
+      if (!(activeWorkbookSession && activeSheetId)) {
+        return Promise.resolve();
+      }
+
+      const workbook = getWorkbookMeta(activeWorkbookSession.doc);
+      const activeSheet = getSheets(activeWorkbookSession.doc).find(
+        (sheet) => sheet.id === activeSheetId
+      );
+
+      exportCsvFile(
+        workbook.name,
+        activeSheet?.name ?? IMPORT_EXPORT_SHEET_FALLBACK_NAME,
+        getSheetCells(activeWorkbookSession.doc, activeSheetId)
+      );
+      return Promise.resolve();
+    },
+    exportWorkbookToExcel: () => {
+      const activeWorkbookSession = moduleState.activeWorkbookSession;
+      if (!activeWorkbookSession) {
+        return Promise.resolve();
+      }
+
+      exportExcelFile(
+        getWorkbookMeta(activeWorkbookSession.doc).name,
+        getSheets(activeWorkbookSession.doc).map((sheet) => ({
+          cells: getSheetCells(activeWorkbookSession.doc, sheet.id),
+          name: sheet.name,
+        }))
+      );
+      return Promise.resolve();
+    },
     fillColumnNames,
     flushActiveRemoteWorkbookSync: (options) => {
       return flushRemoteWorkbookSync(
@@ -1268,6 +1413,118 @@ export const createSpreadsheetStoreController = (
     },
     getActiveWorkbookSession: () => moduleState.activeWorkbookSession,
     getCurrentAuthenticatedUser: () => moduleState.currentAuthenticatedUser,
+    importActiveSheetFromCsv: async (file: File) => {
+      const activeWorkbookSession = moduleState.activeWorkbookSession;
+      const activeSheetId = get().activeSheetId;
+      if (!(activeWorkbookSession && activeSheetId)) {
+        return;
+      }
+
+      try {
+        setImportStatus("reading", { fileName: file.name });
+        const fileContents = await file.arrayBuffer();
+        setImportStatus("parsing");
+        const importedSheet = parseCsvImport(file.name, fileContents);
+        setImportStatus("applying");
+        activeWorkbookSession.doc.transact(() => {
+          replaceSheetFromImportedRows(
+            activeWorkbookSession.doc,
+            activeSheetId,
+            importedSheet
+          );
+        });
+
+        await finalizeImportedWorkbookChange(activeWorkbookSession.doc);
+        setImportStatus("idle", { fileName: null });
+      } catch (error) {
+        setImportStatus("error", {
+          errorMessage:
+            error instanceof Error
+              ? error.message
+              : "Failed to import CSV file.",
+          fileName: file.name,
+        });
+        set({ saveState: "error" });
+        throw error;
+      }
+    },
+    importWorkbookFromExcel: async (file: File) => {
+      const activeWorkbookSession = moduleState.activeWorkbookSession;
+      if (!activeWorkbookSession) {
+        return;
+      }
+
+      try {
+        setImportStatus("reading", { fileName: file.name });
+        const fileContents = await file.arrayBuffer();
+        setImportStatus("parsing");
+        const importedWorkbook = parseExcelImport(file.name, fileContents);
+        const previousWorkbookMeta = getWorkbookMeta(activeWorkbookSession.doc);
+
+        setImportStatus("applying");
+        activeWorkbookSession.doc.transact(() => {
+          resetWorkbook(activeWorkbookSession.doc);
+          ensureWorkbookInitialized(activeWorkbookSession.doc, {
+            initialSheetName:
+              importedWorkbook.sheets[0]?.name ??
+              IMPORT_EXPORT_SHEET_FALLBACK_NAME,
+            name: importedWorkbook.name,
+            workbookId: previousWorkbookMeta.id,
+          });
+
+          const firstSheetId = getActiveSheetId(activeWorkbookSession.doc);
+          if (firstSheetId && importedWorkbook.sheets[0]) {
+            replaceSheetFromImportedRows(
+              activeWorkbookSession.doc,
+              firstSheetId,
+              importedWorkbook.sheets[0]
+            );
+          }
+
+          for (const importedSheet of importedWorkbook.sheets.slice(1)) {
+            const nextSheet = createSheet(
+              activeWorkbookSession.doc,
+              importedSheet.name
+            );
+            replaceSheetFromImportedRows(
+              activeWorkbookSession.doc,
+              nextSheet.id,
+              importedSheet
+            );
+          }
+
+          if (firstSheetId) {
+            setActiveSheetInDoc(activeWorkbookSession.doc, firstSheetId);
+          }
+
+          setWorkbookFavoriteInDoc(
+            activeWorkbookSession.doc,
+            previousWorkbookMeta.isFavorite
+          );
+          setWorkbookSharingEnabledInDoc(
+            activeWorkbookSession.doc,
+            previousWorkbookMeta.sharingEnabled
+          );
+          setWorkbookSharingAccessRoleInDoc(
+            activeWorkbookSession.doc,
+            previousWorkbookMeta.sharingAccessRole
+          );
+        });
+
+        await finalizeImportedWorkbookChange(activeWorkbookSession.doc);
+        setImportStatus("idle", { fileName: null });
+      } catch (error) {
+        setImportStatus("error", {
+          errorMessage:
+            error instanceof Error
+              ? error.message
+              : "Failed to import Excel workbook.",
+          fileName: file.name,
+        });
+        set({ saveState: "error" });
+        throw error;
+      }
+    },
     initializeAuthSync,
     isViewerAccess: () => get().collaborationAccessRole === "viewer",
     persistActiveWorkbookMeta,
@@ -1285,7 +1542,16 @@ export const createSpreadsheetStoreController = (
       isSharedSession,
       workbookId
     ) => {
-      moduleState.realtimeConnectionId += 1;
+      const hasLiveSocket =
+        moduleState.collaborationSocket &&
+        moduleState.collaborationSocketWorkbookId === workbookId &&
+        (moduleState.collaborationSocket.readyState === WebSocket.CONNECTING ||
+          moduleState.collaborationSocket.readyState === WebSocket.OPEN);
+
+      if (!hasLiveSocket) {
+        moduleState.realtimeConnectionId += 1;
+      }
+
       moduleState.collaborationWorkbookId = workbookId;
       moduleState.collaborationServerUrl = serverUrl;
       moduleState.currentCollaborationIdentity = identity;
