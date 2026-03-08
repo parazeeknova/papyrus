@@ -1,5 +1,6 @@
 "use client";
 
+import { ColumnsIcon, RowsIcon } from "@phosphor-icons/react";
 import {
   MenubarContent,
   MenubarItem,
@@ -8,18 +9,60 @@ import {
   MenubarTrigger,
 } from "@/web/components/ui/menubar";
 
-export function InsertMenu() {
+interface InsertMenuProps {
+  canEdit: boolean;
+  onInsertColumnLeft: () => void;
+  onInsertColumnRight: () => void;
+  onInsertRowAbove: () => void;
+  onInsertRowBelow: () => void;
+}
+
+export function InsertMenu({
+  canEdit,
+  onInsertColumnLeft,
+  onInsertColumnRight,
+  onInsertRowAbove,
+  onInsertRowBelow,
+}: InsertMenuProps) {
+  const menuItemClassName = "flex min-w-44 items-center gap-2";
+
   return (
     <MenubarMenu>
       <MenubarTrigger>Insert</MenubarTrigger>
       <MenubarContent>
-        <MenubarItem>Row above</MenubarItem>
-        <MenubarItem>Row below</MenubarItem>
+        <MenubarItem
+          className={menuItemClassName}
+          disabled={!canEdit}
+          onClick={onInsertRowAbove}
+        >
+          <RowsIcon weight="bold" />
+          Row above
+        </MenubarItem>
+        <MenubarItem
+          className={menuItemClassName}
+          disabled={!canEdit}
+          onClick={onInsertRowBelow}
+        >
+          <RowsIcon weight="bold" />
+          Row below
+        </MenubarItem>
         <MenubarSeparator />
-        <MenubarItem>Column left</MenubarItem>
-        <MenubarItem>Column right</MenubarItem>
-        <MenubarSeparator />
-        <MenubarItem>Function</MenubarItem>
+        <MenubarItem
+          className={menuItemClassName}
+          disabled={!canEdit}
+          onClick={onInsertColumnLeft}
+        >
+          <ColumnsIcon weight="bold" />
+          Column left
+        </MenubarItem>
+        <MenubarItem
+          className={menuItemClassName}
+          disabled={!canEdit}
+          onClick={onInsertColumnRight}
+        >
+          <ColumnsIcon weight="bold" />
+          Column right
+        </MenubarItem>
       </MenubarContent>
     </MenubarMenu>
   );

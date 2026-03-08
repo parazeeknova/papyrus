@@ -1,7 +1,17 @@
 "use client";
 
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
-import { DotOutlineIcon, StarIcon } from "@phosphor-icons/react";
+import {
+  BookOpenIcon,
+  ClockClockwiseIcon,
+  DotOutlineIcon,
+  FileTextIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  StarIcon,
+  TableIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useRef } from "react";
 import {
   MenubarContent,
@@ -60,6 +70,8 @@ export function FileMenu({
 }: FileMenuProps) {
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const excelInputRef = useRef<HTMLInputElement | null>(null);
+  const menuItemClassName = "flex min-w-44 items-center gap-2";
+
   const triggerFilePicker = (input: HTMLInputElement | null): void => {
     if (!input) {
       return;
@@ -111,37 +123,49 @@ export function FileMenu({
         <MenubarTrigger>File</MenubarTrigger>
         <MenubarContent>
           <MenubarItem
+            className={menuItemClassName}
             onSelect={() => {
               onCreateWorkbook();
             }}
           >
+            <PlusIcon weight="bold" />
             New <MenubarShortcut>Cmd+N</MenubarShortcut>
           </MenubarItem>
           <MenubarSub>
-            <MenubarSubTrigger>Open</MenubarSubTrigger>
+            <MenubarSubTrigger className={menuItemClassName}>
+              <BookOpenIcon weight="bold" />
+              Open
+            </MenubarSubTrigger>
             <MenubarSubContent>
               <MenubarItem
+                className={menuItemClassName}
                 disabled={!canEdit}
                 onSelect={(event) => {
                   event.preventDefault();
                   triggerFilePicker(csvInputRef.current);
                 }}
               >
+                <FileTextIcon weight="bold" />
                 CSV (.csv)
               </MenubarItem>
               <MenubarItem
+                className={menuItemClassName}
                 disabled={!canEdit}
                 onSelect={(event) => {
                   event.preventDefault();
                   triggerFilePicker(excelInputRef.current);
                 }}
               >
+                <TableIcon weight="bold" />
                 Excel (.xlsx)
               </MenubarItem>
             </MenubarSubContent>
           </MenubarSub>
           <MenubarSub>
-            <MenubarSubTrigger>Recent</MenubarSubTrigger>
+            <MenubarSubTrigger className={menuItemClassName}>
+              <ClockClockwiseIcon weight="bold" />
+              Recent
+            </MenubarSubTrigger>
             <MenubarSubContent className="min-w-60">
               {recentWorkbooks.length > 0 ? (
                 recentWorkbooks.map((recentWorkbook) => (
@@ -185,50 +209,62 @@ export function FileMenu({
             </MenubarSubContent>
           </MenubarSub>
           <MenubarSub>
-            <MenubarSubTrigger>Download</MenubarSubTrigger>
+            <MenubarSubTrigger className={menuItemClassName}>
+              <TableIcon weight="bold" />
+              Download
+            </MenubarSubTrigger>
             <MenubarSubContent>
               <MenubarItem
+                className={menuItemClassName}
                 disabled={!workbookId}
                 onSelect={() => {
                   onExportCsv();
                 }}
               >
+                <FileTextIcon weight="bold" />
                 CSV (.csv)
               </MenubarItem>
               <MenubarItem
+                className={menuItemClassName}
                 disabled={!workbookId}
                 onSelect={() => {
                   onExportExcel();
                 }}
               >
+                <TableIcon weight="bold" />
                 Excel (.xlsx)
               </MenubarItem>
             </MenubarSubContent>
           </MenubarSub>
           <MenubarSeparator />
           <MenubarItem
+            className={menuItemClassName}
             disabled={!canEdit}
             onSelect={() => {
               onRequestRenameWorkbook();
             }}
           >
+            <PencilSimpleIcon weight="bold" />
             Rename
           </MenubarItem>
           <MenubarItem
+            className={menuItemClassName}
             onSelect={() => {
               onPrint();
             }}
           >
+            <FileTextIcon weight="bold" />
             Print <MenubarShortcut>Cmd+P</MenubarShortcut>
           </MenubarItem>
           <MenubarSeparator />
           <MenubarItem
-            className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+            className={`${menuItemClassName} text-destructive focus:bg-destructive/10 focus:text-destructive`}
             disabled={!(canEdit && workbookId)}
             onSelect={() => {
               onRequestDeleteWorkbook();
             }}
           >
+            <TrashIcon weight="bold" />
             Delete spreadsheet
           </MenubarItem>
         </MenubarContent>

@@ -313,9 +313,11 @@ interface SpreadsheetGridProps {
   ) => void;
   sheetId: string | null;
   showAllRows: () => void;
+  showGridlines: boolean;
   startEditing: (pos: CellPosition, initialDraft?: string) => void;
   stopEditing: () => void;
   updateEditingValue: (value: string) => void;
+  zoomScale: number;
 }
 
 function normalizeSelectionBounds(
@@ -387,6 +389,7 @@ export function SpreadsheetGrid({
   selectCell,
   setSelectionRange,
   showAllRows,
+  showGridlines,
   startEditing,
   stopEditing,
   navigateFromActive,
@@ -412,6 +415,7 @@ export function SpreadsheetGrid({
   onToggleUnderline,
   onUndo,
   sheetId,
+  zoomScale,
   rowHeights,
   commitEditing,
   updateEditingValue,
@@ -640,9 +644,17 @@ export function SpreadsheetGrid({
     COL_HEADER_HEIGHT +
     totalRowHeight +
     (canExpandRows ? EXPANSION_PROMPT_HEIGHT : 0);
+  const scaledGridWidth = totalGridWidth * zoomScale;
+  const scaledGridHeight = totalGridHeight * zoomScale;
   const resizeSessionKey = resizeState
     ? `${resizeState.type}:${resizeState.index}`
     : null;
+  const gridBorderClassName = showGridlines
+    ? "border-border"
+    : "border-transparent";
+  const cellBorderClassName = showGridlines
+    ? "border-border border-r border-b"
+    : "border-transparent border-r border-b";
 
   useEffect(() => {
     if (rowSizingSignature === "") {
@@ -1449,388 +1461,411 @@ export function SpreadsheetGrid({
     >
       <div
         className="relative"
-        style={{ width: totalGridWidth, height: totalGridHeight }}
+        style={{ width: scaledGridWidth, height: scaledGridHeight }}
       >
-        {columnReorderIndicator !== null ? (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute top-0 z-50 w-0.5 bg-primary"
-            style={{
-              height: totalGridHeight,
-              left: columnReorderIndicator,
-            }}
-          />
-        ) : null}
-        {rowReorderIndicator !== null ? (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute left-0 z-50 h-0.5 bg-primary"
-            style={{
-              top: rowReorderIndicator,
-              width: totalGridWidth,
-            }}
-          />
-        ) : null}
-
         <div
-          className="sticky top-0 z-30"
-          style={{ width: totalGridWidth, height: COL_HEADER_HEIGHT }}
+          className="absolute top-0 left-0 origin-top-left"
+          style={{
+            width: totalGridWidth,
+            height: totalGridHeight,
+            transform: `scale(${zoomScale})`,
+          }}
         >
-          <div className="absolute inset-0 border-border border-b bg-muted" />
-          <div
-            className={cn(
-              "sticky left-0 z-40 border-border border-r border-b bg-muted",
-              normalizedSelection?.mode === "rows" &&
-                "bg-primary/12 ring-1 ring-primary/30 ring-inset",
-              normalizedSelection?.mode === "columns" &&
-                "bg-primary/12 ring-1 ring-primary/30 ring-inset"
-            )}
-            style={{ width: ROW_HEADER_WIDTH, height: COL_HEADER_HEIGHT }}
-          />
-          {firstVirtualCol ? (
+          {columnReorderIndicator !== null ? (
             <div
-              className="absolute top-0"
+              aria-hidden="true"
+              className="pointer-events-none absolute top-0 z-50 w-0.5 bg-primary"
               style={{
-                left: ROW_HEADER_WIDTH + colOffset,
-                width: visibleColWidth,
-                height: COL_HEADER_HEIGHT,
+                height: totalGridHeight,
+                left: columnReorderIndicator,
               }}
-            >
-              {renderCols.map((vc) => {
-                const headerClassName = cn(
-                  "absolute top-0 flex select-none items-center justify-center border-border border-r border-b bg-muted font-medium text-muted-foreground text-xs",
-                  isColumnHeaderSelected(vc.index) &&
-                    "z-10 bg-primary/12 font-semibold text-primary ring-1 ring-primary/30 ring-inset",
-                  activeCell?.col === vc.index &&
-                    "z-20 bg-primary/18 text-primary ring-1 ring-primary/50 ring-inset"
-                );
-                const headerStyle = {
-                  left: vc.start - colOffset,
-                  width: vc.size,
-                  height: COL_HEADER_HEIGHT,
-                };
+            />
+          ) : null}
+          {rowReorderIndicator !== null ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute left-0 z-50 h-0.5 bg-primary"
+              style={{
+                top: rowReorderIndicator,
+                width: totalGridWidth,
+              }}
+            />
+          ) : null}
 
-                if (renamingColumnIndex === vc.index) {
+          <div
+            className="sticky top-0 z-30"
+            style={{ width: totalGridWidth, height: COL_HEADER_HEIGHT }}
+          >
+            <div
+              className={cn(
+                "absolute inset-0 border-b bg-muted",
+                gridBorderClassName
+              )}
+            />
+            <div
+              className={cn(
+                "sticky left-0 z-40 border-r border-b bg-muted",
+                gridBorderClassName,
+                normalizedSelection?.mode === "rows" &&
+                  "bg-primary/12 ring-1 ring-primary/30 ring-inset",
+                normalizedSelection?.mode === "columns" &&
+                  "bg-primary/12 ring-1 ring-primary/30 ring-inset"
+              )}
+              style={{ width: ROW_HEADER_WIDTH, height: COL_HEADER_HEIGHT }}
+            />
+            {firstVirtualCol ? (
+              <div
+                className="absolute top-0"
+                style={{
+                  left: ROW_HEADER_WIDTH + colOffset,
+                  width: visibleColWidth,
+                  height: COL_HEADER_HEIGHT,
+                }}
+              >
+                {renderCols.map((vc) => {
+                  const headerClassName = cn(
+                    "absolute top-0 flex select-none items-center justify-center border-r border-b bg-muted font-medium text-muted-foreground text-xs",
+                    gridBorderClassName,
+                    isColumnHeaderSelected(vc.index) &&
+                      "z-10 bg-primary/12 font-semibold text-primary ring-1 ring-primary/30 ring-inset",
+                    activeCell?.col === vc.index &&
+                      "z-20 bg-primary/18 text-primary ring-1 ring-primary/50 ring-inset"
+                  );
+                  const headerStyle = {
+                    left: vc.start - colOffset,
+                    width: vc.size,
+                    height: COL_HEADER_HEIGHT,
+                  };
+
+                  if (renamingColumnIndex === vc.index) {
+                    return (
+                      <div
+                        className={cn(headerClassName, "group")}
+                        key={`col-${vc.index}`}
+                        style={headerStyle}
+                      >
+                        <Input
+                          autoFocus
+                          className="h-6 border-none bg-background px-1 text-center text-xs shadow-none focus-visible:ring-0"
+                          onBlur={() => {
+                            commitColumnRename().catch(() => undefined);
+                          }}
+                          onChange={(event) => {
+                            setColumnNameDraft(event.target.value);
+                          }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              commitColumnRename().catch(() => undefined);
+                            }
+
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              setRenamingColumnIndex(null);
+                            }
+                          }}
+                          onMouseDown={(event) => {
+                            event.stopPropagation();
+                          }}
+                          value={columnNameDraft}
+                        />
+                      </div>
+                    );
+                  }
+
                   return (
                     <div
                       className={cn(headerClassName, "group")}
                       key={`col-${vc.index}`}
                       style={headerStyle}
                     >
-                      <Input
-                        autoFocus
-                        className="h-6 border-none bg-background px-1 text-center text-xs shadow-none focus-visible:ring-0"
-                        onBlur={() => {
-                          commitColumnRename().catch(() => undefined);
+                      <button
+                        className="flex h-full w-full items-center justify-center px-4"
+                        disabled={disabled}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          openHeaderContextMenu("column", vc.index, event);
                         }}
-                        onChange={(event) => {
-                          setColumnNameDraft(event.target.value);
+                        onDoubleClick={() => {
+                          beginColumnRename(vc.index);
                         }}
-                        onClick={(event) => {
-                          event.stopPropagation();
+                        onDragOver={(event) => {
+                          updateHeaderReorderPreview("column", vc.index, event);
                         }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            commitColumnRename().catch(() => undefined);
-                          }
-
-                          if (event.key === "Escape") {
-                            event.preventDefault();
-                            setRenamingColumnIndex(null);
-                          }
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          commitHeaderReorder(
+                            "column",
+                            reorderPreview?.axis === "column"
+                              ? reorderPreview.insertionIndex
+                              : vc.index
+                          );
                         }}
                         onMouseDown={(event) => {
-                          event.stopPropagation();
+                          event.preventDefault();
+                          beginSelectionDrag(
+                            { row: 0, col: vc.index },
+                            "columns"
+                          );
                         }}
-                        value={columnNameDraft}
-                      />
+                        onMouseEnter={() => {
+                          updateDraggedSelection({
+                            row: rowCount - 1,
+                            col: vc.index,
+                          });
+                        }}
+                        type="button"
+                      >
+                        {columnNames[vc.index]}
+                      </button>
+                      {canEdit && !disabled ? (
+                        <button
+                          aria-label={`Reorder column ${columnNames[vc.index]}`}
+                          className="absolute top-1/2 left-1 z-20 flex h-4 w-3 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-border/80 hover:text-foreground focus-visible:opacity-100 active:cursor-grabbing group-hover:opacity-100"
+                          draggable
+                          onDragEnd={clearReorderDrag}
+                          onDragStart={(event) => {
+                            beginHeaderReorder("column", vc.index, event);
+                          }}
+                          onMouseDown={(event) => {
+                            event.stopPropagation();
+                          }}
+                          type="button"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="grid grid-cols-2 gap-0.5"
+                          >
+                            {GRIP_DOT_KEYS.map((dotKey) => (
+                              <span
+                                className="size-0.5 rounded-full bg-current"
+                                key={`col-grip-${vc.index}-${dotKey}`}
+                              />
+                            ))}
+                          </span>
+                        </button>
+                      ) : null}
+                      {canEdit && !disabled ? (
+                        <button
+                          aria-label={`Resize column ${columnNames[vc.index]}`}
+                          className="absolute top-0 right-0 z-30 h-full cursor-col-resize touch-none bg-transparent transition-colors group-hover:bg-border/80"
+                          onPointerDown={(event) => {
+                            beginColumnResize(vc.index, event);
+                          }}
+                          style={{ width: COLUMN_RESIZE_HANDLE_WIDTH }}
+                          type="button"
+                        />
+                      ) : null}
                     </div>
                   );
-                }
+                })}
+              </div>
+            ) : null}
+          </div>
 
-                return (
-                  <div
-                    className={cn(headerClassName, "group")}
-                    key={`col-${vc.index}`}
-                    style={headerStyle}
+          {renderRows.map((vr) => {
+            const row = vr.index;
+
+            return (
+              <div
+                className="absolute left-0"
+                key={`row-${row}`}
+                style={{
+                  top: COL_HEADER_HEIGHT + vr.start,
+                  width: totalGridWidth,
+                  height: vr.size,
+                }}
+              >
+                <div
+                  className={cn(
+                    "group sticky left-0 z-20 border-r border-b bg-muted text-muted-foreground text-xs",
+                    gridBorderClassName,
+                    isRowHeaderSelected(row) &&
+                      "z-30 bg-primary/12 font-semibold text-primary ring-1 ring-primary/30 ring-inset",
+                    activeCell?.row === row &&
+                      "z-40 bg-primary/18 text-primary ring-1 ring-primary/50 ring-inset"
+                  )}
+                  style={{ width: ROW_HEADER_WIDTH, height: vr.size }}
+                >
+                  <button
+                    className="flex h-full w-full select-none items-center justify-center py-2 pr-2 pl-4"
+                    disabled={disabled}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      openHeaderContextMenu("row", row, event);
+                    }}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      beginSelectionDrag({ row, col: 0 }, "rows");
+                    }}
+                    onMouseEnter={() => {
+                      updateDraggedSelection({ row, col: columnCount - 1 });
+                    }}
+                    type="button"
                   >
+                    {row + 1}
+                  </button>
+                  {canEdit && !disabled ? (
                     <button
-                      className="flex h-full w-full items-center justify-center px-4"
-                      disabled={disabled}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        openHeaderContextMenu("column", vc.index, event);
-                      }}
-                      onDoubleClick={() => {
-                        beginColumnRename(vc.index);
-                      }}
-                      onDragOver={(event) => {
-                        updateHeaderReorderPreview("column", vc.index, event);
-                      }}
-                      onDrop={(event) => {
-                        event.preventDefault();
-                        commitHeaderReorder(
-                          "column",
-                          reorderPreview?.axis === "column"
-                            ? reorderPreview.insertionIndex
-                            : vc.index
-                        );
-                      }}
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        beginSelectionDrag(
-                          { row: 0, col: vc.index },
-                          "columns"
-                        );
-                      }}
-                      onMouseEnter={() => {
-                        updateDraggedSelection({
-                          row: rowCount - 1,
-                          col: vc.index,
-                        });
+                      aria-label={`Reorder row ${row + 1}`}
+                      className="absolute top-1/2 left-1 z-20 flex h-4 w-3 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-border/80 hover:text-foreground focus-visible:opacity-100 active:cursor-grabbing group-hover:opacity-100"
+                      onPointerDown={(event) => {
+                        beginRowPointerReorder(row, event);
                       }}
                       type="button"
                     >
-                      {columnNames[vc.index]}
-                    </button>
-                    {canEdit && !disabled ? (
-                      <button
-                        aria-label={`Reorder column ${columnNames[vc.index]}`}
-                        className="absolute top-1/2 left-1 z-20 flex h-4 w-3 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-border/80 hover:text-foreground focus-visible:opacity-100 active:cursor-grabbing group-hover:opacity-100"
-                        draggable
-                        onDragEnd={clearReorderDrag}
-                        onDragStart={(event) => {
-                          beginHeaderReorder("column", vc.index, event);
-                        }}
-                        onMouseDown={(event) => {
-                          event.stopPropagation();
-                        }}
-                        type="button"
+                      <span
+                        aria-hidden="true"
+                        className="grid grid-cols-2 gap-0.5"
                       >
-                        <span
-                          aria-hidden="true"
-                          className="grid grid-cols-2 gap-0.5"
+                        {GRIP_DOT_KEYS.map((dotKey) => (
+                          <span
+                            className="size-0.5 rounded-full bg-current"
+                            key={`row-grip-${row}-${dotKey}`}
+                          />
+                        ))}
+                      </span>
+                    </button>
+                  ) : null}
+                  {canEdit && !disabled ? (
+                    <button
+                      aria-label={`Resize row ${row + 1}`}
+                      className="absolute bottom-0 left-0 z-30 w-full cursor-row-resize touch-none bg-transparent transition-colors hover:bg-border/80"
+                      onPointerDown={(event) => {
+                        beginRowResize(row, event);
+                      }}
+                      style={{ height: ROW_RESIZE_HANDLE_HEIGHT }}
+                      type="button"
+                    />
+                  ) : null}
+                </div>
+
+                {firstVirtualCol ? (
+                  <div
+                    className="absolute top-0"
+                    style={{
+                      left: ROW_HEADER_WIDTH + colOffset,
+                      width: visibleColWidth,
+                      height: vr.size,
+                    }}
+                  >
+                    {renderCols.map((vc) => {
+                      const col = vc.index;
+                      const id = cellId(row, col);
+                      const data = getCellData(row, col);
+                      const format = getCellFormat(row, col);
+                      const isActive =
+                        activeCell?.row === row && activeCell?.col === col;
+                      const isEditing =
+                        editingCell?.row === row && editingCell?.col === col;
+                      const isSelected = isCellSelected(row, col);
+
+                      return (
+                        <div
+                          className={cn(
+                            "absolute border-r border-b bg-background p-0",
+                            cellBorderClassName
+                          )}
+                          data-cell={id}
+                          key={id}
+                          style={{
+                            top: 0,
+                            left: vc.start - colOffset,
+                            width: vc.size,
+                            height: vr.size,
+                          }}
                         >
-                          {GRIP_DOT_KEYS.map((dotKey) => (
-                            <span
-                              className="size-0.5 rounded-full bg-current"
-                              key={`col-grip-${vc.index}-${dotKey}`}
-                            />
-                          ))}
-                        </span>
-                      </button>
-                    ) : null}
-                    {canEdit && !disabled ? (
-                      <button
-                        aria-label={`Resize column ${columnNames[vc.index]}`}
-                        className="absolute top-0 right-0 z-30 h-full cursor-col-resize touch-none bg-transparent transition-colors group-hover:bg-border/80"
-                        onPointerDown={(event) => {
-                          beginColumnResize(vc.index, event);
-                        }}
-                        style={{ width: COLUMN_RESIZE_HANDLE_WIDTH }}
-                        type="button"
-                      />
-                    ) : null}
+                          <CellComponent
+                            canEdit={canEdit}
+                            col={col}
+                            data={data}
+                            disabled={disabled}
+                            editValue={editingValue}
+                            format={format}
+                            isActive={isActive}
+                            isEditing={isEditing}
+                            isSelected={isSelected}
+                            onBeginTyping={startEditing}
+                            onCancel={stopEditing}
+                            onCommit={handleCellEditCommit}
+                            onContextMenu={handleCellContextMenu}
+                            onDoubleClick={(position) => {
+                              if (canEdit) {
+                                startEditing(position);
+                              }
+                            }}
+                            onEditValueChange={updateEditingValue}
+                            onKeyDown={handleCellKeyDown}
+                            onSelect={handleCellSelect}
+                            onSelectHover={updateDraggedSelection}
+                            row={row}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                ) : null}
+              </div>
+            );
+          })}
+
+          {firstVirtualRow && firstVirtualCol ? (
+            <div
+              aria-hidden="true"
+              className={cn(
+                "pointer-events-none absolute border-r border-b",
+                cellBorderClassName
+              )}
+              style={{
+                top: COL_HEADER_HEIGHT + rowOffset,
+                left: ROW_HEADER_WIDTH + colOffset,
+                width: visibleColWidth,
+                height: visibleRowHeight,
+              }}
+            />
+          ) : null}
+
+          {visibleSelection ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute border-2 border-primary"
+              style={{
+                top: visibleSelection.top,
+                left: visibleSelection.left,
+                width: visibleSelection.width,
+                height: visibleSelection.height,
+              }}
+            >
+              <div className="absolute right-0 bottom-0 size-2 translate-x-1/2 translate-y-1/2 rounded-full bg-primary shadow-[0_0_0_1px] shadow-background" />
             </div>
           ) : null}
-        </div>
 
-        {renderRows.map((vr) => {
-          const row = vr.index;
-
-          return (
+          {visiblePresence.map((presence) => (
             <div
-              className="absolute left-0"
-              key={`row-${row}`}
+              aria-hidden="true"
+              className="pointer-events-none absolute z-20 border-2"
+              key={presence.key}
               style={{
-                top: COL_HEADER_HEIGHT + vr.start,
-                width: totalGridWidth,
-                height: vr.size,
+                borderColor: presence.color,
+                height: presence.height,
+                left: presence.left,
+                top: presence.top,
+                width: presence.width,
               }}
             >
               <div
-                className={cn(
-                  "group sticky left-0 z-20 border-border border-r border-b bg-muted text-muted-foreground text-xs",
-                  isRowHeaderSelected(row) &&
-                    "z-30 bg-primary/12 font-semibold text-primary ring-1 ring-primary/30 ring-inset",
-                  activeCell?.row === row &&
-                    "z-40 bg-primary/18 text-primary ring-1 ring-primary/50 ring-inset"
-                )}
-                style={{ width: ROW_HEADER_WIDTH, height: vr.size }}
+                className="absolute top-0 left-0 -translate-y-[calc(100%+2px)] rounded-none px-1.5 py-0.5 font-medium text-[10px] text-white shadow-sm"
+                style={{ backgroundColor: presence.color }}
               >
-                <button
-                  className="flex h-full w-full select-none items-center justify-center py-2 pr-2 pl-4"
-                  disabled={disabled}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    openHeaderContextMenu("row", row, event);
-                  }}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    beginSelectionDrag({ row, col: 0 }, "rows");
-                  }}
-                  onMouseEnter={() => {
-                    updateDraggedSelection({ row, col: columnCount - 1 });
-                  }}
-                  type="button"
-                >
-                  {row + 1}
-                </button>
-                {canEdit && !disabled ? (
-                  <button
-                    aria-label={`Reorder row ${row + 1}`}
-                    className="absolute top-1/2 left-1 z-20 flex h-4 w-3 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-border/80 hover:text-foreground focus-visible:opacity-100 active:cursor-grabbing group-hover:opacity-100"
-                    onPointerDown={(event) => {
-                      beginRowPointerReorder(row, event);
-                    }}
-                    type="button"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="grid grid-cols-2 gap-0.5"
-                    >
-                      {GRIP_DOT_KEYS.map((dotKey) => (
-                        <span
-                          className="size-0.5 rounded-full bg-current"
-                          key={`row-grip-${row}-${dotKey}`}
-                        />
-                      ))}
-                    </span>
-                  </button>
-                ) : null}
-                {canEdit && !disabled ? (
-                  <button
-                    aria-label={`Resize row ${row + 1}`}
-                    className="absolute bottom-0 left-0 z-30 w-full cursor-row-resize touch-none bg-transparent transition-colors hover:bg-border/80"
-                    onPointerDown={(event) => {
-                      beginRowResize(row, event);
-                    }}
-                    style={{ height: ROW_RESIZE_HANDLE_HEIGHT }}
-                    type="button"
-                  />
-                ) : null}
+                {presence.name}
+                {presence.typingDraft ? `: ${presence.typingDraft}` : ""}
               </div>
-
-              {firstVirtualCol ? (
-                <div
-                  className="absolute top-0"
-                  style={{
-                    left: ROW_HEADER_WIDTH + colOffset,
-                    width: visibleColWidth,
-                    height: vr.size,
-                  }}
-                >
-                  {renderCols.map((vc) => {
-                    const col = vc.index;
-                    const id = cellId(row, col);
-                    const data = getCellData(row, col);
-                    const format = getCellFormat(row, col);
-                    const isActive =
-                      activeCell?.row === row && activeCell?.col === col;
-                    const isEditing =
-                      editingCell?.row === row && editingCell?.col === col;
-                    const isSelected = isCellSelected(row, col);
-
-                    return (
-                      <div
-                        className="absolute border-border border-r border-b bg-background p-0"
-                        data-cell={id}
-                        key={id}
-                        style={{
-                          top: 0,
-                          left: vc.start - colOffset,
-                          width: vc.size,
-                          height: vr.size,
-                        }}
-                      >
-                        <CellComponent
-                          canEdit={canEdit}
-                          col={col}
-                          data={data}
-                          disabled={disabled}
-                          editValue={editingValue}
-                          format={format}
-                          isActive={isActive}
-                          isEditing={isEditing}
-                          isSelected={isSelected}
-                          onBeginTyping={startEditing}
-                          onCancel={stopEditing}
-                          onCommit={handleCellEditCommit}
-                          onContextMenu={handleCellContextMenu}
-                          onDoubleClick={(position) => {
-                            if (canEdit) {
-                              startEditing(position);
-                            }
-                          }}
-                          onEditValueChange={updateEditingValue}
-                          onKeyDown={handleCellKeyDown}
-                          onSelect={handleCellSelect}
-                          onSelectHover={updateDraggedSelection}
-                          row={row}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
             </div>
-          );
-        })}
-
-        {firstVirtualRow && firstVirtualCol ? (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute border-border border-r border-b"
-            style={{
-              top: COL_HEADER_HEIGHT + rowOffset,
-              left: ROW_HEADER_WIDTH + colOffset,
-              width: visibleColWidth,
-              height: visibleRowHeight,
-            }}
-          />
-        ) : null}
-
-        {visibleSelection ? (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute border-2 border-primary"
-            style={{
-              top: visibleSelection.top,
-              left: visibleSelection.left,
-              width: visibleSelection.width,
-              height: visibleSelection.height,
-            }}
-          >
-            <div className="absolute right-0 bottom-0 size-2 translate-x-1/2 translate-y-1/2 rounded-full bg-primary shadow-[0_0_0_1px] shadow-background" />
-          </div>
-        ) : null}
-
-        {visiblePresence.map((presence) => (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute z-20 border-2"
-            key={presence.key}
-            style={{
-              borderColor: presence.color,
-              height: presence.height,
-              left: presence.left,
-              top: presence.top,
-              width: presence.width,
-            }}
-          >
-            <div
-              className="absolute top-0 left-0 -translate-y-[calc(100%+2px)] rounded-none px-1.5 py-0.5 font-medium text-[10px] text-white shadow-sm"
-              style={{ backgroundColor: presence.color }}
-            >
-              {presence.name}
-              {presence.typingDraft ? `: ${presence.typingDraft}` : ""}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
 
         {contextMenu?.kind === "cell" ? (
           <div

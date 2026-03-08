@@ -26,6 +26,7 @@ import { DEFAULT_SHEET_COLUMN_WIDTH } from "@papyrus/core/workbook-types";
 import type { StateCreator } from "zustand";
 import {
   cellId,
+  colToLetter,
   isValidColumnName,
   normalizeColumnName,
   parseStoredCellId,
@@ -49,6 +50,8 @@ type EditingSliceState = Pick<
   | "deleteRows"
   | "deleteSheet"
   | "redo"
+  | "insertColumns"
+  | "insertRows"
   | "renameColumn"
   | "resizeColumn"
   | "resizeRow"
@@ -103,6 +106,91 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   return nextItems;
 }
 
+function buildInsertedColumns(
+  currentColumns: SpreadsheetStoreState["activeSheetColumns"],
+  startColumn: number,
+  columnCount: number
+): SpreadsheetStoreState["activeSheetColumns"] {
+  const nextColumns: SpreadsheetStoreState["activeSheetColumns"] = [];
+  const usedColumnNames = new Set<string>();
+  const reservedCustomColumnNames = new Set(
+    currentColumns.flatMap((column, index) => {
+      const isDefaultColumnName =
+        normalizeColumnName(column.name).toUpperCase() ===
+        colToLetter(index).toUpperCase();
+
+      return isDefaultColumnName ? [] : [column.name.toUpperCase()];
+    })
+  );
+
+  const getUniqueDefaultColumnName = (startIndex: number): string => {
+    let candidateIndex = startIndex;
+
+    while (true) {
+      const columnName = colToLetter(candidateIndex);
+      const normalizedColumnName = columnName.toUpperCase();
+
+      if (
+        !(
+          usedColumnNames.has(normalizedColumnName) ||
+          reservedCustomColumnNames.has(normalizedColumnName)
+        )
+      ) {
+        usedColumnNames.add(normalizedColumnName);
+        return columnName;
+      }
+
+      candidateIndex++;
+    }
+  };
+
+  for (
+    let nextColumnIndex = 0;
+    nextColumnIndex < currentColumns.length + columnCount;
+    nextColumnIndex++
+  ) {
+    const sourceColumnIndex =
+      nextColumnIndex < startColumn
+        ? nextColumnIndex
+        : nextColumnIndex >= startColumn + columnCount
+          ? nextColumnIndex - columnCount
+          : null;
+
+    if (sourceColumnIndex === null) {
+      nextColumns.push({
+        index: nextColumnIndex,
+        name: getUniqueDefaultColumnName(nextColumnIndex),
+        width: DEFAULT_SHEET_COLUMN_WIDTH,
+      });
+      continue;
+    }
+
+    const sourceColumn = currentColumns[sourceColumnIndex];
+    if (!sourceColumn) {
+      continue;
+    }
+
+    const shouldUseGeneratedName =
+      normalizeColumnName(sourceColumn.name).toUpperCase() ===
+      colToLetter(sourceColumnIndex).toUpperCase();
+
+    const nextName = shouldUseGeneratedName
+      ? getUniqueDefaultColumnName(nextColumnIndex)
+      : sourceColumn.name;
+
+    if (!shouldUseGeneratedName) {
+      usedColumnNames.add(nextName.toUpperCase());
+    }
+    nextColumns.push({
+      index: nextColumnIndex,
+      name: nextName,
+      width: sourceColumn.width,
+    });
+  }
+
+  return nextColumns;
+}
+
 const updateSharingState = async (
   controller: SpreadsheetStoreController,
   set: (partial: Partial<SpreadsheetStoreState>) => void,
@@ -147,6 +235,186 @@ export const createEditingSlice = (
       const nextSheet = createSheet(activeWorkbookSession.doc);
       setActiveSheetInDoc(activeWorkbookSession.doc, nextSheet.id);
       controller.syncUndoManager(activeWorkbookSession.doc);
+      await controller.persistActiveWorkbookMeta();
+    },
+    insertColumns: async (startColumn, columnCount) => {
+      if (controller.isViewerAccess()) {
+        return;
+      }
+
+      const activeWorkbookSession = controller.getActiveWorkbookSession();
+      const activeSheetId = get().activeSheetId;
+      const currentSheetColumns = get().activeSheetColumns;
+      const currentColumnCount = currentSheetColumns.length;
+      if (!(activeWorkbookSession && activeSheetId)) {
+        return;
+      }
+
+      if (
+        columnCount <= 0 ||
+        startColumn < 0 ||
+        startColumn > currentColumnCount
+      ) {
+        return;
+      }
+
+      const currentColumnNames =
+        controller.buildColumnNames(currentSheetColumns);
+      const nextColumns = buildInsertedColumns(
+        currentSheetColumns,
+        startColumn,
+        columnCount
+      );
+      const nextColumnNames = nextColumns.map((column) => column.name);
+      const nextCells: Record<string, string> = {};
+      const nextFormats: SpreadsheetStoreState["activeSheetFormats"] = {};
+
+      for (const [storedCellKey, cellValue] of Object.entries(
+        get().activeSheetCells
+      )) {
+        const position = parseStoredCellId(storedCellKey);
+        if (!position) {
+          continue;
+        }
+
+        const nextCol =
+          position.col >= startColumn
+            ? position.col + columnCount
+            : position.col;
+        nextCells[cellId(position.row, nextCol)] = rewriteFormulaReferences(
+          cellValue.raw,
+          currentColumnNames,
+          nextColumnNames,
+          (referencePosition) => {
+            if (referencePosition.col >= startColumn) {
+              return {
+                col: referencePosition.col + columnCount,
+                row: referencePosition.row,
+              };
+            }
+
+            return referencePosition;
+          }
+        );
+      }
+
+      for (const [storedCellKey, cellFormat] of Object.entries(
+        get().activeSheetFormats
+      )) {
+        const position = parseStoredCellId(storedCellKey);
+        if (!position) {
+          continue;
+        }
+
+        const nextCol =
+          position.col >= startColumn
+            ? position.col + columnCount
+            : position.col;
+        nextFormats[cellId(position.row, nextCol)] = cellFormat;
+      }
+
+      set({ saveState: "saving" });
+      replaceSheetColumns(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextColumns
+      );
+      replaceSheetCells(activeWorkbookSession.doc, activeSheetId, nextCells);
+      replaceSheetFormats(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextFormats
+      );
+      await controller.persistActiveWorkbookMeta();
+    },
+    insertRows: async (startRow, rowCount) => {
+      if (controller.isViewerAccess()) {
+        return;
+      }
+
+      const activeWorkbookSession = controller.getActiveWorkbookSession();
+      const activeSheetId = get().activeSheetId;
+      if (!(activeWorkbookSession && activeSheetId)) {
+        return;
+      }
+
+      if (rowCount <= 0 || startRow < 0) {
+        return;
+      }
+
+      const currentColumnNames = controller.buildColumnNames(
+        get().activeSheetColumns
+      );
+      const nextCells: Record<string, string> = {};
+
+      for (const [storedCellKey, cellValue] of Object.entries(
+        get().activeSheetCells
+      )) {
+        const position = parseStoredCellId(storedCellKey);
+        if (!position) {
+          continue;
+        }
+
+        const nextRow =
+          position.row >= startRow ? position.row + rowCount : position.row;
+        nextCells[cellId(nextRow, position.col)] = rewriteFormulaReferences(
+          cellValue.raw,
+          currentColumnNames,
+          currentColumnNames,
+          (referencePosition) => {
+            if (referencePosition.row >= startRow) {
+              return {
+                col: referencePosition.col,
+                row: referencePosition.row + rowCount,
+              };
+            }
+
+            return referencePosition;
+          }
+        );
+      }
+
+      const nextRowHeights = Object.fromEntries(
+        Object.entries(get().activeSheetRowHeights).map(([rowKey, height]) => {
+          const rowIndex = Number(rowKey);
+          if (!Number.isInteger(rowIndex)) {
+            return [rowKey, height] as const;
+          }
+
+          if (rowIndex >= startRow) {
+            return [String(rowIndex + rowCount), height] as const;
+          }
+
+          return [rowKey, height] as const;
+        })
+      );
+      const nextFormats = Object.fromEntries(
+        Object.entries(get().activeSheetFormats).flatMap(
+          ([cellKey, format]) => {
+            const position = parseStoredCellId(cellKey);
+            if (!position) {
+              return [];
+            }
+
+            const nextRow =
+              position.row >= startRow ? position.row + rowCount : position.row;
+            return [[cellId(nextRow, position.col), format] as const];
+          }
+        )
+      );
+
+      set({ saveState: "saving" });
+      replaceSheetCells(activeWorkbookSession.doc, activeSheetId, nextCells);
+      replaceSheetFormats(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextFormats
+      );
+      replaceSheetRowHeights(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextRowHeights
+      );
       await controller.persistActiveWorkbookMeta();
     },
     deleteColumns: async (startColumn, columnCount) => {
@@ -745,14 +1013,26 @@ export const createEditingSlice = (
     },
     setCellValue: async (row, col, raw) => {
       if (controller.isViewerAccess()) {
+        console.warn("[setCellValue] blocked: viewer access");
         return;
       }
 
       const activeWorkbookSession = controller.getActiveWorkbookSession();
       const activeSheetId = get().activeSheetId;
       if (!(activeWorkbookSession && activeSheetId)) {
+        console.warn("[setCellValue] blocked: no session or sheetId", {
+          hasSession: !!activeWorkbookSession,
+          activeSheetId,
+        });
         return;
       }
+
+      console.warn("[setCellValue] persisting", {
+        cellKey: cellId(row, col),
+        raw,
+        sheetId: activeSheetId,
+        isSharedSession: activeWorkbookSession.isSharedSession,
+      });
 
       set({ saveState: "saving" });
       setSheetCellRaw(

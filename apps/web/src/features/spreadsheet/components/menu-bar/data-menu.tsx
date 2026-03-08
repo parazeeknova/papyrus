@@ -1,5 +1,6 @@
 "use client";
 
+import { SortAscendingIcon, SortDescendingIcon } from "@phosphor-icons/react";
 import {
   MenubarContent,
   MenubarItem,
@@ -26,12 +27,14 @@ export function DataMenu({
           disabled={!canSortSelection}
           onClick={onSortSelectionAscending}
         >
+          <SortAscendingIcon weight="bold" />
           Sort selection A {">"} Z
         </MenubarItem>
         <MenubarItem
           disabled={!canSortSelection}
           onClick={onSortSelectionDescending}
         >
+          <SortDescendingIcon weight="bold" />
           Sort selection Z {">"} A
         </MenubarItem>
       </MenubarContent>

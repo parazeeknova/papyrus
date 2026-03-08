@@ -1,5 +1,6 @@
 "use client";
 
+import { BookOpenIcon, FunctionIcon } from "@phosphor-icons/react";
 import {
   MenubarContent,
   MenubarItem,
@@ -22,6 +23,7 @@ export function HelpMenu({ onOpenAbout, onOpenFunctionList }: HelpMenuProps) {
             onOpenFunctionList();
           }}
         >
+          <FunctionIcon weight="bold" />
           Function list
         </MenubarItem>
         <MenubarItem
@@ -29,6 +31,7 @@ export function HelpMenu({ onOpenAbout, onOpenFunctionList }: HelpMenuProps) {
             onOpenAbout();
           }}
         >
+          <BookOpenIcon weight="bold" />
           About Papyrus
         </MenubarItem>
       </MenubarContent>

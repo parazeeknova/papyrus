@@ -484,6 +484,8 @@ export function useSpreadsheet({
   const importWorkbookFromExcel = useSpreadsheetStore(
     (state) => state.importWorkbookFromExcel
   );
+  const insertColumns = useSpreadsheetStore((state) => state.insertColumns);
+  const insertRows = useSpreadsheetStore((state) => state.insertRows);
   const isRemoteSyncAuthenticated = useSpreadsheetStore(
     (state) => state.isRemoteSyncAuthenticated
   );
@@ -931,12 +933,23 @@ export function useSpreadsheet({
       }
 
       const id = cellId(row, col);
+      const persistedCell = activeSheetCells[id];
       const computedCell = computedCells[id];
+
       if (computedCell) {
+        // If the persisted (Yjs) raw value has changed since the worker
+        // last computed this cell, show the persisted value as a fallback
+        // until the worker recomputes. This prevents stale computed entries
+        // from hiding remote sync updates.
+        if (persistedCell && persistedCell.raw !== computedCell.raw) {
+          return {
+            computed: persistedCell.raw,
+            raw: persistedCell.raw,
+          };
+        }
         return computedCell;
       }
 
-      const persistedCell = activeSheetCells[id];
       if (!persistedCell) {
         return EMPTY_CELL;
       }
@@ -1374,6 +1387,86 @@ export function useSpreadsheet({
     return true;
   }, [activeCell, canEdit, deleteColumns, normalizedSelection, selectCell]);
 
+  const insertRowsRelativeToSelection = useCallback(
+    async (position: "above" | "below"): Promise<boolean> => {
+      if (!canEdit) {
+        return false;
+      }
+
+      if (normalizedSelection?.mode === "rows") {
+        const rowCount =
+          normalizedSelection.endRow - normalizedSelection.startRow + 1;
+        const startRow =
+          position === "above"
+            ? normalizedSelection.startRow
+            : normalizedSelection.endRow + 1;
+
+        await insertRows(startRow, rowCount);
+        setSelection({
+          end: { col: 0, row: startRow + rowCount - 1 },
+          mode: "rows",
+          start: { col: 0, row: startRow },
+        });
+        setActiveCell({ col: 0, row: startRow });
+        setEditingCell(null);
+        setEditingDraft("");
+        setEditingOriginalValue("");
+        return true;
+      }
+
+      if (!activeCell) {
+        return false;
+      }
+
+      const startRow =
+        position === "above" ? activeCell.row : activeCell.row + 1;
+      await insertRows(startRow, 1);
+      selectCell({ col: activeCell.col, row: startRow });
+      return true;
+    },
+    [activeCell, canEdit, insertRows, normalizedSelection, selectCell]
+  );
+
+  const insertColumnsRelativeToSelection = useCallback(
+    async (position: "left" | "right"): Promise<boolean> => {
+      if (!canEdit) {
+        return false;
+      }
+
+      if (normalizedSelection?.mode === "columns") {
+        const columnCount =
+          normalizedSelection.endCol - normalizedSelection.startCol + 1;
+        const startColumn =
+          position === "left"
+            ? normalizedSelection.startCol
+            : normalizedSelection.endCol + 1;
+
+        await insertColumns(startColumn, columnCount);
+        setSelection({
+          end: { col: startColumn + columnCount - 1, row: 0 },
+          mode: "columns",
+          start: { col: startColumn, row: 0 },
+        });
+        setActiveCell({ col: startColumn, row: 0 });
+        setEditingCell(null);
+        setEditingDraft("");
+        setEditingOriginalValue("");
+        return true;
+      }
+
+      if (!activeCell) {
+        return false;
+      }
+
+      const startColumn =
+        position === "left" ? activeCell.col : activeCell.col + 1;
+      await insertColumns(startColumn, 1);
+      selectCell({ col: startColumn, row: activeCell.row });
+      return true;
+    },
+    [activeCell, canEdit, insertColumns, normalizedSelection, selectCell]
+  );
+
   const canSortSelection = useMemo(() => {
     const bounds = getSelectionBounds();
     if (!(canEdit && activeCell && bounds)) {
@@ -1758,6 +1851,14 @@ export function useSpreadsheet({
       const nextDraft = editingDraft;
       const previousValue = editingOriginalValue;
 
+      console.warn("[commitEditing]", {
+        hasCell: !!currentEditingCell,
+        canEdit,
+        nextDraft,
+        previousValue,
+        changed: nextDraft !== previousValue,
+      });
+
       stopEditing();
 
       if (currentEditingCell && canEdit && nextDraft !== previousValue) {
@@ -1934,6 +2035,18 @@ export function useSpreadsheet({
     cutSelection,
     deleteSelectedColumns,
     deleteSelectedRows,
+    insertColumnLeft: async () => {
+      return await insertColumnsRelativeToSelection("left");
+    },
+    insertColumnRight: async () => {
+      return await insertColumnsRelativeToSelection("right");
+    },
+    insertRowAbove: async () => {
+      return await insertRowsRelativeToSelection("above");
+    },
+    insertRowBelow: async () => {
+      return await insertRowsRelativeToSelection("below");
+    },
     deleteSheet: async (sheetId: string) => {
       if (!canEdit) {
         return false;

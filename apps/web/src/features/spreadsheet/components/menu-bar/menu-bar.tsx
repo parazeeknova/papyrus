@@ -90,6 +90,10 @@ interface SpreadsheetMenuBarProps {
   onExportExcel: () => void;
   onImportCsv: (file: File) => void;
   onImportExcel: (file: File) => void;
+  onInsertColumnLeft: () => void;
+  onInsertColumnRight: () => void;
+  onInsertRowAbove: () => void;
+  onInsertRowBelow: () => void;
   onManualSync: () => void;
   onOpenFindReplace: () => void;
   onOpenWorkbook: (workbookId: string, workbookName: string) => void;
@@ -104,13 +108,17 @@ interface SpreadsheetMenuBarProps {
   onSortSelectionDescending: () => void;
   onToggleBold: () => void;
   onToggleFavorite: (isFavorite: boolean) => void;
+  onToggleFormulaBar: () => void;
   onToggleGallery: () => void;
+  onToggleGridlines: () => void;
   onToggleItalic: () => void;
   onToggleStrikethrough: () => void;
   onToggleUnderline: () => void;
   onUndo: () => void;
   onUpdateSharingAccessRole: (accessRole: CollaborationAccessRole) => void;
   onUpdateSharingEnabled: (sharingEnabled: boolean) => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
   recentWorkbooks: WorkbookMeta[];
   remoteSyncStatus:
     | "disabled"
@@ -123,12 +131,15 @@ interface SpreadsheetMenuBarProps {
   saveState: "error" | "saved" | "saving";
   sharingAccessRole: CollaborationAccessRole;
   sharingEnabled: boolean;
+  showFormulaBar: boolean;
+  showGridlines: boolean;
   strikethroughActive: boolean;
   syncServerUrl: string | null;
   textTransform: CellTextTransform | null;
   transientStatusDetail: string | null;
   transientStatusLabel: string | null;
   underlineActive: boolean;
+  viewZoomPercent: number;
   workbookId: string | null;
   workbookName: string;
 }
@@ -432,6 +443,10 @@ export function SpreadsheetMenuBar({
   onDeleteWorkbook,
   onExportCsv,
   onExportExcel,
+  onInsertColumnLeft,
+  onInsertColumnRight,
+  onInsertRowAbove,
+  onInsertRowBelow,
   onImportCsv,
   onImportExcel,
   onManualSync,
@@ -447,9 +462,11 @@ export function SpreadsheetMenuBar({
   onSortSelectionAscending,
   onSortSelectionDescending,
   onToggleFavorite,
+  onToggleFormulaBar,
   onUpdateSharingAccessRole,
   onUpdateSharingEnabled,
   onToggleGallery,
+  onToggleGridlines,
   onToggleBold,
   onToggleItalic,
   onToggleStrikethrough,
@@ -467,8 +484,13 @@ export function SpreadsheetMenuBar({
   transientStatusDetail,
   transientStatusLabel,
   underlineActive,
+  viewZoomPercent,
   workbookId,
   workbookName,
+  onZoomIn,
+  onZoomOut,
+  showFormulaBar,
+  showGridlines,
 }: SpreadsheetMenuBarProps) {
   const [isRenamingWorkbook, setIsRenamingWorkbook] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -1008,8 +1030,24 @@ export function SpreadsheetMenuBar({
             onRedo={onRedo}
             onUndo={onUndo}
           />
-          <ViewMenu />
-          <InsertMenu />
+          <ViewMenu
+            canZoomIn={viewZoomPercent < 200}
+            canZoomOut={viewZoomPercent > 50}
+            onToggleFormulaBar={onToggleFormulaBar}
+            onToggleGridlines={onToggleGridlines}
+            onZoomIn={onZoomIn}
+            onZoomOut={onZoomOut}
+            showFormulaBar={showFormulaBar}
+            showGridlines={showGridlines}
+            zoomLabel={`${viewZoomPercent}%`}
+          />
+          <InsertMenu
+            canEdit={canEdit}
+            onInsertColumnLeft={onInsertColumnLeft}
+            onInsertColumnRight={onInsertColumnRight}
+            onInsertRowAbove={onInsertRowAbove}
+            onInsertRowBelow={onInsertRowBelow}
+          />
           <FormatMenu
             activeFontFamily={activeFontFamily}
             activeFontSize={activeFontSize}

@@ -738,10 +738,12 @@ export const createSpreadsheetStoreController = (
     const snapshot = getWorkbookSnapshot(doc);
 
     const cellCount = Object.keys(snapshot.activeSheetCells).length;
-    const sampleKeys = Object.keys(snapshot.activeSheetCells).slice(0, 5);
+    const sampleCells = Object.entries(snapshot.activeSheetCells)
+      .slice(0, 8)
+      .map(([k, v]) => `${k}="${v.raw}"`);
     console.warn("[applySnapshot]", {
       cellCount,
-      sampleKeys,
+      sampleCells,
       sheetId: snapshot.activeSheetId,
       forceWorkerReset: options?.forceWorkerReset,
     });
@@ -1284,6 +1286,21 @@ export const createSpreadsheetStoreController = (
     };
 
     session.handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+      const originLabel =
+        origin === REALTIME_SYNC_ORIGIN
+          ? "REALTIME"
+          : origin === FIRESTORE_SYNC_ORIGIN
+            ? "FIRESTORE"
+            : origin === null
+              ? "LOCAL"
+              : String(origin);
+
+      console.warn("[handleDocUpdate] fired", {
+        origin: originLabel,
+        isSharedSession: session.isSharedSession,
+        updateBytes: update.length,
+      });
+
       applySnapshot(doc);
 
       if (
@@ -1298,19 +1315,40 @@ export const createSpreadsheetStoreController = (
       }
 
       const socket = moduleState.collaborationSocket;
+      const socketState = socket
+        ? socket.readyState === WebSocket.OPEN
+          ? "OPEN"
+          : socket.readyState === WebSocket.CONNECTING
+            ? "CONNECTING"
+            : socket.readyState === WebSocket.CLOSING
+              ? "CLOSING"
+              : "CLOSED"
+        : "NULL";
+
       if (
         origin === REALTIME_SYNC_ORIGIN ||
         origin === FIRESTORE_SYNC_ORIGIN ||
         !socket ||
         socket.readyState !== WebSocket.OPEN
       ) {
+        console.warn("[handleDocUpdate] skipped WS send", {
+          origin: originLabel,
+          socketState,
+        });
         return;
       }
+
+      const encoded = encodeUpdateToBase64(update);
+      console.warn("[handleDocUpdate] sending sync over WS", {
+        origin: originLabel,
+        encodedLength: encoded.length,
+        socketState,
+      });
 
       socket.send(
         JSON.stringify({
           payload: {
-            update: encodeUpdateToBase64(update),
+            update: encoded,
           },
           type: "sync",
         } satisfies CollaborationClientMessage)

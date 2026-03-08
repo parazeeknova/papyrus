@@ -62,6 +62,8 @@ export interface SpreadsheetStoreState {
   importFileName: string | null;
   importPhase: ImportPhase;
   importWorkbookFromExcel: (file: File) => Promise<void>;
+  insertColumns: (startColumn: number, columnCount: number) => Promise<void>;
+  insertRows: (startRow: number, rowCount: number) => Promise<void>;
   isRemoteSyncAuthenticated: boolean;
   lastSyncErrorMessage: string | null;
   lastSyncedAt: number | null;

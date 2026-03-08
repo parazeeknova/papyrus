@@ -27,6 +27,9 @@ const INTEGER_FORMATTER = new Intl.NumberFormat();
 const DECIMAL_FORMATTER = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 2,
 });
+const MIN_VIEW_ZOOM_PERCENT = 50;
+const MAX_VIEW_ZOOM_PERCENT = 200;
+const VIEW_ZOOM_STEP_PERCENT = 10;
 
 interface WorkbookPageClientProps {
   isSharedSession: boolean;
@@ -90,6 +93,10 @@ function WorkbookPageContent({
     importFileName,
     importPhase,
     importWorkbookFromExcel,
+    insertColumnLeft,
+    insertColumnRight,
+    insertRowAbove,
+    insertRowBelow,
     lastSyncErrorMessage,
     lastSyncedLabel,
     operationStatusLabel,
@@ -293,6 +300,9 @@ function WorkbookPageContent({
 
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isFindReplaceOpen, setIsFindReplaceOpen] = useState(false);
+  const [showFormulaBar, setShowFormulaBar] = useState(true);
+  const [showGridlines, setShowGridlines] = useState(true);
+  const [viewZoomPercent, setViewZoomPercent] = useState(100);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -382,6 +392,18 @@ function WorkbookPageContent({
         onImportExcel={(file) => {
           importWorkbookFromExcel(file).catch(() => undefined);
         }}
+        onInsertColumnLeft={() => {
+          insertColumnLeft().catch(() => undefined);
+        }}
+        onInsertColumnRight={() => {
+          insertColumnRight().catch(() => undefined);
+        }}
+        onInsertRowAbove={() => {
+          insertRowAbove().catch(() => undefined);
+        }}
+        onInsertRowBelow={() => {
+          insertRowBelow().catch(() => undefined);
+        }}
         onManualSync={() => {
           syncNow().catch(() => undefined);
         }}
@@ -424,8 +446,14 @@ function WorkbookPageContent({
         onToggleFavorite={(isFavorite) => {
           setWorkbookFavorite(isFavorite).catch(() => undefined);
         }}
+        onToggleFormulaBar={() => {
+          setShowFormulaBar((prev) => !prev);
+        }}
         onToggleGallery={() => {
           setIsGalleryOpen((prev) => !prev);
+        }}
+        onToggleGridlines={() => {
+          setShowGridlines((prev) => !prev);
         }}
         onToggleItalic={() => {
           toggleCellFormat("italic").catch(() => undefined);
@@ -445,18 +473,31 @@ function WorkbookPageContent({
         onUpdateSharingEnabled={(nextSharingEnabled) => {
           setWorkbookSharingEnabled(nextSharingEnabled).catch(() => undefined);
         }}
+        onZoomIn={() => {
+          setViewZoomPercent((prev) =>
+            Math.min(MAX_VIEW_ZOOM_PERCENT, prev + VIEW_ZOOM_STEP_PERCENT)
+          );
+        }}
+        onZoomOut={() => {
+          setViewZoomPercent((prev) =>
+            Math.max(MIN_VIEW_ZOOM_PERCENT, prev - VIEW_ZOOM_STEP_PERCENT)
+          );
+        }}
         recentWorkbooks={workbooks}
         remoteSyncStatus={remoteSyncStatus}
         remoteVersion={remoteVersion}
         saveState={saveState}
         sharingAccessRole={sharingAccessRole}
         sharingEnabled={sharingEnabled}
+        showFormulaBar={showFormulaBar}
+        showGridlines={showGridlines}
         strikethroughActive={activeSelectionFormat?.strikethrough ?? false}
         syncServerUrl={syncServerUrl}
         textTransform={activeSelectionFormat?.textTransform ?? null}
         transientStatusDetail={transientStatusDetail}
         transientStatusLabel={transientStatusLabel}
         underlineActive={activeSelectionFormat?.underline ?? false}
+        viewZoomPercent={viewZoomPercent}
         workbookId={activeWorkbook?.id ?? null}
         workbookName={activeWorkbook?.name ?? "Untitled spreadsheet"}
       />
@@ -522,21 +563,23 @@ function WorkbookPageContent({
         textTransform={activeSelectionFormat?.textTransform ?? null}
         underlineActive={activeSelectionFormat?.underline ?? false}
       />
-      <FormulaBar
-        activeCell={activeCell}
-        cellRaw={
-          editingCell?.row === activeCell?.row &&
-          editingCell?.col === activeCell?.col
-            ? editingDraft
-            : activeCellData.raw
-        }
-        disabled={!canEdit || isInitialLoad || isImporting}
-        getCellReferenceLabel={getCellReferenceLabel}
-        onCancel={stopEditing}
-        onCommit={handleFormulaCommit}
-        onValueChange={handleFormulaChange}
-        primaryColumnName={activeSheetColumns[0]?.name ?? "A"}
-      />
+      {showFormulaBar ? (
+        <FormulaBar
+          activeCell={activeCell}
+          cellRaw={
+            editingCell?.row === activeCell?.row &&
+            editingCell?.col === activeCell?.col
+              ? editingDraft
+              : activeCellData.raw
+          }
+          disabled={!canEdit || isInitialLoad || isImporting}
+          getCellReferenceLabel={getCellReferenceLabel}
+          onCancel={stopEditing}
+          onCommit={handleFormulaCommit}
+          onValueChange={handleFormulaChange}
+          primaryColumnName={activeSheetColumns[0]?.name ?? "A"}
+        />
+      ) : null}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {importPhase === "error" && importErrorMessage ? (
           <div className="border-destructive/20 border-b bg-destructive/8 px-4 py-2 text-destructive text-sm">
@@ -651,11 +694,13 @@ function WorkbookPageContent({
           }
           sheetId={visibleActiveSheetId}
           showAllRows={showAllRows}
+          showGridlines={showGridlines}
           startEditing={isInitialLoad ? () => undefined : startEditing}
           stopEditing={isInitialLoad ? () => undefined : stopEditing}
           updateEditingValue={
             isInitialLoad ? () => undefined : updateEditingValue
           }
+          zoomScale={viewZoomPercent / 100}
         />
         <SheetTabs
           activeSheetId={visibleActiveSheetId}

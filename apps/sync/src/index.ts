@@ -187,11 +187,17 @@ const app = new Elysia()
         return;
       }
 
-      applyUpdate(
-        room.doc,
-        decodeUpdate(message.payload.update),
-        peer.clientId
+      const decodedBytes = decodeUpdate(message.payload.update);
+      log.info(
+        "sync received",
+        clientId,
+        `role=${peer.accessRole}`,
+        `updateBytes=${decodedBytes.length}`,
+        `base64Length=${message.payload.update.length}`,
+        `peerCount=${room.peers.size}`
       );
+
+      applyUpdate(room.doc, decodedBytes, peer.clientId);
       broadcastSync(room, message.payload.update, peer.clientId);
     },
 
