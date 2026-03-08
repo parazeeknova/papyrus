@@ -51,6 +51,7 @@ export interface SpreadsheetStoreState {
   createWorkbook: () => Promise<void>;
   deleteColumns: (startColumn: number, columnCount: number) => Promise<void>;
   deleteRows: (startRow: number, rowCount: number) => Promise<void>;
+  deleteSheet: (sheetId: string) => Promise<boolean>;
   deleteWorkbook: () => Promise<void>;
   exportActiveSheetToCsv: () => Promise<void>;
   exportWorkbookToExcel: () => Promise<void>;

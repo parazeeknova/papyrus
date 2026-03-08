@@ -44,6 +44,7 @@ const DEFAULT_COLS = 100;
 const DEFAULT_ROWS = 100_000;
 const DEFAULT_VISIBLE_ROWS = 1000;
 const ROW_EXPANSION_STEP = 1000;
+const SELECTION_OPERATION_STATUS_VISIBILITY_DELAY_MS = 150;
 const SHEET_STATUS_VISIBILITY_DELAY_MS = 150;
 const WORKER_INIT_SYNC_DELAY_MS = 180;
 const EMPTY_CELL: CellData = { raw: "", computed: "" };
@@ -92,8 +93,31 @@ interface SelectionBounds {
   startRow: number;
 }
 
+interface SortBounds {
+  endCol: number;
+  endRow: number;
+  startCol: number;
+  startRow: number;
+}
+
 interface ClipboardPayload {
   matrix: string[][];
+}
+
+interface SheetFooterSheetSummary {
+  filledCellCount: number;
+  populatedColumnCount: number;
+  populatedRowCount: number;
+  totalColumnCount: number;
+  totalRowCount: number;
+}
+
+interface SheetFooterSelectionSummary {
+  average: number | null;
+  filledCellCount: number;
+  numericCellCount: number;
+  selectedCellCount: number;
+  sum: number | null;
 }
 
 interface UseSpreadsheetOptions {
@@ -165,6 +189,57 @@ function getRequiredVisibleRowCount(
   }
 
   return Math.max(DEFAULT_VISIBLE_ROWS, largestRowIndex + 1);
+}
+
+function getUsedSortBounds(
+  cells: Record<string, { raw: string }>,
+  formats: Record<string, CellFormat>,
+  columnCount: number,
+  minimumColumnIndex = 0
+): SortBounds | null {
+  let maxCol = Math.max(0, minimumColumnIndex);
+  let maxRow = -1;
+  let minCol = minimumColumnIndex;
+  let minRow = Number.POSITIVE_INFINITY;
+
+  for (const [cellKey, cell] of Object.entries(cells)) {
+    if (cell.raw === "") {
+      continue;
+    }
+
+    const position = parseStoredCellId(cellKey);
+    if (!position) {
+      continue;
+    }
+
+    maxCol = Math.max(maxCol, position.col);
+    maxRow = Math.max(maxRow, position.row);
+    minCol = Math.min(minCol, position.col);
+    minRow = Math.min(minRow, position.row);
+  }
+
+  for (const cellKey of Object.keys(formats)) {
+    const position = parseStoredCellId(cellKey);
+    if (!position) {
+      continue;
+    }
+
+    maxCol = Math.max(maxCol, position.col);
+    maxRow = Math.max(maxRow, position.row);
+    minCol = Math.min(minCol, position.col);
+    minRow = Math.min(minRow, position.row);
+  }
+
+  if (maxRow < 0 || !Number.isFinite(minRow)) {
+    return null;
+  }
+
+  return {
+    endCol: Math.min(columnCount - 1, maxCol),
+    endRow: maxRow,
+    startCol: Math.max(0, Math.min(minCol, minimumColumnIndex)),
+    startRow: Math.max(0, minRow),
+  };
 }
 
 function serializeClipboardMatrix(matrix: string[][]): string {
@@ -320,6 +395,16 @@ function compareCellValues(left: string, right: string): number {
   return SORT_VALUE_COLLATOR.compare(leftTrimmed, rightTrimmed);
 }
 
+function parseNumericCellValue(value: string): number | null {
+  const trimmedValue = value.trim();
+  if (trimmedValue.length === 0) {
+    return null;
+  }
+
+  const numericValue = Number(trimmedValue);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
 const applySpreadsheetPatch = (
   prev: Record<string, CellData>,
   patch: SpreadsheetPatch
@@ -379,6 +464,7 @@ export function useSpreadsheet({
   const createWorkbook = useSpreadsheetStore((state) => state.createWorkbook);
   const deleteColumns = useSpreadsheetStore((state) => state.deleteColumns);
   const deleteRows = useSpreadsheetStore((state) => state.deleteRows);
+  const deleteSheet = useSpreadsheetStore((state) => state.deleteSheet);
   const deleteWorkbook = useSpreadsheetStore((state) => state.deleteWorkbook);
   const exportActiveSheetToCsv = useSpreadsheetStore(
     (state) => state.exportActiveSheetToCsv
@@ -466,6 +552,10 @@ export function useSpreadsheet({
   const [computedCells, setComputedCells] = useState<Record<string, CellData>>(
     {}
   );
+  const [pendingSelectionOperationLabel, setPendingSelectionOperationLabel] =
+    useState<string | null>(null);
+  const [showSelectionOperationStatus, setShowSelectionOperationStatus] =
+    useState(false);
   const [isSheetComputing, setIsSheetComputing] = useState(false);
   const [showSheetLoadingStatus, setShowSheetLoadingStatus] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -542,10 +632,26 @@ export function useSpreadsheet({
     ) => {
       if (e.data.type === "READY") {
         if (e.data.payload.requestId !== activeWorkerRequestIdRef.current) {
+          console.warn("[worker-READY] Stale requestId, ignoring:", {
+            received: e.data.payload.requestId,
+            expected: activeWorkerRequestIdRef.current,
+          });
           return;
         }
 
-        setComputedCells(applySpreadsheetPatch({}, e.data.payload.patch));
+        const nextCells = applySpreadsheetPatch({}, e.data.payload.patch);
+        const cellCount = Object.keys(nextCells).length;
+        const sampleCells = Object.entries(nextCells)
+          .slice(0, 5)
+          .map(([k, v]) => `${k}=${v.computed}`);
+        console.warn("[worker-READY] Setting computedCells:", {
+          cellCount,
+          sampleCells,
+          deletions: e.data.payload.patch.deletions.length,
+          updates: Object.keys(e.data.payload.patch.updates).length,
+        });
+
+        setComputedCells(nextCells);
         setIsSheetComputing(false);
         visibleWorkerInitInFlightRef.current = false;
         return;
@@ -689,6 +795,17 @@ export function useSpreadsheet({
 
   useEffect(() => {
     latestActiveSheetCellsRef.current = activeSheetCells;
+
+    const cellCount = Object.keys(activeSheetCells).length;
+    if (cellCount > 0) {
+      const sampleCells = Object.entries(activeSheetCells)
+        .slice(0, 5)
+        .map(([k, v]) => `${k}=${v.raw}`);
+      console.warn("[activeSheetCells-changed] Store updated:", {
+        cellCount,
+        sampleCells,
+      });
+    }
   }, [activeSheetCells]);
 
   useEffect(() => {
@@ -763,6 +880,21 @@ export function useSpreadsheet({
       });
     }, WORKER_INIT_SYNC_DELAY_MS);
   }, [activeSheetCells]);
+
+  useEffect(() => {
+    if (!pendingSelectionOperationLabel) {
+      setShowSelectionOperationStatus(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowSelectionOperationStatus(true);
+    }, SELECTION_OPERATION_STATUS_VISIBILITY_DELAY_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [pendingSelectionOperationLabel]);
 
   useEffect(() => {
     if (!isSheetComputing) {
@@ -866,12 +998,107 @@ export function useSpreadsheet({
     };
   }, [activeCell, normalizedSelection]);
 
+  const runSelectionOperation = useCallback(
+    async <T>(label: string, operation: () => Promise<T>): Promise<T> => {
+      setPendingSelectionOperationLabel(label);
+
+      try {
+        return await operation();
+      } finally {
+        setPendingSelectionOperationLabel(null);
+      }
+    },
+    []
+  );
+
   const getCellFormat = useCallback(
     (row: number, col: number): CellFormat => {
       return activeSheetFormats[cellId(row, col)] ?? EMPTY_CELL_FORMAT;
     },
     [activeSheetFormats]
   );
+
+  const sheetFooterSheetSummary = useMemo<SheetFooterSheetSummary>(() => {
+    const populatedRows = new Set<number>();
+    const populatedColumns = new Set<number>();
+
+    for (const [storedCellKey, cellValue] of Object.entries(activeSheetCells)) {
+      if (cellValue.raw.length === 0) {
+        continue;
+      }
+
+      const position = parseStoredCellId(storedCellKey);
+      if (!position) {
+        continue;
+      }
+
+      populatedRows.add(position.row);
+      populatedColumns.add(position.col);
+    }
+
+    return {
+      filledCellCount: Object.keys(activeSheetCells).length,
+      populatedColumnCount: populatedColumns.size,
+      populatedRowCount: populatedRows.size,
+      totalColumnCount: columnCount,
+      totalRowCount,
+    };
+  }, [activeSheetCells, columnCount, totalRowCount]);
+
+  const sheetFooterSelectionSummary =
+    useMemo<SheetFooterSelectionSummary | null>(() => {
+      const bounds = getSelectionBounds();
+      if (!bounds) {
+        return null;
+      }
+
+      const selectedCellCount =
+        (bounds.endRow - bounds.startRow + 1) *
+        (bounds.endCol - bounds.startCol + 1);
+
+      let filledCellCount = 0;
+      let numericCellCount = 0;
+      let sum = 0;
+
+      for (const cellKey of Object.keys(activeSheetCells)) {
+        const position = parseStoredCellId(cellKey);
+        if (!position) {
+          continue;
+        }
+
+        if (
+          position.row < bounds.startRow ||
+          position.row > bounds.endRow ||
+          position.col < bounds.startCol ||
+          position.col > bounds.endCol
+        ) {
+          continue;
+        }
+
+        const cellValue = getCellData(position.row, position.col);
+        if (cellValue.raw.length === 0 && cellValue.computed.length === 0) {
+          continue;
+        }
+
+        filledCellCount += 1;
+
+        const numericValue = parseNumericCellValue(cellValue.computed);
+        if (numericValue === null) {
+          continue;
+        }
+
+        numericCellCount += 1;
+        sum += numericValue;
+      }
+
+      return {
+        average: numericCellCount > 0 ? sum / numericCellCount : null,
+        filledCellCount,
+        numericCellCount,
+        selectedCellCount,
+        sum: numericCellCount > 0 ? sum : null,
+      };
+    }, [activeSheetCells, getCellData, getSelectionBounds]);
 
   const getSelectionCellKeys = useCallback((): string[] => {
     const bounds = getSelectionBounds();
@@ -926,10 +1153,18 @@ export function useSpreadsheet({
         })
       );
 
-      await setPersistedCellFormats(nextFormats);
-      return true;
+      return await runSelectionOperation("Applying format", async () => {
+        await setPersistedCellFormats(nextFormats);
+        return true;
+      });
     },
-    [activeSheetFormats, canEdit, getSelectionCellKeys, setPersistedCellFormats]
+    [
+      activeSheetFormats,
+      canEdit,
+      getSelectionCellKeys,
+      runSelectionOperation,
+      setPersistedCellFormats,
+    ]
   );
 
   const toggleCellFormat = useCallback(
@@ -1152,21 +1387,12 @@ export function useSpreadsheet({
     return activeCell.col >= bounds.startCol && activeCell.col <= bounds.endCol;
   }, [activeCell, canEdit, getSelectionBounds]);
 
-  const sortSelectionByActiveColumn = useCallback(
-    async (direction: "asc" | "desc"): Promise<boolean> => {
-      const bounds = getSelectionBounds();
-      if (!(canEdit && activeCell && bounds)) {
-        return false;
-      }
-
-      if (bounds.mode === "columns" || bounds.startRow === bounds.endRow) {
-        return false;
-      }
-
-      if (activeCell.col < bounds.startCol || activeCell.col > bounds.endCol) {
-        return false;
-      }
-
+  const sortRowsWithinBounds = useCallback(
+    async (
+      bounds: SortBounds,
+      sortColumnIndex: number,
+      direction: "asc" | "desc"
+    ): Promise<boolean> => {
       const rowSnapshots = Array.from(
         { length: bounds.endRow - bounds.startRow + 1 },
         (_unused, rowOffset) => {
@@ -1174,7 +1400,7 @@ export function useSpreadsheet({
 
           return {
             rowOffset,
-            sortValue: getCellData(sourceRow, activeCell.col).computed,
+            sortValue: getCellData(sourceRow, sortColumnIndex).computed,
             values: Array.from(
               { length: bounds.endCol - bounds.startCol + 1 },
               (_unusedCell, colOffset) => {
@@ -1218,17 +1444,67 @@ export function useSpreadsheet({
         }
       }
 
-      await setPersistedCellValuesAndFormats(nextValues, nextFormats);
-      return true;
+      return await runSelectionOperation("Sorting selection", async () => {
+        await setPersistedCellValuesAndFormats(nextValues, nextFormats);
+        return true;
+      });
     },
     [
-      activeCell,
       activeSheetFormats,
-      canEdit,
       getCellData,
       getRawCellValue,
-      getSelectionBounds,
+      runSelectionOperation,
       setPersistedCellValuesAndFormats,
+    ]
+  );
+
+  const sortSelectionByActiveColumn = useCallback(
+    async (direction: "asc" | "desc"): Promise<boolean> => {
+      const bounds = getSelectionBounds();
+      if (!(canEdit && activeCell && bounds)) {
+        return false;
+      }
+
+      if (bounds.mode === "columns" || bounds.startRow === bounds.endRow) {
+        return false;
+      }
+
+      if (activeCell.col < bounds.startCol || activeCell.col > bounds.endCol) {
+        return false;
+      }
+
+      return await sortRowsWithinBounds(bounds, activeCell.col, direction);
+    },
+    [activeCell, canEdit, getSelectionBounds, sortRowsWithinBounds]
+  );
+
+  const sortSheetByColumn = useCallback(
+    async (
+      columnIndex: number,
+      direction: "asc" | "desc"
+    ): Promise<boolean> => {
+      if (!canEdit) {
+        return false;
+      }
+
+      const bounds = getUsedSortBounds(
+        activeSheetCells,
+        activeSheetFormats,
+        columnCount,
+        columnIndex
+      );
+      if (!bounds || bounds.startRow === bounds.endRow) {
+        return false;
+      }
+
+      return await sortRowsWithinBounds(bounds, columnIndex, direction);
+    },
+    [
+      activeSheetCells,
+      activeSheetFormats,
+      canEdit,
+      columnCount,
+      sortRowsWithinBounds,
     ]
   );
 
@@ -1642,6 +1918,8 @@ export function useSpreadsheet({
     canUndo,
     canEdit,
     canSortSelection,
+    sheetFooterSelectionSummary,
+    sheetFooterSheetSummary,
     createSheet: async () => {
       if (!canEdit) {
         return;
@@ -1656,6 +1934,13 @@ export function useSpreadsheet({
     cutSelection,
     deleteSelectedColumns,
     deleteSelectedRows,
+    deleteSheet: async (sheetId: string) => {
+      if (!canEdit) {
+        return false;
+      }
+
+      return await deleteSheet(sheetId);
+    },
     deleteWorkbook,
     exportCsv: exportActiveSheetToCsv,
     exportExcel: exportWorkbookToExcel,
@@ -1686,6 +1971,9 @@ export function useSpreadsheet({
     isSheetComputing,
     lastSyncErrorMessage,
     lastSyncedLabel,
+    operationStatusLabel: showSelectionOperationStatus
+      ? pendingSelectionOperationLabel
+      : null,
     findNext,
     openWorkbook,
     pasteSelection,
@@ -1743,6 +2031,7 @@ export function useSpreadsheet({
     sharingEnabled: activeWorkbook?.sharingEnabled ?? false,
     sheets,
     sortSelectionByActiveColumn,
+    sortSheetByColumn,
     syncNow,
     setSelectionRange,
     setCellFontFamily,

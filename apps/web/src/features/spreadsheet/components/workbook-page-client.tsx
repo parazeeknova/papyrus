@@ -23,6 +23,10 @@ const INITIAL_LOADING_SHEET: SheetMeta = {
   updatedAt: "",
 };
 const BLANK_CELL = { raw: "", computed: "" };
+const INTEGER_FORMATTER = new Intl.NumberFormat();
+const DECIMAL_FORMATTER = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 2,
+});
 
 interface WorkbookPageClientProps {
   isSharedSession: boolean;
@@ -71,6 +75,7 @@ function WorkbookPageContent({
     cutSelection,
     deleteSelectedColumns,
     deleteSelectedRows,
+    deleteSheet,
     deleteWorkbook,
     exportCsv,
     exportExcel,
@@ -87,6 +92,7 @@ function WorkbookPageContent({
     importWorkbookFromExcel,
     lastSyncErrorMessage,
     lastSyncedLabel,
+    operationStatusLabel,
     sheetLoadStatusLabel,
     pasteSelection,
     redo,
@@ -115,6 +121,8 @@ function WorkbookPageContent({
     setSelectionRange,
     setCellTextColor,
     setCellTextTransform,
+    sheetFooterSelectionSummary,
+    sheetFooterSheetSummary,
     showAllRows,
     sortSelectionByActiveColumn,
     syncNow,
@@ -124,6 +132,7 @@ function WorkbookPageContent({
     commitEditing,
     setCellValue,
     selectCell,
+    sortSheetByColumn,
     startEditing,
     stopEditing,
     updateEditingValue,
@@ -180,8 +189,83 @@ function WorkbookPageContent({
     : activeSheetId;
   const getLoadingCellData = useCallback(() => BLANK_CELL, []);
   const navigateWhileLoading = useCallback(() => null, []);
-  const transientStatusLabel = importPhaseLabel ?? sheetLoadStatusLabel;
+  const transientStatusLabel =
+    operationStatusLabel ?? importPhaseLabel ?? sheetLoadStatusLabel;
   const transientStatusDetail = importFileName ?? activeSheetName;
+  const sheetFooterMetrics = useMemo(() => {
+    if (isInitialLoad) {
+      return [];
+    }
+
+    const metrics = [
+      {
+        label: "Rows",
+        value: INTEGER_FORMATTER.format(sheetFooterSheetSummary.totalRowCount),
+      },
+      {
+        label: "Cols",
+        value: INTEGER_FORMATTER.format(
+          sheetFooterSheetSummary.totalColumnCount
+        ),
+      },
+      {
+        label: "Filled",
+        value: INTEGER_FORMATTER.format(
+          sheetFooterSheetSummary.filledCellCount
+        ),
+      },
+      {
+        label: "Used rows",
+        value: INTEGER_FORMATTER.format(
+          sheetFooterSheetSummary.populatedRowCount
+        ),
+      },
+      {
+        label: "Used cols",
+        value: INTEGER_FORMATTER.format(
+          sheetFooterSheetSummary.populatedColumnCount
+        ),
+      },
+    ];
+
+    if (!sheetFooterSelectionSummary) {
+      return metrics;
+    }
+
+    metrics.push({
+      label: "Selected",
+      value: INTEGER_FORMATTER.format(
+        sheetFooterSelectionSummary.selectedCellCount
+      ),
+    });
+    metrics.push({
+      label: "In selection",
+      value: INTEGER_FORMATTER.format(
+        sheetFooterSelectionSummary.filledCellCount
+      ),
+    });
+
+    if (sheetFooterSelectionSummary.numericCellCount > 0) {
+      metrics.push({
+        label: "Numeric",
+        value: INTEGER_FORMATTER.format(
+          sheetFooterSelectionSummary.numericCellCount
+        ),
+      });
+      metrics.push({
+        label: "Sum",
+        value: DECIMAL_FORMATTER.format(sheetFooterSelectionSummary.sum ?? 0),
+      });
+      metrics.push({
+        label: "Avg",
+        value: DECIMAL_FORMATTER.format(
+          sheetFooterSelectionSummary.average ?? 0
+        ),
+      });
+    }
+
+    return metrics;
+  }, [isInitialLoad, sheetFooterSelectionSummary, sheetFooterSheetSummary]);
 
   const handleFormulaChange = useCallback(
     (value: string) => {
@@ -530,6 +614,30 @@ function WorkbookPageContent({
           onResizeRow={(rowIndex, height) => {
             resizeRow(rowIndex, height).catch(() => undefined);
           }}
+          onSortHeaderColumnAscending={(columnIndex) => {
+            sortSheetByColumn(columnIndex, "asc").catch(() => undefined);
+          }}
+          onSortHeaderColumnDescending={(columnIndex) => {
+            sortSheetByColumn(columnIndex, "desc").catch(() => undefined);
+          }}
+          onSortSelectionAscending={() => {
+            sortSelectionByActiveColumn("asc").catch(() => undefined);
+          }}
+          onSortSelectionDescending={() => {
+            sortSelectionByActiveColumn("desc").catch(() => undefined);
+          }}
+          onToggleBold={() => {
+            toggleCellFormat("bold").catch(() => undefined);
+          }}
+          onToggleItalic={() => {
+            toggleCellFormat("italic").catch(() => undefined);
+          }}
+          onToggleStrikethrough={() => {
+            toggleCellFormat("strikethrough").catch(() => undefined);
+          }}
+          onToggleUnderline={() => {
+            toggleCellFormat("underline").catch(() => undefined);
+          }}
           onUndo={() => {
             undo().catch(() => undefined);
           }}
@@ -552,9 +660,14 @@ function WorkbookPageContent({
         <SheetTabs
           activeSheetId={visibleActiveSheetId}
           disableCreation={!canEdit}
+          disableDeletion={!canEdit || visibleSheets.length <= 1}
           disabled={hydrationState !== "ready" || isImporting}
+          footerMetrics={sheetFooterMetrics}
           onAddSheet={() => {
             createSheet().catch(() => undefined);
+          }}
+          onDeleteSheet={(sheetId) => {
+            deleteSheet(sheetId).catch(() => undefined);
           }}
           onSelectSheet={(sheetId) => {
             setActiveSheet(sheetId).catch(() => undefined);

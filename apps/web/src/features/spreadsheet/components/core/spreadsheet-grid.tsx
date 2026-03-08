@@ -62,12 +62,21 @@ interface GridItem {
   start: number;
 }
 
-interface ContextMenuState {
-  col: number;
-  row: number;
-  x: number;
-  y: number;
-}
+type ContextMenuState =
+  | {
+      col: number;
+      kind: "cell";
+      row: number;
+      x: number;
+      y: number;
+    }
+  | {
+      axis: "column" | "row";
+      index: number;
+      kind: "header";
+      x: number;
+      y: number;
+    };
 
 interface ResizeState {
   index: number;
@@ -283,6 +292,14 @@ interface SpreadsheetGridProps {
   onReorderRow: (sourceRowIndex: number, targetRowIndex: number) => void;
   onResizeColumn: (columnIndex: number, width: number) => void;
   onResizeRow: (rowIndex: number, height: number) => void;
+  onSortHeaderColumnAscending: (columnIndex: number) => void;
+  onSortHeaderColumnDescending: (columnIndex: number) => void;
+  onSortSelectionAscending: () => void;
+  onSortSelectionDescending: () => void;
+  onToggleBold: () => void;
+  onToggleItalic: () => void;
+  onToggleStrikethrough: () => void;
+  onToggleUnderline: () => void;
   onUndo: () => void;
   rowCount: number;
   rowHeights: Record<string, number>;
@@ -385,6 +402,14 @@ export function SpreadsheetGrid({
   onResizeColumn,
   onResizeRow,
   onRedo,
+  onSortHeaderColumnAscending,
+  onSortHeaderColumnDescending,
+  onSortSelectionAscending,
+  onSortSelectionDescending,
+  onToggleBold,
+  onToggleItalic,
+  onToggleStrikethrough,
+  onToggleUnderline,
   onUndo,
   sheetId,
   rowHeights,
@@ -1167,12 +1192,48 @@ export function SpreadsheetGrid({
       selectCell(pos);
       setContextMenu({
         col: pos.col,
+        kind: "cell",
         row: pos.row,
         x: event.clientX,
         y: event.clientY,
       });
     },
     [commitEditing, editingCell, selectCell]
+  );
+
+  const openHeaderContextMenu = useCallback(
+    (
+      axis: "column" | "row",
+      index: number,
+      event: ReactMouseEvent<HTMLButtonElement>
+    ) => {
+      if (editingCell) {
+        commitEditing();
+      }
+
+      if (axis === "column") {
+        setSelectionRange(
+          { row: 0, col: index },
+          { row: rowCount - 1, col: index },
+          "columns"
+        );
+      } else {
+        setSelectionRange(
+          { row: index, col: 0 },
+          { row: index, col: columnCount - 1 },
+          "rows"
+        );
+      }
+
+      setContextMenu({
+        axis,
+        index,
+        kind: "header",
+        x: event.clientX,
+        y: event.clientY,
+      });
+    },
+    [columnCount, commitEditing, editingCell, rowCount, setSelectionRange]
   );
 
   const beginColumnRename = useCallback(
@@ -1497,6 +1558,10 @@ export function SpreadsheetGrid({
                     <button
                       className="flex h-full w-full items-center justify-center px-4"
                       disabled={disabled}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        openHeaderContextMenu("column", vc.index, event);
+                      }}
                       onDoubleClick={() => {
                         beginColumnRename(vc.index);
                       }}
@@ -1600,6 +1665,10 @@ export function SpreadsheetGrid({
                 <button
                   className="flex h-full w-full select-none items-center justify-center py-2 pr-2 pl-4"
                   disabled={disabled}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    openHeaderContextMenu("row", row, event);
+                  }}
                   onMouseDown={(event) => {
                     event.preventDefault();
                     beginSelectionDrag({ row, col: 0 }, "rows");
@@ -1763,7 +1832,7 @@ export function SpreadsheetGrid({
           </div>
         ))}
 
-        {contextMenu ? (
+        {contextMenu?.kind === "cell" ? (
           <div
             aria-label="Cell actions"
             className="fixed z-50 min-w-40 bg-[#30302E] p-0.5 text-[11px] text-white shadow-md ring-1 ring-white/10"
@@ -1898,6 +1967,104 @@ export function SpreadsheetGrid({
             >
               <MagnifyingGlassIcon className="size-3.5" weight="bold" />
               Find and replace
+            </button>
+          </div>
+        ) : null}
+
+        {contextMenu?.kind === "header" ? (
+          <div
+            aria-label={`${contextMenu.axis === "column" ? "Column" : "Row"} actions`}
+            className="fixed z-50 min-w-44 bg-[#30302E] p-0.5 text-[11px] text-white shadow-md ring-1 ring-white/10"
+            onContextMenu={(event) => {
+              event.preventDefault();
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            role="menu"
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+            }}
+          >
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
+              onClick={() => {
+                onToggleBold();
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              <span className="w-4 text-center font-bold">B</span>
+              Bold
+            </button>
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
+              onClick={() => {
+                onToggleItalic();
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              <span className="w-4 text-center italic">I</span>
+              Italic
+            </button>
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
+              onClick={() => {
+                onToggleUnderline();
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              <span className="w-4 text-center underline">U</span>
+              Underline
+            </button>
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
+              onClick={() => {
+                onToggleStrikethrough();
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              <span className="w-4 text-center line-through">S</span>
+              Strikethrough
+            </button>
+            <div className="my-0.5 h-px bg-white/10" />
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
+              onClick={() => {
+                if (contextMenu.axis === "column") {
+                  onSortHeaderColumnAscending(contextMenu.index);
+                } else {
+                  onSortSelectionAscending();
+                }
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              Sort A {">"} Z
+            </button>
+            <button
+              className="flex h-7 w-full items-center gap-2 px-2 text-left text-white transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:text-white/40"
+              disabled={!canEdit}
+              onClick={() => {
+                if (contextMenu.axis === "column") {
+                  onSortHeaderColumnDescending(contextMenu.index);
+                } else {
+                  onSortSelectionDescending();
+                }
+                setContextMenu(null);
+              }}
+              type="button"
+            >
+              Sort Z {">"} A
             </button>
           </div>
         ) : null}

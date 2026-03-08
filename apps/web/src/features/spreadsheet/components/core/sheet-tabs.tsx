@@ -1,14 +1,33 @@
 "use client";
 
 import type { SheetMeta } from "@papyrus/core/workbook-types";
-import { CaretLeftIcon, CaretRightIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  CaretLeftIcon,
+  CaretRightIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { Button } from "@/web/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/web/components/ui/context-menu";
+
+interface SheetTabFooterMetric {
+  label: string;
+  value: string;
+}
 
 interface SheetTabsProps {
   activeSheetId: string | null;
   disableCreation?: boolean;
+  disableDeletion?: boolean;
   disabled?: boolean;
+  footerMetrics: SheetTabFooterMetric[];
   onAddSheet: () => void;
+  onDeleteSheet: (sheetId: string) => void;
   onSelectSheet: (sheetId: string) => void;
   sheets: SheetMeta[];
 }
@@ -17,7 +36,10 @@ export function SheetTabs({
   activeSheetId,
   disabled = false,
   disableCreation = false,
+  disableDeletion = false,
+  footerMetrics,
   onAddSheet,
+  onDeleteSheet,
   onSelectSheet,
   sheets,
 }: SheetTabsProps) {
@@ -78,29 +100,62 @@ export function SheetTabs({
 
       <div className="ml-1 flex items-center gap-0.5">
         {sheets.map((sheet) => (
-          <Button
-            className={
-              sheet.id === activeSheetId
-                ? "h-6 rounded-t-sm border-primary border-b-2 bg-accent px-3 font-medium text-xs"
-                : "h-6 rounded-t-sm border-transparent border-b-2 px-3 text-xs"
-            }
-            disabled={disabled}
-            key={sheet.id}
-            onClick={() => {
-              onSelectSheet(sheet.id);
-            }}
-            size="xs"
-            variant="ghost"
-          >
-            {sheet.name}
-          </Button>
+          <ContextMenu key={sheet.id}>
+            <ContextMenuTrigger asChild>
+              <Button
+                className={
+                  sheet.id === activeSheetId
+                    ? "h-6 rounded-t-sm border-primary border-b-2 bg-accent px-3 font-medium text-xs"
+                    : "h-6 rounded-t-sm border-transparent border-b-2 px-3 text-xs"
+                }
+                disabled={disabled}
+                onClick={() => {
+                  onSelectSheet(sheet.id);
+                }}
+                onContextMenu={() => {
+                  if (!disabled && sheet.id !== activeSheetId) {
+                    onSelectSheet(sheet.id);
+                  }
+                }}
+                size="xs"
+                variant="ghost"
+              >
+                {sheet.name}
+              </Button>
+            </ContextMenuTrigger>
+            <ContextMenuContent className="w-40">
+              <ContextMenuItem
+                disabled={disabled || disableCreation}
+                onSelect={() => {
+                  onAddSheet();
+                }}
+              >
+                <PlusIcon weight="bold" />
+                Add sheet
+              </ContextMenuItem>
+              <ContextMenuItem
+                disabled={disabled || disableDeletion}
+                onSelect={() => {
+                  onDeleteSheet(sheet.id);
+                }}
+                variant="destructive"
+              >
+                <TrashIcon weight="bold" />
+                Delete sheet
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         ))}
       </div>
 
-      <div className="ml-auto flex items-center gap-2 pr-2 text-muted-foreground text-xs">
-        <span>Sum: 0</span>
-        <span>Average: 0</span>
-        <span>Count: 0</span>
+      <div className="ml-auto max-w-[55%] overflow-x-auto pr-2">
+        <div className="flex min-w-max items-center gap-3 whitespace-nowrap text-muted-foreground text-xs">
+          {footerMetrics.map((metric) => (
+            <span key={metric.label}>
+              {metric.label}: {metric.value}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );

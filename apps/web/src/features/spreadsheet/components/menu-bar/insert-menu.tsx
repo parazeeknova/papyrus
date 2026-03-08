@@ -20,7 +20,6 @@ export function InsertMenu() {
         <MenubarItem>Column right</MenubarItem>
         <MenubarSeparator />
         <MenubarItem>Function</MenubarItem>
-        <MenubarItem>Chart</MenubarItem>
       </MenubarContent>
     </MenubarMenu>
   );

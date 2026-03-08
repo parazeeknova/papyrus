@@ -2,10 +2,13 @@
 
 import type { CellTextTransform } from "@papyrus/core/workbook-types";
 import {
-  TextAaIcon,
+  PaletteIcon,
+  RulerIcon,
   TextBolderIcon,
+  TextboxIcon,
   TextItalicIcon,
   TextStrikethroughIcon,
+  TextTIcon,
   TextUnderlineIcon,
 } from "@phosphor-icons/react";
 import {
@@ -68,12 +71,15 @@ export function FormatMenu({
   textTransform,
   underlineActive,
 }: FormatMenuProps) {
+  const menuItemClassName = "flex min-w-44 items-center gap-2";
+
   return (
     <MenubarMenu>
       <MenubarTrigger>Format</MenubarTrigger>
       <MenubarContent>
         <MenubarCheckboxItem
           checked={boldActive}
+          className={menuItemClassName}
           disabled={!canEdit}
           onClick={onToggleBold}
         >
@@ -82,6 +88,7 @@ export function FormatMenu({
         </MenubarCheckboxItem>
         <MenubarCheckboxItem
           checked={italicActive}
+          className={menuItemClassName}
           disabled={!canEdit}
           onClick={onToggleItalic}
         >
@@ -90,6 +97,7 @@ export function FormatMenu({
         </MenubarCheckboxItem>
         <MenubarCheckboxItem
           checked={underlineActive}
+          className={menuItemClassName}
           disabled={!canEdit}
           onClick={onToggleUnderline}
         >
@@ -98,6 +106,7 @@ export function FormatMenu({
         </MenubarCheckboxItem>
         <MenubarCheckboxItem
           checked={strikethroughActive}
+          className={menuItemClassName}
           disabled={!canEdit}
           onClick={onToggleStrikethrough}
         >
@@ -106,8 +115,8 @@ export function FormatMenu({
         </MenubarCheckboxItem>
         <MenubarSeparator />
         <MenubarSub>
-          <MenubarSubTrigger disabled={!canEdit}>
-            <TextAaIcon weight="bold" />
+          <MenubarSubTrigger className={menuItemClassName} disabled={!canEdit}>
+            <TextTIcon weight="bold" />
             Font family
           </MenubarSubTrigger>
           <MenubarSubContent>
@@ -124,8 +133,8 @@ export function FormatMenu({
           </MenubarSubContent>
         </MenubarSub>
         <MenubarSub>
-          <MenubarSubTrigger disabled={!canEdit}>
-            <TextAaIcon weight="bold" />
+          <MenubarSubTrigger className={menuItemClassName} disabled={!canEdit}>
+            <RulerIcon weight="bold" />
             Font size
           </MenubarSubTrigger>
           <MenubarSubContent>
@@ -144,8 +153,8 @@ export function FormatMenu({
           </MenubarSubContent>
         </MenubarSub>
         <MenubarSub>
-          <MenubarSubTrigger disabled={!canEdit}>
-            <TextAaIcon weight="bold" />
+          <MenubarSubTrigger className={menuItemClassName} disabled={!canEdit}>
+            <TextboxIcon weight="bold" />
             Text case
           </MenubarSubTrigger>
           <MenubarSubContent>
@@ -164,8 +173,8 @@ export function FormatMenu({
           </MenubarSubContent>
         </MenubarSub>
         <MenubarSub>
-          <MenubarSubTrigger disabled={!canEdit}>
-            <TextAaIcon weight="bold" />
+          <MenubarSubTrigger className={menuItemClassName} disabled={!canEdit}>
+            <PaletteIcon weight="bold" />
             Text color
           </MenubarSubTrigger>
           <MenubarSubContent>

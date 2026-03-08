@@ -737,6 +737,15 @@ export const createSpreadsheetStoreController = (
   ): void => {
     const snapshot = getWorkbookSnapshot(doc);
 
+    const cellCount = Object.keys(snapshot.activeSheetCells).length;
+    const sampleKeys = Object.keys(snapshot.activeSheetCells).slice(0, 5);
+    console.warn("[applySnapshot]", {
+      cellCount,
+      sampleKeys,
+      sheetId: snapshot.activeSheetId,
+      forceWorkerReset: options?.forceWorkerReset,
+    });
+
     set((state) => {
       const persistedWorkbookMeta = state.workbooks.find(
         (workbook) => workbook.id === snapshot.workbook.id
@@ -1050,7 +1059,20 @@ export const createSpreadsheetStoreController = (
         decodeBase64ToUpdate(message.payload.update),
         REALTIME_SYNC_ORIGIN
       );
-      applySnapshot(moduleState.activeWorkbookSession.doc);
+
+      // Diagnostic: verify Yjs doc state after applying sync update
+      const postSyncSnapshot = getWorkbookSnapshot(
+        moduleState.activeWorkbookSession.doc
+      );
+      const postSyncCells = postSyncSnapshot.activeSheetCells;
+      const postSyncCellCount = Object.keys(postSyncCells).length;
+      console.warn("[sync-received] Yjs doc after applyUpdate:", {
+        cellCount: postSyncCellCount,
+        sampleCells: Object.entries(postSyncCells)
+          .slice(0, 5)
+          .map(([k, v]) => `${k}=${v.raw}`),
+        sheetId: postSyncSnapshot.activeSheetId,
+      });
     });
 
     socket.addEventListener("close", (event) => {
@@ -1264,7 +1286,13 @@ export const createSpreadsheetStoreController = (
     session.handleDocUpdate = (update: Uint8Array, origin: unknown) => {
       applySnapshot(doc);
 
-      if (!(session.isSharedSession || origin === FIRESTORE_SYNC_ORIGIN)) {
+      if (
+        !(
+          session.isSharedSession ||
+          origin === FIRESTORE_SYNC_ORIGIN ||
+          origin === REALTIME_SYNC_ORIGIN
+        )
+      ) {
         session.dirty = true;
         scheduleRemoteWorkbookSync(session);
       }
@@ -1272,6 +1300,7 @@ export const createSpreadsheetStoreController = (
       const socket = moduleState.collaborationSocket;
       if (
         origin === REALTIME_SYNC_ORIGIN ||
+        origin === FIRESTORE_SYNC_ORIGIN ||
         !socket ||
         socket.readyState !== WebSocket.OPEN
       ) {

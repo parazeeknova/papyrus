@@ -3,6 +3,7 @@
 import type { CollaborationAccessRole } from "@papyrus/core/collaboration-types";
 import {
   createSheet,
+  deleteSheet as deleteSheetInDoc,
   getWorkbookMeta,
   renameSheetColumn,
   renameWorkbook as renameWorkbookInDoc,
@@ -46,6 +47,7 @@ type EditingSliceState = Pick<
   | "createSheet"
   | "deleteColumns"
   | "deleteRows"
+  | "deleteSheet"
   | "redo"
   | "renameColumn"
   | "resizeColumn"
@@ -372,6 +374,29 @@ export const createEditingSlice = (
         nextRowHeights
       );
       await controller.persistActiveWorkbookMeta();
+    },
+    deleteSheet: async (sheetId) => {
+      if (controller.isViewerAccess()) {
+        return false;
+      }
+
+      const activeWorkbookSession = controller.getActiveWorkbookSession();
+      if (!activeWorkbookSession || get().sheets.length <= 1) {
+        return false;
+      }
+
+      set({ saveState: "saving" });
+      const nextActiveSheetId = deleteSheetInDoc(
+        activeWorkbookSession.doc,
+        sheetId
+      );
+      if (!nextActiveSheetId) {
+        return false;
+      }
+
+      controller.syncUndoManager(activeWorkbookSession.doc);
+      await controller.persistActiveWorkbookMeta();
+      return true;
     },
     redo: async () => {
       const activeWorkbookSession = controller.getActiveWorkbookSession();

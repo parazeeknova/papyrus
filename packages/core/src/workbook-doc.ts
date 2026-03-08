@@ -477,6 +477,39 @@ export function createSheet(doc: Doc, name?: string): SheetMeta {
   };
 }
 
+export function deleteSheet(doc: Doc, sheetId: string): string | null {
+  const sheetOrder = getSheetOrder(doc);
+  const sheets = getSheetsMap(doc);
+  const orderedSheetIds = sheetOrder.toArray();
+  const sheetIndex = orderedSheetIds.indexOf(sheetId);
+  if (!sheets.has(sheetId) || sheetIndex < 0 || orderedSheetIds.length <= 1) {
+    return null;
+  }
+
+  const nextActiveSheetId =
+    orderedSheetIds[sheetIndex - 1] ?? orderedSheetIds[sheetIndex + 1] ?? null;
+  if (!nextActiveSheetId) {
+    return null;
+  }
+
+  const now = getNowIsoString();
+  const activeSheetId = getStringValue(getMetaMap(doc), "activeSheetId");
+
+  doc.transact(() => {
+    sheets.delete(sheetId);
+    sheetOrder.delete(sheetIndex, 1);
+
+    const meta = getMetaMap(doc);
+    if (activeSheetId === sheetId) {
+      meta.set("activeSheetId", nextActiveSheetId);
+      meta.set("lastOpenedAt", now);
+    }
+    meta.set("updatedAt", now);
+  });
+
+  return nextActiveSheetId;
+}
+
 export function getSheetColumns(
   doc: Doc,
   sheetId: string | null,
