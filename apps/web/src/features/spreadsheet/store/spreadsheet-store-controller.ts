@@ -665,6 +665,7 @@ export const createSpreadsheetStoreController = (
       return {
         activeSheetCells: snapshot.activeSheetCells,
         activeSheetColumns: snapshot.activeSheetColumns,
+        activeSheetFormats: snapshot.activeSheetFormats,
         activeSheetId: snapshot.activeSheetId,
         activeSheetRowHeights: snapshot.activeSheetRowHeights,
         activeWorkbook: buildPersistedWorkbookMeta(
@@ -808,6 +809,11 @@ export const createSpreadsheetStoreController = (
           REALTIME_SYNC_ORIGIN
         );
         hasAppliedInitialSnapshot = true;
+
+        if (isSharedSession) {
+          applySnapshot(moduleState.activeWorkbookSession.doc);
+        }
+
         set({
           collaborationAccessRole: syncEffectiveRealtimeAccessRole(
             message.payload.peers

@@ -1,5 +1,6 @@
 "use client";
 
+import type { CellTextTransform } from "@papyrus/core/workbook-types";
 import {
   ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
@@ -24,14 +25,18 @@ import {
   TextStrikethroughIcon,
   TextUnderlineIcon,
 } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
 import { Button } from "@/web/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/web/components/ui/dropdown-menu";
+import { Input } from "@/web/components/ui/input";
 import { Separator } from "@/web/components/ui/separator";
 import {
   Tooltip,
@@ -49,6 +54,20 @@ const FONT_FAMILIES = [
   "Verdana",
   "Trebuchet MS",
 ];
+const TEXT_COLOR_OPTIONS = [
+  { label: "Default", value: null },
+  { label: "Slate", value: "#334155" },
+  { label: "Crimson", value: "#b91c1c" },
+  { label: "Amber", value: "#b45309" },
+  { label: "Emerald", value: "#047857" },
+  { label: "Blue", value: "#2563eb" },
+  { label: "Violet", value: "#7c3aed" },
+  { label: "Pink", value: "#db2777" },
+] as const;
+const DEFAULT_FONT_FAMILY = FONT_FAMILIES[0] ?? "Nunito Sans";
+const DEFAULT_FONT_SIZE = 10;
+const MIN_FONT_SIZE = 8;
+const MAX_FONT_SIZE = 200;
 
 interface ToolbarButtonProps {
   active?: boolean;
@@ -59,9 +78,14 @@ interface ToolbarButtonProps {
 }
 
 interface ToolbarProps {
+  activeFontFamily: string | null;
+  activeFontSize: number | null;
+  activeTextColor: string | null;
+  boldActive: boolean;
   canEdit: boolean;
   canRedo: boolean;
   canUndo: boolean;
+  italicActive: boolean;
   loading?: boolean;
   onCopy: () => void;
   onCut: () => void;
@@ -70,7 +94,18 @@ interface ToolbarProps {
   onOpenFindReplace: () => void;
   onPaste: () => void;
   onRedo: () => void;
+  onSetFontFamily: (fontFamily: string | null) => void;
+  onSetFontSize: (fontSize: number | null) => void;
+  onSetTextColor: (textColor: string | null) => void;
+  onSetTextTransform: (textTransform: CellTextTransform | null) => void;
+  onToggleBold: () => void;
+  onToggleItalic: () => void;
+  onToggleStrikethrough: () => void;
+  onToggleUnderline: () => void;
   onUndo: () => void;
+  strikethroughActive: boolean;
+  textTransform: CellTextTransform | null;
+  underlineActive: boolean;
 }
 
 function ToolbarButton({
@@ -100,9 +135,14 @@ function ToolbarButton({
 }
 
 export function Toolbar({
+  activeFontFamily,
+  activeFontSize,
+  activeTextColor,
+  boldActive,
   canEdit,
   canRedo,
   canUndo,
+  italicActive,
   loading = false,
   onCopy,
   onCut,
@@ -111,8 +151,42 @@ export function Toolbar({
   onOpenFindReplace,
   onPaste,
   onRedo,
+  onSetFontFamily,
+  onSetFontSize,
+  onSetTextColor,
+  onSetTextTransform,
+  onToggleBold,
+  onToggleItalic,
+  onToggleStrikethrough,
+  onToggleUnderline,
   onUndo,
+  strikethroughActive,
+  textTransform,
+  underlineActive,
 }: ToolbarProps) {
+  const [fontSizeDraft, setFontSizeDraft] = useState(
+    String(activeFontSize ?? DEFAULT_FONT_SIZE)
+  );
+
+  useEffect(() => {
+    setFontSizeDraft(String(activeFontSize ?? DEFAULT_FONT_SIZE));
+  }, [activeFontSize]);
+
+  const commitFontSizeDraft = () => {
+    const nextFontSize = Number(fontSizeDraft.trim());
+    if (!Number.isFinite(nextFontSize)) {
+      setFontSizeDraft(String(activeFontSize ?? DEFAULT_FONT_SIZE));
+      return;
+    }
+
+    const clampedFontSize = Math.min(
+      MAX_FONT_SIZE,
+      Math.max(MIN_FONT_SIZE, Math.round(nextFontSize))
+    );
+    setFontSizeDraft(String(clampedFontSize));
+    onSetFontSize(clampedFontSize);
+  };
+
   return (
     <div
       className="relative shrink-0 border-border border-b bg-background"
@@ -257,16 +331,24 @@ export function Toolbar({
           <DropdownMenuTrigger asChild>
             <Button
               className="h-7 w-28 justify-start gap-1 px-2 text-xs"
-              disabled={loading}
+              disabled={loading || !canEdit}
               variant="outline"
             >
               <TextAaIcon className="size-3.5" weight="bold" />
-              <span className="truncate">Nunito Sans</span>
+              <span className="truncate">
+                {activeFontFamily ?? DEFAULT_FONT_FAMILY}
+              </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-40">
             {FONT_FAMILIES.map((font) => (
-              <DropdownMenuItem key={font} style={{ fontFamily: font }}>
+              <DropdownMenuItem
+                key={font}
+                onSelect={() => {
+                  onSetFontFamily(font);
+                }}
+                style={{ fontFamily: font }}
+              >
                 {font}
               </DropdownMenuItem>
             ))}
@@ -274,60 +356,163 @@ export function Toolbar({
         </DropdownMenu>
 
         {/* Font size */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              className="h-7 w-14 justify-center gap-0.5 px-2 text-xs"
-              disabled={loading}
-              variant="outline"
-            >
-              10
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-16">
-            {FONT_SIZES.map((size) => (
-              <DropdownMenuItem key={size}>{size}</DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center">
+          <Input
+            className="h-7 w-14 rounded-r-none border-r-0 px-2 text-center text-xs focus-visible:ring-0"
+            disabled={loading || !canEdit}
+            inputMode="numeric"
+            onBlur={commitFontSizeDraft}
+            onChange={(event) => {
+              setFontSizeDraft(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitFontSizeDraft();
+              }
+
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setFontSizeDraft(String(activeFontSize ?? DEFAULT_FONT_SIZE));
+              }
+            }}
+            value={fontSizeDraft}
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                className="h-7 rounded-l-none border px-2"
+                disabled={loading || !canEdit}
+                variant="outline"
+              >
+                <TextAaIcon className="size-3.5" weight="bold" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-16">
+              {FONT_SIZES.map((size) => (
+                <DropdownMenuItem
+                  key={size}
+                  onSelect={() => {
+                    setFontSizeDraft(String(size));
+                    onSetFontSize(size);
+                  }}
+                >
+                  {size}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
         <Separator className="mx-1 h-5" orientation="vertical" />
 
         {/* Text formatting */}
         <ToolbarButton
-          disabled={loading}
+          active={boldActive}
+          disabled={loading || !canEdit}
           icon={<TextBolderIcon weight="bold" />}
           label="Bold (Ctrl+B)"
+          onClick={onToggleBold}
         />
         <ToolbarButton
-          disabled={loading}
+          active={italicActive}
+          disabled={loading || !canEdit}
           icon={<TextItalicIcon weight="bold" />}
           label="Italic (Ctrl+I)"
+          onClick={onToggleItalic}
         />
         <ToolbarButton
-          disabled={loading}
+          active={underlineActive}
+          disabled={loading || !canEdit}
           icon={<TextUnderlineIcon weight="bold" />}
           label="Underline (Ctrl+U)"
+          onClick={onToggleUnderline}
         />
         <ToolbarButton
-          disabled={loading}
+          active={strikethroughActive}
+          disabled={loading || !canEdit}
           icon={<TextStrikethroughIcon weight="bold" />}
           label="Strikethrough"
+          onClick={onToggleStrikethrough}
         />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              className={
+                textTransform ? "bg-accent text-accent-foreground" : ""
+              }
+              disabled={loading || !canEdit}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <TextAaIcon className="size-3.5" weight="bold" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-40">
+            <DropdownMenuRadioGroup
+              onValueChange={(value) => {
+                onSetTextTransform(
+                  value === "none" ? null : (value as CellTextTransform)
+                );
+              }}
+              value={textTransform ?? "none"}
+            >
+              <DropdownMenuRadioItem value="none">
+                Normal case
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="uppercase">
+                Uppercase
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="lowercase">
+                Lowercase
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <Separator className="mx-1 h-5" orientation="vertical" />
 
         {/* Colors */}
-        <ToolbarButton
-          disabled={loading}
-          icon={
-            <span className="flex flex-col items-center">
-              <TextAaIcon className="size-3.5" weight="bold" />
-              <span className="-mt-0.5 h-0.5 w-3.5 rounded-full bg-foreground" />
-            </span>
-          }
-          label="Text color"
-        />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              disabled={loading || !canEdit}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <span className="flex flex-col items-center">
+                <TextAaIcon className="size-3.5" weight="bold" />
+                <span
+                  className="-mt-0.5 h-0.5 w-3.5 rounded-full"
+                  style={{ backgroundColor: activeTextColor ?? "currentColor" }}
+                />
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-44">
+            <DropdownMenuRadioGroup
+              onValueChange={(value) => {
+                onSetTextColor(value === "default" ? null : value);
+              }}
+              value={activeTextColor ?? "default"}
+            >
+              {TEXT_COLOR_OPTIONS.map((colorOption) => (
+                <DropdownMenuRadioItem
+                  key={colorOption.label}
+                  value={colorOption.value ?? "default"}
+                >
+                  <span
+                    className="size-3 rounded-full border border-border"
+                    style={{
+                      backgroundColor: colorOption.value ?? "transparent",
+                    }}
+                  />
+                  {colorOption.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <ToolbarButton
           disabled={loading}
           icon={<PaintBucketIcon weight="bold" />}

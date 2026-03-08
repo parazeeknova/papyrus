@@ -2,6 +2,7 @@
 
 import type { CollaboratorPresence } from "@papyrus/core/collaboration-types";
 import {
+  type CellFormat,
   DEFAULT_SHEET_COLUMN_WIDTH,
   DEFAULT_SHEET_ROW_HEIGHT,
 } from "@papyrus/core/workbook-types";
@@ -19,6 +20,7 @@ import {
 } from "@phosphor-icons/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  type CSSProperties,
   memo,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -78,6 +80,7 @@ interface CellComponentProps {
   col: number;
   data: CellData;
   disabled?: boolean;
+  format: CellFormat;
   isActive: boolean;
   isEditing: boolean;
   isSelected: boolean;
@@ -103,6 +106,7 @@ const CellComponent = memo(function CellComponent({
   col,
   data,
   disabled = false,
+  format,
   isActive,
   isEditing,
   isSelected,
@@ -115,6 +119,33 @@ const CellComponent = memo(function CellComponent({
   onKeyDown,
 }: CellComponentProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const cellContentClassName = cn(
+    "absolute inset-0 cursor-cell overflow-hidden text-ellipsis whitespace-nowrap bg-background px-1.5 text-left text-xs transition-none",
+    format.bold && "font-bold",
+    format.italic && "italic",
+    format.strikethrough && "line-through",
+    format.textTransform === "lowercase" && "lowercase",
+    format.textTransform === "uppercase" && "uppercase",
+    format.underline && "underline"
+  );
+  const cellContentStyle: CSSProperties | undefined = format.textColor
+    ? {
+        color: format.textColor,
+        fontFamily: format.fontFamily,
+        fontSize:
+          typeof format.fontSize === "number"
+            ? `${format.fontSize}px`
+            : undefined,
+      }
+    : format.fontFamily || typeof format.fontSize === "number"
+      ? {
+          fontFamily: format.fontFamily,
+          fontSize:
+            typeof format.fontSize === "number"
+              ? `${format.fontSize}px`
+              : undefined,
+        }
+      : undefined;
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -153,7 +184,7 @@ const CellComponent = memo(function CellComponent({
   return (
     <button
       className={cn(
-        "absolute inset-0 cursor-cell overflow-hidden text-ellipsis whitespace-nowrap bg-background px-1.5 text-left text-xs transition-none",
+        cellContentClassName,
         isSelected && "bg-primary/5",
         isActive &&
           "z-5 border-2 border-primary bg-primary/5 shadow-[0_0_0_1px] shadow-primary/30"
@@ -186,6 +217,7 @@ const CellComponent = memo(function CellComponent({
       onMouseEnter={() => {
         onSelectHover({ row, col });
       }}
+      style={cellContentStyle}
       tabIndex={isActive ? 0 : -1}
       type="button"
     >
@@ -208,6 +240,7 @@ interface SpreadsheetGridProps {
   editingCell: CellPosition | null;
   expandRowCount: () => void;
   getCellData: (row: number, col: number) => CellData;
+  getCellFormat: (row: number, col: number) => CellFormat;
   navigateFromActive: (
     direction: "up" | "down" | "left" | "right"
   ) => CellPosition | null;
@@ -253,6 +286,7 @@ export function SpreadsheetGrid({
   expandRowCount,
   rowCount,
   getCellData,
+  getCellFormat,
   selection,
   setCellValue,
   selectCell,
@@ -1083,6 +1117,7 @@ export function SpreadsheetGrid({
                     const col = vc.index;
                     const id = cellId(row, col);
                     const data = getCellData(row, col);
+                    const format = getCellFormat(row, col);
                     const isActive =
                       activeCell?.row === row && activeCell?.col === col;
                     const isEditing =
@@ -1106,6 +1141,7 @@ export function SpreadsheetGrid({
                           col={col}
                           data={data}
                           disabled={disabled}
+                          format={format}
                           isActive={isActive}
                           isEditing={isEditing}
                           isSelected={isSelected}

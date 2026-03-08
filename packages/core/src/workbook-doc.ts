@@ -1,6 +1,7 @@
 import { type Doc, UndoManager, type Array as YArray, Map as YMap } from "yjs";
 import type { CollaborationAccessRole } from "./collaboration-types";
 import {
+  type CellFormat,
   DEFAULT_SHEET_COLUMN_WIDTH,
   DEFAULT_SHEET_ROW_HEIGHT,
   type PersistedCellRecord,
@@ -16,6 +17,7 @@ const ROOT_SHEET_ORDER_KEY = "sheetOrder";
 const SHEET_CELLS_KEY = "cells";
 const SHEET_COLUMNS_KEY = "columns";
 const SHEET_COLUMN_WIDTHS_KEY = "columnWidths";
+const SHEET_FORMATS_KEY = "formats";
 const SHEET_ROW_HEIGHTS_KEY = "rowHeights";
 const DEFAULT_WORKBOOK_NAME = "Untitled spreadsheet";
 const DEFAULT_SHEET_NAME_PREFIX = "Sheet";
@@ -84,7 +86,25 @@ function getSheetColumnWidthsMap(
     return columnWidths as YMap<number>;
   }
 
-  return null;
+  const nextColumnWidths = new YMap<number>();
+  sheet.set(SHEET_COLUMN_WIDTHS_KEY, nextColumnWidths);
+  return nextColumnWidths;
+}
+
+function getSheetFormatsMap(doc: Doc, sheetId: string): YMap<string> | null {
+  const sheet = getSheetMap(doc, sheetId);
+  if (!sheet) {
+    return null;
+  }
+
+  const formats = sheet.get(SHEET_FORMATS_KEY);
+  if (formats instanceof YMap) {
+    return formats as YMap<string>;
+  }
+
+  const nextFormats = new YMap<string>();
+  sheet.set(SHEET_FORMATS_KEY, nextFormats);
+  return nextFormats;
 }
 
 function getSheetRowHeightsMap(doc: Doc, sheetId: string): YMap<number> | null {
@@ -98,7 +118,9 @@ function getSheetRowHeightsMap(doc: Doc, sheetId: string): YMap<number> | null {
     return rowHeights as YMap<number>;
   }
 
-  return null;
+  const nextRowHeights = new YMap<number>();
+  sheet.set(SHEET_ROW_HEIGHTS_KEY, nextRowHeights);
+  return nextRowHeights;
 }
 
 function getStringValue(
@@ -124,6 +146,63 @@ function getNumberValue(map: YMap<number> | null, key: string): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function normalizeCellFormat(
+  format: CellFormat | null | undefined
+): CellFormat | null {
+  if (!format) {
+    return null;
+  }
+
+  const normalizedFormat: CellFormat = {};
+
+  if (format.bold) {
+    normalizedFormat.bold = true;
+  }
+  if (format.fontFamily?.trim()) {
+    normalizedFormat.fontFamily = format.fontFamily.trim();
+  }
+  if (
+    typeof format.fontSize === "number" &&
+    Number.isFinite(format.fontSize) &&
+    format.fontSize > 0
+  ) {
+    normalizedFormat.fontSize = format.fontSize;
+  }
+  if (format.italic) {
+    normalizedFormat.italic = true;
+  }
+  if (format.strikethrough) {
+    normalizedFormat.strikethrough = true;
+  }
+  if (format.textColor?.trim()) {
+    normalizedFormat.textColor = format.textColor.trim();
+  }
+  if (
+    format.textTransform === "uppercase" ||
+    format.textTransform === "lowercase"
+  ) {
+    normalizedFormat.textTransform = format.textTransform;
+  }
+  if (format.underline) {
+    normalizedFormat.underline = true;
+  }
+
+  return Object.keys(normalizedFormat).length > 0 ? normalizedFormat : null;
+}
+
+function parseCellFormat(value: string): CellFormat | null {
+  try {
+    const parsedValue = JSON.parse(value) as CellFormat;
+    return normalizeCellFormat(parsedValue);
+  } catch {
+    return null;
+  }
+}
+
+function serializeCellFormat(format: CellFormat): string {
+  return JSON.stringify(format);
+}
+
 function ensureSheet(doc: Doc, sheetId: string, name: string): void {
   const sheets = getSheetsMap(doc);
   if (sheets.has(sheetId)) {
@@ -135,6 +214,7 @@ function ensureSheet(doc: Doc, sheetId: string, name: string): void {
   const cells = new YMap<string>();
   const columns = new YMap<string>();
   const columnWidths = new YMap<number>();
+  const formats = new YMap<string>();
   const rowHeights = new YMap<number>();
 
   sheet.set("id", sheetId);
@@ -144,6 +224,7 @@ function ensureSheet(doc: Doc, sheetId: string, name: string): void {
   sheet.set(SHEET_CELLS_KEY, cells);
   sheet.set(SHEET_COLUMNS_KEY, columns);
   sheet.set(SHEET_COLUMN_WIDTHS_KEY, columnWidths);
+  sheet.set(SHEET_FORMATS_KEY, formats);
   sheet.set(SHEET_ROW_HEIGHTS_KEY, rowHeights);
   sheets.set(sheetId, sheet);
 }
@@ -376,6 +457,32 @@ export function getSheetRowHeights(
   return result;
 }
 
+export function getSheetFormats(
+  doc: Doc,
+  sheetId: string | null
+): Record<string, CellFormat> {
+  if (!sheetId) {
+    return {};
+  }
+
+  const formats = getSheetFormatsMap(doc, sheetId);
+  if (!formats) {
+    return {};
+  }
+
+  const result: Record<string, CellFormat> = {};
+  for (const [cellKey, serializedFormat] of formats.entries()) {
+    const parsedFormat = parseCellFormat(serializedFormat);
+    if (!parsedFormat) {
+      continue;
+    }
+
+    result[cellKey] = parsedFormat;
+  }
+
+  return result;
+}
+
 export function renameSheetColumn(
   doc: Doc,
   sheetId: string,
@@ -460,6 +567,35 @@ export function setSheetRowHeight(
   });
 
   return height;
+}
+
+export function setSheetFormats(
+  doc: Doc,
+  sheetId: string,
+  values: Record<string, CellFormat | null>
+): void {
+  const formats = getSheetFormatsMap(doc, sheetId);
+  const sheet = getSheetMap(doc, sheetId);
+  if (!(formats && sheet)) {
+    return;
+  }
+
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    for (const [cellKey, format] of Object.entries(values)) {
+      const normalizedFormat = normalizeCellFormat(format);
+      if (!normalizedFormat) {
+        formats.delete(cellKey);
+        continue;
+      }
+
+      formats.set(cellKey, serializeCellFormat(normalizedFormat));
+    }
+
+    sheet.set("updatedAt", now);
+    getMetaMap(doc).set("updatedAt", now);
+  });
 }
 
 export function renameSheet(
@@ -659,6 +795,38 @@ export function replaceSheetRowHeights(
   });
 }
 
+export function replaceSheetFormats(
+  doc: Doc,
+  sheetId: string,
+  nextFormats: Record<string, CellFormat>
+): void {
+  const formats = getSheetFormatsMap(doc, sheetId);
+  const sheet = getSheetMap(doc, sheetId);
+  if (!(formats && sheet)) {
+    return;
+  }
+
+  const now = getNowIsoString();
+
+  doc.transact(() => {
+    for (const cellKey of [...formats.keys()]) {
+      formats.delete(cellKey);
+    }
+
+    for (const [cellKey, format] of Object.entries(nextFormats)) {
+      const normalizedFormat = normalizeCellFormat(format);
+      if (!normalizedFormat) {
+        continue;
+      }
+
+      formats.set(cellKey, serializeCellFormat(normalizedFormat));
+    }
+
+    sheet.set("updatedAt", now);
+    getMetaMap(doc).set("updatedAt", now);
+  });
+}
+
 export function createSheetUndoManager(
   doc: Doc,
   sheetId: string | null
@@ -670,12 +838,13 @@ export function createSheetUndoManager(
   const cells = getSheetCellsMap(doc, sheetId);
   const columns = getSheetColumnsMap(doc, sheetId);
   const columnWidths = getSheetColumnWidthsMap(doc, sheetId);
+  const formats = getSheetFormatsMap(doc, sheetId);
   const rowHeights = getSheetRowHeightsMap(doc, sheetId);
-  if (!(cells && columns && columnWidths && rowHeights)) {
+  if (!(cells && columns && columnWidths && formats && rowHeights)) {
     return null;
   }
 
-  return new UndoManager([cells, columns, columnWidths, rowHeights]);
+  return new UndoManager([cells, columns, columnWidths, formats, rowHeights]);
 }
 
 export function getWorkbookMeta(doc: Doc): WorkbookMeta {
@@ -751,6 +920,7 @@ export function getWorkbookSnapshot(doc: Doc): WorkbookSnapshot {
   return {
     activeSheetCells: getSheetCells(doc, activeSheetId),
     activeSheetColumns: getSheetColumns(doc, activeSheetId),
+    activeSheetFormats: getSheetFormats(doc, activeSheetId),
     activeSheetRowHeights: getSheetRowHeights(doc, activeSheetId),
     activeSheetId,
     sheets: getSheets(doc),

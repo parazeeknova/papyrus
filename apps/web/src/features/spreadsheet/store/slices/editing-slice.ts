@@ -8,11 +8,13 @@ import {
   renameWorkbook as renameWorkbookInDoc,
   replaceSheetCells,
   replaceSheetColumns,
+  replaceSheetFormats,
   replaceSheetRowHeights,
   setActiveSheet as setActiveSheetInDoc,
   setSheetCellRaw,
   setSheetCellValues,
   setSheetColumnWidth,
+  setSheetFormats,
   setSheetRowHeight,
   setWorkbookFavorite,
   setWorkbookSharingAccessRole,
@@ -36,6 +38,7 @@ type EditingSliceState = Pick<
   SpreadsheetStoreState,
   | "activeSheetCells"
   | "activeSheetColumns"
+  | "activeSheetFormats"
   | "activeSheetId"
   | "activeSheetRowHeights"
   | "canRedo"
@@ -49,6 +52,7 @@ type EditingSliceState = Pick<
   | "resizeRow"
   | "renameWorkbook"
   | "setActiveSheet"
+  | "setCellFormats"
   | "setCellValue"
   | "setCellValuesByKey"
   | "setWorkbookFavorite"
@@ -88,6 +92,7 @@ export const createEditingSlice = (
   return (set, get) => ({
     activeSheetCells: {},
     activeSheetColumns: [],
+    activeSheetFormats: {},
     activeSheetId: null,
     activeSheetRowHeights: {},
     canRedo: false,
@@ -142,6 +147,7 @@ export const createEditingSlice = (
       }));
 
       const nextCells: Record<string, string> = {};
+      const nextFormats: SpreadsheetStoreState["activeSheetFormats"] = {};
       for (const [storedCellKey, cellValue] of Object.entries(
         get().activeSheetCells
       )) {
@@ -182,6 +188,25 @@ export const createEditingSlice = (
         );
       }
 
+      for (const [storedCellKey, cellFormat] of Object.entries(
+        get().activeSheetFormats
+      )) {
+        const position = parseStoredCellId(storedCellKey);
+        if (!position) {
+          continue;
+        }
+
+        if (position.col >= startColumn && position.col < endColumn) {
+          continue;
+        }
+
+        const nextCol =
+          position.col >= endColumn
+            ? position.col - removedColumnCount
+            : position.col;
+        nextFormats[cellId(position.row, nextCol)] = cellFormat;
+      }
+
       set({ saveState: "saving" });
       replaceSheetColumns(
         activeWorkbookSession.doc,
@@ -189,6 +214,11 @@ export const createEditingSlice = (
         nextColumns
       );
       replaceSheetCells(activeWorkbookSession.doc, activeSheetId, nextCells);
+      replaceSheetFormats(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextFormats
+      );
       await controller.persistActiveWorkbookMeta();
     },
     deleteRows: async (startRow, rowCount) => {
@@ -210,6 +240,7 @@ export const createEditingSlice = (
       const currentColumns = controller.buildColumnNames(
         get().activeSheetColumns
       );
+      const currentFormats = get().activeSheetFormats;
       const currentRowHeights = get().activeSheetRowHeights;
       const nextCells: Record<string, string> = {};
 
@@ -269,9 +300,34 @@ export const createEditingSlice = (
           return [[rowKey, height] as const];
         })
       );
+      const nextFormats = Object.fromEntries(
+        Object.entries(currentFormats).flatMap(([cellKey, format]) => {
+          const position = parseStoredCellId(cellKey);
+          if (!position) {
+            return [];
+          }
+
+          if (position.row >= startRow && position.row < endRow) {
+            return [];
+          }
+
+          if (position.row >= endRow) {
+            return [
+              [cellId(position.row - rowCount, position.col), format] as const,
+            ];
+          }
+
+          return [[cellKey, format] as const];
+        })
+      );
 
       set({ saveState: "saving" });
       replaceSheetCells(activeWorkbookSession.doc, activeSheetId, nextCells);
+      replaceSheetFormats(
+        activeWorkbookSession.doc,
+        activeSheetId,
+        nextFormats
+      );
       replaceSheetRowHeights(
         activeWorkbookSession.doc,
         activeSheetId,
@@ -413,6 +469,21 @@ export const createEditingSlice = (
       setActiveSheetInDoc(activeWorkbookSession.doc, sheetId);
       touchWorkbook(activeWorkbookSession.doc, sheetId);
       controller.syncUndoManager(activeWorkbookSession.doc);
+      await controller.persistActiveWorkbookMeta();
+    },
+    setCellFormats: async (values) => {
+      if (controller.isViewerAccess()) {
+        return;
+      }
+
+      const activeWorkbookSession = controller.getActiveWorkbookSession();
+      const activeSheetId = get().activeSheetId;
+      if (!(activeWorkbookSession && activeSheetId)) {
+        return;
+      }
+
+      set({ saveState: "saving" });
+      setSheetFormats(activeWorkbookSession.doc, activeSheetId, values);
       await controller.persistActiveWorkbookMeta();
     },
     setCellValue: async (row, col, raw) => {

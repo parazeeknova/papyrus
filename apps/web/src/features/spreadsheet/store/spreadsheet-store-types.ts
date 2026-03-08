@@ -6,6 +6,7 @@ import type {
   CollaboratorPresence,
 } from "@papyrus/core/collaboration-types";
 import type {
+  CellFormat,
   PersistedCellRecord,
   SheetColumn,
   SheetMeta,
@@ -28,6 +29,7 @@ export type SaveState = "error" | "saved" | "saving";
 export interface SpreadsheetStoreState {
   activeSheetCells: Record<string, PersistedCellRecord>;
   activeSheetColumns: SheetColumn[];
+  activeSheetFormats: Record<string, CellFormat>;
   activeSheetId: string | null;
   activeSheetRowHeights: Record<string, number>;
   activeWorkbook: WorkbookMeta | null;
@@ -68,6 +70,7 @@ export interface SpreadsheetStoreState {
   resizeRow: (rowIndex: number, height: number) => Promise<void>;
   saveState: SaveState;
   setActiveSheet: (sheetId: string) => Promise<void>;
+  setCellFormats: (values: Record<string, CellFormat | null>) => Promise<void>;
   setCellValue: (row: number, col: number, raw: string) => Promise<void>;
   setCellValuesByKey: (values: Record<string, string>) => Promise<void>;
   setWorkbookFavorite: (isFavorite: boolean) => Promise<void>;

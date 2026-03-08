@@ -3,8 +3,21 @@ import type { CollaborationAccessRole } from "./collaboration-types";
 export const DEFAULT_SHEET_COLUMN_WIDTH = 100;
 export const DEFAULT_SHEET_ROW_HEIGHT = 20;
 
+export type CellTextTransform = "lowercase" | "uppercase";
+
 export interface PersistedCellRecord {
   raw: string;
+}
+
+export interface CellFormat {
+  bold?: boolean;
+  fontFamily?: string;
+  fontSize?: number;
+  italic?: boolean;
+  strikethrough?: boolean;
+  textColor?: string;
+  textTransform?: CellTextTransform;
+  underline?: boolean;
 }
 
 export interface SheetColumn {
@@ -36,6 +49,7 @@ export interface WorkbookMeta {
 export interface WorkbookSnapshot {
   activeSheetCells: Record<string, PersistedCellRecord>;
   activeSheetColumns: SheetColumn[];
+  activeSheetFormats: Record<string, CellFormat>;
   activeSheetId: string | null;
   activeSheetRowHeights: Record<string, number>;
   sheets: SheetMeta[];

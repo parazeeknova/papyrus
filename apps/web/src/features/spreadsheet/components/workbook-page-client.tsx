@@ -52,6 +52,7 @@ function WorkbookPageContent({
   const {
     activeCell,
     activeSheetColumns,
+    activeSelectionFormat,
     activeWorkbook,
     activeSheetId,
     activeSheetRowHeights,
@@ -98,15 +99,21 @@ function WorkbookPageContent({
     sharingEnabled,
     sheets,
     selection,
+    setCellFontFamily,
+    setCellFontSize,
     setSelectionRange,
+    setCellTextColor,
+    setCellTextTransform,
     showAllRows,
     syncNow,
     getCellData,
+    getCellFormat,
     getCellReferenceLabel,
     setCellValue,
     selectCell,
     startEditing,
     stopEditing,
+    toggleCellFormat,
     undo,
     navigateFromActive,
     workbooks,
@@ -272,9 +279,14 @@ function WorkbookPageContent({
       />
       {isGalleryOpen ? <TemplateGalleryPanel /> : null}
       <Toolbar
+        activeFontFamily={activeSelectionFormat?.fontFamily ?? null}
+        activeFontSize={activeSelectionFormat?.fontSize ?? null}
+        activeTextColor={activeSelectionFormat?.textColor ?? null}
+        boldActive={activeSelectionFormat?.bold ?? false}
         canEdit={canEdit}
         canRedo={canRedo}
         canUndo={canUndo}
+        italicActive={activeSelectionFormat?.italic ?? false}
         loading={isInitialLoad}
         onCopy={() => {
           copySelection().catch(() => undefined);
@@ -297,9 +309,36 @@ function WorkbookPageContent({
         onRedo={() => {
           redo().catch(() => undefined);
         }}
+        onSetFontFamily={(fontFamily) => {
+          setCellFontFamily(fontFamily).catch(() => undefined);
+        }}
+        onSetFontSize={(fontSize) => {
+          setCellFontSize(fontSize).catch(() => undefined);
+        }}
+        onSetTextColor={(textColor) => {
+          setCellTextColor(textColor).catch(() => undefined);
+        }}
+        onSetTextTransform={(textTransform) => {
+          setCellTextTransform(textTransform).catch(() => undefined);
+        }}
+        onToggleBold={() => {
+          toggleCellFormat("bold").catch(() => undefined);
+        }}
+        onToggleItalic={() => {
+          toggleCellFormat("italic").catch(() => undefined);
+        }}
+        onToggleStrikethrough={() => {
+          toggleCellFormat("strikethrough").catch(() => undefined);
+        }}
+        onToggleUnderline={() => {
+          toggleCellFormat("underline").catch(() => undefined);
+        }}
         onUndo={() => {
           undo().catch(() => undefined);
         }}
+        strikethroughActive={activeSelectionFormat?.strikethrough ?? false}
+        textTransform={activeSelectionFormat?.textTransform ?? null}
+        underlineActive={activeSelectionFormat?.underline ?? false}
       />
       <FormulaBar
         activeCell={activeCell}
@@ -328,6 +367,7 @@ function WorkbookPageContent({
         editingCell={isInitialLoad ? null : editingCell}
         expandRowCount={expandRowCount}
         getCellData={isInitialLoad ? getLoadingCellData : getCellData}
+        getCellFormat={isInitialLoad ? () => ({}) : getCellFormat}
         navigateFromActive={
           isInitialLoad ? navigateWhileLoading : navigateFromActive
         }

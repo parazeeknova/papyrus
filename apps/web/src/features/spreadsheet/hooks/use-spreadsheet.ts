@@ -4,6 +4,10 @@ import type {
   CollaborationAccessRole,
   CollaboratorIdentity,
 } from "@papyrus/core/collaboration-types";
+import type {
+  CellFormat,
+  CellTextTransform,
+} from "@papyrus/core/workbook-types";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { firebaseAuth } from "@/web/features/auth/lib/firebase-auth";
@@ -40,10 +44,13 @@ const DEFAULT_ROWS = 100_000;
 const DEFAULT_VISIBLE_ROWS = 1000;
 const ROW_EXPANSION_STEP = 1000;
 const EMPTY_CELL: CellData = { raw: "", computed: "" };
+const EMPTY_CELL_FORMAT: CellFormat = {};
 const LAST_SYNC_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "2-digit",
 });
+
+type CellFormatFlag = "bold" | "italic" | "strikethrough" | "underline";
 
 function formatRelativeSyncTime(timestamp: number, now: number): string {
   const diffMs = Math.max(0, now - timestamp);
@@ -216,6 +223,50 @@ function replaceAllOccurrences(
   return value.replace(new RegExp(escapedQuery, "gi"), replacement);
 }
 
+function normalizeCellFormat(
+  format: CellFormat | null | undefined
+): CellFormat | null {
+  if (!format) {
+    return null;
+  }
+
+  const normalizedFormat: CellFormat = {};
+
+  if (format.bold) {
+    normalizedFormat.bold = true;
+  }
+  if (format.fontFamily?.trim()) {
+    normalizedFormat.fontFamily = format.fontFamily.trim();
+  }
+  if (
+    typeof format.fontSize === "number" &&
+    Number.isFinite(format.fontSize) &&
+    format.fontSize > 0
+  ) {
+    normalizedFormat.fontSize = format.fontSize;
+  }
+  if (format.italic) {
+    normalizedFormat.italic = true;
+  }
+  if (format.strikethrough) {
+    normalizedFormat.strikethrough = true;
+  }
+  if (format.textColor?.trim()) {
+    normalizedFormat.textColor = format.textColor.trim();
+  }
+  if (
+    format.textTransform === "lowercase" ||
+    format.textTransform === "uppercase"
+  ) {
+    normalizedFormat.textTransform = format.textTransform;
+  }
+  if (format.underline) {
+    normalizedFormat.underline = true;
+  }
+
+  return Object.keys(normalizedFormat).length > 0 ? normalizedFormat : null;
+}
+
 const applySpreadsheetPatch = (
   prev: Record<string, CellData>,
   patch: SpreadsheetPatch
@@ -247,6 +298,9 @@ export function useSpreadsheet({
   );
   const activeSheetColumns = useSpreadsheetStore(
     (state) => state.activeSheetColumns
+  );
+  const activeSheetFormats = useSpreadsheetStore(
+    (state) => state.activeSheetFormats
   );
   const activeSheetRowHeights = useSpreadsheetStore(
     (state) => state.activeSheetRowHeights
@@ -299,6 +353,9 @@ export function useSpreadsheet({
   const resizeRow = useSpreadsheetStore((state) => state.resizeRow);
   const saveState = useSpreadsheetStore((state) => state.saveState);
   const setActiveSheet = useSpreadsheetStore((state) => state.setActiveSheet);
+  const setPersistedCellFormats = useSpreadsheetStore(
+    (state) => state.setCellFormats
+  );
   const setCellValuesByKey = useSpreadsheetStore(
     (state) => state.setCellValuesByKey
   );
@@ -574,6 +631,130 @@ export function useSpreadsheet({
       startRow: activeCell.row,
     };
   }, [activeCell, normalizedSelection]);
+
+  const getCellFormat = useCallback(
+    (row: number, col: number): CellFormat => {
+      return activeSheetFormats[cellId(row, col)] ?? EMPTY_CELL_FORMAT;
+    },
+    [activeSheetFormats]
+  );
+
+  const getSelectionCellKeys = useCallback((): string[] => {
+    const bounds = getSelectionBounds();
+    if (!bounds) {
+      return [];
+    }
+
+    const selectedCellKeys: string[] = [];
+    for (let row = bounds.startRow; row <= bounds.endRow; row++) {
+      for (let col = bounds.startCol; col <= bounds.endCol; col++) {
+        selectedCellKeys.push(cellId(row, col));
+      }
+    }
+
+    return selectedCellKeys;
+  }, [getSelectionBounds]);
+
+  const activeSelectionFormat = useMemo(() => {
+    const bounds = normalizedSelection;
+    if (
+      bounds &&
+      (bounds.startRow !== bounds.endRow || bounds.startCol !== bounds.endCol)
+    ) {
+      return null;
+    }
+
+    if (!activeCell) {
+      return EMPTY_CELL_FORMAT;
+    }
+
+    return getCellFormat(activeCell.row, activeCell.col);
+  }, [activeCell, getCellFormat, normalizedSelection]);
+
+  const applyFormatsToSelection = useCallback(
+    async (updater: (format: CellFormat) => CellFormat | null) => {
+      if (!canEdit) {
+        return false;
+      }
+
+      const selectedCellKeys = getSelectionCellKeys();
+      if (selectedCellKeys.length === 0) {
+        return false;
+      }
+
+      const nextFormats = Object.fromEntries(
+        selectedCellKeys.map((selectedCellKey) => {
+          const currentFormat = activeSheetFormats[selectedCellKey] ?? {};
+          return [
+            selectedCellKey,
+            normalizeCellFormat(updater(currentFormat)),
+          ] as const;
+        })
+      );
+
+      await setPersistedCellFormats(nextFormats);
+      return true;
+    },
+    [activeSheetFormats, canEdit, getSelectionCellKeys, setPersistedCellFormats]
+  );
+
+  const toggleCellFormat = useCallback(
+    async (flag: CellFormatFlag): Promise<boolean> => {
+      return await applyFormatsToSelection((currentFormat) => ({
+        ...currentFormat,
+        [flag]: !currentFormat[flag],
+      }));
+    },
+    [applyFormatsToSelection]
+  );
+
+  const setCellTextTransform = useCallback(
+    async (textTransform: CellTextTransform | null): Promise<boolean> => {
+      return await applyFormatsToSelection((currentFormat) => ({
+        ...currentFormat,
+        textTransform:
+          currentFormat.textTransform === textTransform
+            ? undefined
+            : (textTransform ?? undefined),
+      }));
+    },
+    [applyFormatsToSelection]
+  );
+
+  const setCellTextColor = useCallback(
+    async (textColor: string | null): Promise<boolean> => {
+      return await applyFormatsToSelection((currentFormat) => ({
+        ...currentFormat,
+        textColor: textColor?.trim() || undefined,
+      }));
+    },
+    [applyFormatsToSelection]
+  );
+
+  const setCellFontFamily = useCallback(
+    async (fontFamily: string | null): Promise<boolean> => {
+      return await applyFormatsToSelection((currentFormat) => ({
+        ...currentFormat,
+        fontFamily: fontFamily?.trim() || undefined,
+      }));
+    },
+    [applyFormatsToSelection]
+  );
+
+  const setCellFontSize = useCallback(
+    async (fontSize: number | null): Promise<boolean> => {
+      return await applyFormatsToSelection((currentFormat) => ({
+        ...currentFormat,
+        fontSize:
+          typeof fontSize === "number" &&
+          Number.isFinite(fontSize) &&
+          fontSize > 0
+            ? fontSize
+            : undefined,
+      }));
+    },
+    [applyFormatsToSelection]
+  );
 
   const copySelection = useCallback(async (): Promise<boolean> => {
     const bounds = getSelectionBounds();
@@ -1004,6 +1185,24 @@ export function useSpreadsheet({
         return;
       }
 
+      if (canEdit && key === "b") {
+        event.preventDefault();
+        toggleCellFormat("bold").catch(() => undefined);
+        return;
+      }
+
+      if (canEdit && key === "i") {
+        event.preventDefault();
+        toggleCellFormat("italic").catch(() => undefined);
+        return;
+      }
+
+      if (canEdit && key === "u") {
+        event.preventDefault();
+        toggleCellFormat("underline").catch(() => undefined);
+        return;
+      }
+
       if (key === "c") {
         event.preventDefault();
         copySelection().catch(() => undefined);
@@ -1026,14 +1225,24 @@ export function useSpreadsheet({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [copySelection, cutSelection, pasteSelection, redo, undo]);
+  }, [
+    canEdit,
+    copySelection,
+    cutSelection,
+    pasteSelection,
+    redo,
+    toggleCellFormat,
+    undo,
+  ]);
 
   return {
     activeCell,
     activeSheetColumns,
+    activeSheetFormats,
     activeSheetId,
     activeSheetRowHeights,
     activeWorkbook,
+    activeSelectionFormat,
     collaborationAccessRole: effectiveCollaborationAccessRole,
     collaborationErrorMessage,
     collaborationIdentity,
@@ -1109,8 +1318,13 @@ export function useSpreadsheet({
     sheets,
     syncNow,
     setSelectionRange,
+    setCellFontFamily,
+    setCellFontSize,
+    setCellTextColor,
+    setCellTextTransform,
     totalRowCount,
     getCellData,
+    getCellFormat,
     setCellValue,
     selectCell,
     setActiveSheet,
@@ -1138,6 +1352,7 @@ export function useSpreadsheet({
     showAllRows,
     startEditing,
     stopEditing,
+    toggleCellFormat,
     undo,
     navigateFromActive,
     workbooks,
