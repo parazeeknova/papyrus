@@ -1008,6 +1008,11 @@ export const createSpreadsheetStoreController = (
     syncUndoManager(doc);
 
     applySnapshot(doc, { forceWorkerReset: true });
+
+    if (isSharedSession) {
+      set({ hydrationState: "loading" });
+    }
+
     await syncActiveWorkbookShareAccess();
     connectRealtimeTransport().catch(() => undefined);
     await persistActiveWorkbookMeta();
@@ -1029,7 +1034,6 @@ export const createSpreadsheetStoreController = (
 
       if (!user) {
         set({
-          collaborationAccessRole: null,
           collaborationErrorMessage: null,
           lastSyncErrorMessage: null,
           lastSyncedAt: null,

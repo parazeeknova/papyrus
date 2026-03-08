@@ -121,8 +121,7 @@ function WorkbookPageContent({
     ? getCellData(activeCell.row, activeCell.col)
     : { raw: "", computed: "" };
   const isInitialLoad =
-    activeWorkbook === null &&
-    (hydrationState === "idle" || hydrationState === "loading");
+    hydrationState === "idle" || hydrationState === "loading";
   const loadingColumnNames = useMemo(() => {
     return Array.from({ length: columnCount }, (_unused, index) =>
       colToLetter(index)

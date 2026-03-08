@@ -8,6 +8,7 @@ import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import {
   ArrowClockwiseIcon,
   CloudCheckIcon,
+  ListIcon,
   SquaresFourIcon,
   StarIcon,
 } from "@phosphor-icons/react";
@@ -28,6 +29,12 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/web/components/ui/dropdown-menu";
 import { Input } from "@/web/components/ui/input";
@@ -150,6 +157,195 @@ const GoogleAuthDialog = dynamic(
   }
 );
 
+interface SyncStatusDropdownProps {
+  collaborationStatus: "connected" | "connecting" | "disconnected";
+  hasPendingChanges: boolean;
+  lastSyncErrorMessage: string | null;
+  lastSyncedLabel: string | null;
+  remoteSyncLabel: string;
+  remoteVersion: number | null;
+  saveState: "error" | "saved" | "saving";
+}
+
+function SyncStatusDropdown({
+  collaborationStatus,
+  hasPendingChanges,
+  lastSyncErrorMessage,
+  lastSyncedLabel,
+  remoteSyncLabel,
+  remoteVersion,
+  saveState,
+}: SyncStatusDropdownProps) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="flex min-w-0 items-center gap-1 rounded-sm px-1 py-0.5 text-left text-muted-foreground text-xs transition-colors hover:bg-accent"
+          type="button"
+        >
+          <CloudCheckIcon className="size-3.5 shrink-0" weight="fill" />
+          <span className="truncate">
+            {saveState === "saving" ? "Saving..." : remoteSyncLabel}
+          </span>
+          {lastSyncedLabel ? (
+            <span className="hidden truncate text-muted-foreground/80 sm:inline">
+              · Synced {lastSyncedLabel}
+            </span>
+          ) : null}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72 p-0" sideOffset={8}>
+        <div className="space-y-3 px-4 py-3 text-xs">
+          <div>
+            <p className="font-medium text-foreground text-sm">Sync details</p>
+            <p className="text-muted-foreground">
+              Firestore persistence status for this workbook.
+            </p>
+          </div>
+
+          <div className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Status</span>
+              <span className="font-medium text-foreground">
+                {remoteSyncLabel}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Last sync</span>
+              <span className="font-medium text-foreground">
+                {lastSyncedLabel ?? "Not synced yet"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Remote version</span>
+              <span className="font-medium text-foreground">
+                {remoteVersion ?? "-"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Pending changes</span>
+              <span className="font-medium text-foreground">
+                {hasPendingChanges ? "Yes" : "No"}
+              </span>
+            </div>
+          </div>
+
+          {lastSyncErrorMessage ? (
+            <div className="border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive text-xs/relaxed">
+              {lastSyncErrorMessage}
+            </div>
+          ) : null}
+
+          <div className="border-border border-t pt-2 text-muted-foreground">
+            Realtime presence is {collaborationStatus}.
+          </div>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+interface PresenceDropdownProps {
+  collaborationErrorMessage: string | null;
+  collaborationPeers: CollaboratorPresence[];
+  collaborationStatusLabel: string;
+}
+
+function PresenceDropdown({
+  collaborationErrorMessage,
+  collaborationPeers,
+  collaborationStatusLabel,
+}: PresenceDropdownProps) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="flex items-center gap-2 rounded-sm px-1 py-0.5 transition-colors hover:bg-accent"
+          type="button"
+        >
+          <div className="flex items-center gap-2">
+            {collaborationPeers.length === 0 ? (
+              <Badge variant="outline">Solo</Badge>
+            ) : null}
+            <div className="flex -space-x-1.5">
+              {collaborationPeers.slice(0, 2).map((peer) => (
+                <CollaboratorAvatar
+                  identity={peer.identity}
+                  key={peer.identity.clientId}
+                  ringClassName="ring-2 ring-background"
+                  size="md"
+                />
+              ))}
+            </div>
+          </div>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="w-72 overflow-hidden border-white/10 bg-[#30302E] p-0 text-white shadow-xl ring-1 ring-white/10"
+        sideOffset={8}
+      >
+        <div className="space-y-3 px-4 py-4 text-xs">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="font-medium text-sm text-white">Presence</p>
+              <p className="text-white/60">
+                {collaborationPeers.length > 0
+                  ? `${collaborationPeers.length} other people in this sheet`
+                  : "No one else is here right now"}
+              </p>
+            </div>
+            <Badge className="border-white/10 bg-white/8 text-white hover:bg-white/8">
+              {collaborationPeers.length > 0
+                ? `${collaborationPeers.length} live`
+                : "Solo"}
+            </Badge>
+          </div>
+
+          <div className="text-[11px] text-white/55">
+            {collaborationErrorMessage ?? collaborationStatusLabel}
+          </div>
+
+          {collaborationPeers.length > 0 ? (
+            <div className="space-y-2 border-white/10 border-t pt-3">
+              {collaborationPeers.map((peer) => (
+                <div
+                  className="flex items-center gap-3 rounded-none border border-white/10 bg-black/10 px-3 py-2.5"
+                  key={peer.identity.clientId}
+                >
+                  <CollaboratorAvatar
+                    identity={peer.identity}
+                    ringClassName="ring-2 ring-background"
+                    size="md"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-white">
+                      {peer.identity.name}
+                    </p>
+                    <p className="text-white/55">
+                      {peer.accessRole === "viewer" ? "Viewer" : "Editor"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {formatPresenceCell(peer.activeCell) ? (
+                      <Badge className="border-white/10 bg-white/8 font-mono text-[10px] text-white hover:bg-white/8">
+                        {formatPresenceCell(peer.activeCell)}
+                      </Badge>
+                    ) : null}
+                    <Badge className="border-white/10 bg-white/8 text-white hover:bg-white/8">
+                      {peer.accessRole === "viewer" ? "Viewer" : "Editor"}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function SpreadsheetMenuBar({
   canEdit,
   canManualSync,
@@ -232,7 +428,340 @@ export function SpreadsheetMenuBar({
         className="flex shrink-0 flex-col border-border border-b bg-background"
         data-slot="menu-bar"
       >
-        <div className="flex h-10 items-center gap-2 px-3">
+        <div className="flex items-start gap-2 px-2 py-2 md:hidden">
+          <Link
+            aria-label="Back to home page"
+            className="inline-flex size-8 shrink-0 items-center justify-center"
+            href="/"
+          >
+            <Image
+              alt="Papyrus logo"
+              className="size-6"
+              height={28}
+              src="/apple-touch-icon.png"
+              width={28}
+            />
+          </Link>
+
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex min-w-0 items-center gap-1">
+              {isRenamingWorkbook ? (
+                <Input
+                  autoFocus
+                  className="h-8 w-full border-transparent px-1.5 py-0.5 font-medium text-sm shadow-none focus-visible:border-ring"
+                  onBlur={commitWorkbookRename}
+                  onChange={(event) => {
+                    setWorkbookNameDraft(event.target.value);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitWorkbookRename();
+                    }
+
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setWorkbookNameDraft(workbookName);
+                      setIsRenamingWorkbook(false);
+                    }
+                  }}
+                  value={workbookNameDraft}
+                />
+              ) : (
+                <button
+                  className="truncate rounded-sm px-1.5 py-0.5 font-medium text-sm transition-colors hover:bg-accent"
+                  disabled={!canEdit}
+                  onClick={() => {
+                    if (canEdit) {
+                      setIsRenamingWorkbook(true);
+                    }
+                  }}
+                  type="button"
+                >
+                  {workbookName}
+                </button>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    aria-label={
+                      isFavorite ? "Remove from favorites" : "Add to favorites"
+                    }
+                    className={
+                      isFavorite ? "text-primary" : "text-muted-foreground"
+                    }
+                    disabled={!canEdit}
+                    onClick={() => {
+                      onToggleFavorite(!isFavorite);
+                    }}
+                    size="icon-xs"
+                    variant="ghost"
+                  >
+                    <StarIcon weight={isFavorite ? "fill" : "regular"} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {isFavorite ? "Favorite spreadsheet" : "Add to favorites"}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            <div className="flex items-center gap-1 text-muted-foreground text-xs">
+              <span className="truncate">
+                {saveState === "saving" ? "Saving..." : remoteSyncLabel}
+              </span>
+              {lastSyncedLabel ? (
+                <span className="truncate text-muted-foreground/80">
+                  · Synced {lastSyncedLabel}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1">
+            <ShareDialog
+              accessRole={collaborationAccessRole ?? "editor"}
+              canEdit={canEdit}
+              canManageSharing={canManageSharing}
+              collaborators={collaborationPeers}
+              onUpdateSharingAccessRole={onUpdateSharingAccessRole}
+              onUpdateSharingEnabled={onUpdateSharingEnabled}
+              realtimeErrorMessage={collaborationErrorMessage}
+              realtimeStatus={collaborationStatus}
+              sharingAccessRole={sharingAccessRole}
+              sharingEnabled={sharingEnabled}
+              syncServerUrl={syncServerUrl}
+              workbookId={workbookId}
+              workbookName={workbookName}
+            />
+
+            <GoogleAuthDialog />
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  aria-label="Open workbook menu"
+                  size="icon-sm"
+                  variant="ghost"
+                >
+                  <ListIcon weight="bold" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72" sideOffset={8}>
+                <DropdownMenuLabel>File</DropdownMenuLabel>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    onCreateWorkbook();
+                  }}
+                >
+                  New workbook
+                </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    Recent workbooks
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-64">
+                    {recentWorkbooks.length > 0 ? (
+                      recentWorkbooks.map((recentWorkbook) => (
+                        <DropdownMenuItem
+                          key={recentWorkbook.id}
+                          onSelect={() => {
+                            onOpenWorkbook(
+                              recentWorkbook.id,
+                              recentWorkbook.name
+                            );
+                          }}
+                        >
+                          <span className="truncate">
+                            {recentWorkbook.name}
+                          </span>
+                        </DropdownMenuItem>
+                      ))
+                    ) : (
+                      <DropdownMenuItem disabled>
+                        No recent spreadsheets
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <DropdownMenuItem
+                  disabled={!canEdit}
+                  onSelect={() => {
+                    setIsRenamingWorkbook(true);
+                  }}
+                >
+                  Rename workbook
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    handlePrint();
+                  }}
+                >
+                  Print
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!(canEdit && workbookId)}
+                  onSelect={() => {
+                    setIsDeleteDialogOpen(true);
+                  }}
+                  variant="destructive"
+                >
+                  Delete workbook
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Edit</DropdownMenuLabel>
+                <DropdownMenuItem
+                  disabled={!canUndo}
+                  onSelect={() => {
+                    onUndo();
+                  }}
+                >
+                  Undo
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!canRedo}
+                  onSelect={() => {
+                    onRedo();
+                  }}
+                >
+                  Redo
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!canEdit}
+                  onSelect={() => {
+                    onCut();
+                  }}
+                >
+                  Cut
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    onCopy();
+                  }}
+                >
+                  Copy
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!canEdit}
+                  onSelect={() => {
+                    onPaste();
+                  }}
+                >
+                  Paste
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    onOpenFindReplace();
+                  }}
+                >
+                  Find and replace
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!canEdit}
+                  onSelect={() => {
+                    onDeleteRow();
+                  }}
+                >
+                  Delete row
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!canEdit}
+                  onSelect={() => {
+                    onDeleteColumn();
+                  }}
+                >
+                  Delete column
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>View</DropdownMenuLabel>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    onToggleGallery();
+                  }}
+                >
+                  {isGalleryOpen ? "Hide templates" : "Show templates"}
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Help</DropdownMenuLabel>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setIsFunctionListDialogOpen(true);
+                  }}
+                >
+                  Function list
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setIsAboutDialogOpen(true);
+                  }}
+                >
+                  About Papyrus
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 border-border border-t px-2 py-1.5 md:hidden">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                className="size-7"
+                disabled={!canManualSync}
+                onClick={onManualSync}
+                size="icon-sm"
+                variant="ghost"
+              >
+                <ArrowClockwiseIcon className="size-3.5" weight="bold" />
+                <span className="sr-only">Manual sync</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {canManualSync
+                ? "Sync workbooks to cloud"
+                : "Manual sync available every 5 seconds"}
+            </TooltipContent>
+          </Tooltip>
+
+          <SyncStatusDropdown
+            collaborationStatus={collaborationStatus}
+            hasPendingChanges={hasPendingChanges}
+            lastSyncErrorMessage={lastSyncErrorMessage}
+            lastSyncedLabel={lastSyncedLabel}
+            remoteSyncLabel={remoteSyncLabel}
+            remoteVersion={remoteVersion}
+            saveState={saveState}
+          />
+
+          <PresenceDropdown
+            collaborationErrorMessage={collaborationErrorMessage}
+            collaborationPeers={collaborationPeers}
+            collaborationStatusLabel={collaborationStatusLabel}
+          />
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                className={`gap-1 text-xs ${isGalleryOpen ? "bg-accent text-accent-foreground" : ""}`}
+                onClick={onToggleGallery}
+                size="sm"
+                variant="ghost"
+              >
+                <SquaresFourIcon
+                  className="size-3.5"
+                  weight={isGalleryOpen ? "fill" : "bold"}
+                />
+                Templates
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Template gallery</TooltipContent>
+          </Tooltip>
+        </div>
+
+        <div className="hidden h-10 items-center gap-2 px-3 md:flex">
           <Link
             aria-label="Back to home page"
             className="inline-flex items-center justify-center"
@@ -330,176 +859,25 @@ export function SpreadsheetMenuBar({
               </TooltipContent>
             </Tooltip>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="flex items-center gap-1 rounded-sm px-1 py-0.5 text-left text-muted-foreground text-xs transition-colors hover:bg-accent"
-                  type="button"
-                >
-                  <CloudCheckIcon className="size-3.5" weight="fill" />
-                  <span>
-                    {saveState === "saving" ? "Saving..." : remoteSyncLabel}
-                  </span>
-                  {lastSyncedLabel ? (
-                    <span className="text-muted-foreground/80">
-                      · Synced {lastSyncedLabel}
-                    </span>
-                  ) : null}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="w-72 p-0"
-                sideOffset={8}
-              >
-                <div className="space-y-3 px-4 py-3 text-xs">
-                  <div>
-                    <p className="font-medium text-foreground text-sm">
-                      Sync details
-                    </p>
-                    <p className="text-muted-foreground">
-                      Firestore persistence status for this workbook.
-                    </p>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-muted-foreground">Status</span>
-                      <span className="font-medium text-foreground">
-                        {remoteSyncLabel}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-muted-foreground">Last sync</span>
-                      <span className="font-medium text-foreground">
-                        {lastSyncedLabel ?? "Not synced yet"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-muted-foreground">
-                        Remote version
-                      </span>
-                      <span className="font-medium text-foreground">
-                        {remoteVersion ?? "-"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-muted-foreground">
-                        Pending changes
-                      </span>
-                      <span className="font-medium text-foreground">
-                        {hasPendingChanges ? "Yes" : "No"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {lastSyncErrorMessage ? (
-                    <div className="border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive text-xs/relaxed">
-                      {lastSyncErrorMessage}
-                    </div>
-                  ) : null}
-
-                  <div className="border-border border-t pt-2 text-muted-foreground">
-                    Realtime presence is {collaborationStatus}.
-                  </div>
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <SyncStatusDropdown
+              collaborationStatus={collaborationStatus}
+              hasPendingChanges={hasPendingChanges}
+              lastSyncErrorMessage={lastSyncErrorMessage}
+              lastSyncedLabel={lastSyncedLabel}
+              remoteSyncLabel={remoteSyncLabel}
+              remoteVersion={remoteVersion}
+              saveState={saveState}
+            />
           </div>
 
           <div className="flex-1" />
 
           <div className="flex items-center gap-1.5">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="flex items-center gap-2 rounded-sm px-1 py-0.5 transition-colors hover:bg-accent"
-                  type="button"
-                >
-                  <div className="flex items-center gap-2">
-                    {collaborationPeers.length === 0 ? (
-                      <Badge variant="outline">Solo</Badge>
-                    ) : null}
-                    <div className="flex -space-x-1.5">
-                      {collaborationPeers.slice(0, 2).map((peer) => (
-                        <CollaboratorAvatar
-                          identity={peer.identity}
-                          key={peer.identity.clientId}
-                          ringClassName="ring-2 ring-background"
-                          size="md"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="w-72 overflow-hidden border-white/10 bg-[#30302E] p-0 text-white shadow-xl ring-1 ring-white/10"
-                sideOffset={8}
-              >
-                <div className="space-y-3 px-4 py-4 text-xs">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="font-medium text-sm text-white">Presence</p>
-                      <p className="text-white/60">
-                        {collaborationPeers.length > 0
-                          ? `${collaborationPeers.length} other people in this sheet`
-                          : "No one else is here right now"}
-                      </p>
-                    </div>
-                    <Badge className="border-white/10 bg-white/8 text-white hover:bg-white/8">
-                      {collaborationPeers.length > 0
-                        ? `${collaborationPeers.length} live`
-                        : "Solo"}
-                    </Badge>
-                  </div>
-
-                  <div className="text-[11px] text-white/55">
-                    {collaborationErrorMessage ?? collaborationStatusLabel}
-                  </div>
-
-                  {collaborationPeers.length > 0 ? (
-                    <div className="space-y-2 border-white/10 border-t pt-3">
-                      {collaborationPeers.map((peer) => (
-                        <div
-                          className="flex items-center gap-3 rounded-none border border-white/10 bg-black/10 px-3 py-2.5"
-                          key={peer.identity.clientId}
-                        >
-                          <CollaboratorAvatar
-                            identity={peer.identity}
-                            ringClassName="ring-2 ring-background"
-                            size="md"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium text-white">
-                              {peer.identity.name}
-                            </p>
-                            <p className="text-white/55">
-                              {peer.accessRole === "viewer"
-                                ? "Viewer"
-                                : "Editor"}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {formatPresenceCell(peer.activeCell) ? (
-                              <Badge className="border-white/10 bg-white/8 font-mono text-[10px] text-white hover:bg-white/8">
-                                {formatPresenceCell(peer.activeCell)}
-                              </Badge>
-                            ) : null}
-                            <Badge className="border-white/10 bg-white/8 text-white hover:bg-white/8">
-                              {peer.accessRole === "viewer"
-                                ? "Viewer"
-                                : "Editor"}
-                            </Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <PresenceDropdown
+              collaborationErrorMessage={collaborationErrorMessage}
+              collaborationPeers={collaborationPeers}
+              collaborationStatusLabel={collaborationStatusLabel}
+            />
 
             <Separator className="mx-1 h-5" orientation="vertical" />
 
@@ -543,7 +921,7 @@ export function SpreadsheetMenuBar({
           </div>
         </div>
 
-        <Menubar className="h-7 border-0 bg-transparent px-2">
+        <Menubar className="hidden h-7 border-0 bg-transparent px-2 md:flex">
           <FileMenu
             canEdit={canEdit}
             onCreateWorkbook={onCreateWorkbook}

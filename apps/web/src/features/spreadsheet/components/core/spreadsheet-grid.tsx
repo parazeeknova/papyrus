@@ -276,6 +276,8 @@ export function SpreadsheetGrid({
   rowHeights,
 }: SpreadsheetGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+  const resizeStateRef = useRef<ResizeState | null>(null);
   const selectionDragRef = useRef<{
     mode: SelectionMode;
     start: CellPosition;
@@ -461,6 +463,9 @@ export function SpreadsheetGrid({
     COL_HEADER_HEIGHT +
     totalRowHeight +
     (canExpandRows ? EXPANSION_PROMPT_HEIGHT : 0);
+  const resizeSessionKey = resizeState
+    ? `${resizeState.type}:${resizeState.index}`
+    : null;
 
   useEffect(() => {
     if (rowSizingSignature === "") {
@@ -517,64 +522,95 @@ export function SpreadsheetGrid({
   }, []);
 
   useEffect(() => {
-    if (!resizeState) {
+    if (!resizeSessionKey) {
+      return;
+    }
+
+    const activeResizeState = resizeStateRef.current;
+    if (!activeResizeState) {
       return;
     }
 
     const nextCursor =
-      resizeState.type === "column" ? "col-resize" : "row-resize";
+      activeResizeState.type === "column" ? "col-resize" : "row-resize";
     const previousCursor = document.body.style.cursor;
     document.body.style.cursor = nextCursor;
 
     const handlePointerMove = (event: PointerEvent) => {
-      setResizeState((currentState) => {
-        if (!currentState) {
-          return null;
+      const currentState = resizeStateRef.current;
+      if (!currentState) {
+        return;
+      }
+
+      const pointerOffset =
+        currentState.type === "column" ? event.clientX : event.clientY;
+      const minimumSize =
+        currentState.type === "column" ? MIN_COLUMN_WIDTH : MIN_ROW_HEIGHT;
+      const nextSize = Math.max(
+        minimumSize,
+        currentState.originSize +
+          (pointerOffset - currentState.originPointerOffset)
+      );
+
+      if (nextSize === currentState.size) {
+        return;
+      }
+
+      resizeStateRef.current = {
+        ...currentState,
+        size: nextSize,
+      };
+
+      if (resizeFrameRef.current !== null) {
+        return;
+      }
+
+      resizeFrameRef.current = window.requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        const pendingResizeState = resizeStateRef.current;
+        if (pendingResizeState) {
+          setResizeState(pendingResizeState);
         }
-
-        const pointerOffset =
-          currentState.type === "column" ? event.clientX : event.clientY;
-        const minimumSize =
-          currentState.type === "column" ? MIN_COLUMN_WIDTH : MIN_ROW_HEIGHT;
-
-        return {
-          ...currentState,
-          size: Math.max(
-            minimumSize,
-            currentState.originSize +
-              (pointerOffset - currentState.originPointerOffset)
-          ),
-        };
       });
     };
 
     const handlePointerUp = () => {
-      setResizeState((currentState) => {
-        if (!currentState) {
-          return null;
-        }
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
 
-        if (currentState.size !== currentState.originSize) {
-          if (currentState.type === "column") {
-            onResizeColumn(currentState.index, currentState.size);
-          } else {
-            onResizeRow(currentState.index, currentState.size);
-          }
-        }
+      const currentState = resizeStateRef.current;
+      if (!currentState) {
+        return;
+      }
 
-        return null;
-      });
+      if (currentState.size !== currentState.originSize) {
+        if (currentState.type === "column") {
+          onResizeColumn(currentState.index, currentState.size);
+        } else {
+          onResizeRow(currentState.index, currentState.size);
+        }
+      }
+
+      resizeStateRef.current = null;
+      setResizeState(null);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
 
     return () => {
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+
       document.body.style.cursor = previousCursor;
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [onResizeColumn, onResizeRow, resizeState]);
+  }, [onResizeColumn, onResizeRow, resizeSessionKey]);
 
   const beginColumnResize = useCallback(
     (columnIndex: number, event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -582,13 +618,15 @@ export function SpreadsheetGrid({
       event.stopPropagation();
       setContextMenu(null);
       setRenamingColumnIndex(null);
-      setResizeState({
+      const nextResizeState = {
         index: columnIndex,
         originPointerOffset: event.clientX,
         originSize: getColumnWidth(columnIndex),
         size: getColumnWidth(columnIndex),
         type: "column",
-      });
+      } satisfies ResizeState;
+      resizeStateRef.current = nextResizeState;
+      setResizeState(nextResizeState);
     },
     [getColumnWidth]
   );
@@ -598,13 +636,15 @@ export function SpreadsheetGrid({
       event.preventDefault();
       event.stopPropagation();
       setContextMenu(null);
-      setResizeState({
+      const nextResizeState = {
         index: rowIndex,
         originPointerOffset: event.clientY,
         originSize: getRowHeight(rowIndex),
         size: getRowHeight(rowIndex),
         type: "row",
-      });
+      } satisfies ResizeState;
+      resizeStateRef.current = nextResizeState;
+      setResizeState(nextResizeState);
     },
     [getRowHeight]
   );
