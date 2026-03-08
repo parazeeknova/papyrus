@@ -6,7 +6,6 @@ Realtime collaborative spreadsheet with a local-first document model, CRDT-based
 
 - Full Feature List: [features](https://github.com/parazeeknova/papyrus/wiki/Features) at github wiki !
 - Live app: [vercel](https://papyrus-sheets.vercel.app) link deployed
-- Shared 10K row workbook: [shared - editor access](https://papyrus-sheets.vercel.app/workbook/8a8dd4da-b5ae-4076-a432-0402b3da8208?shared=1)
 - Loom Video: [video](https://www.loom.com/share/6a8a305a52a9422fbea79584c5a9cd72)
 
 | Home | Find & Replace | Share menu |
