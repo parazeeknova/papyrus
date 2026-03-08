@@ -8,11 +8,15 @@ import {
 } from "@papyrus/core/workbook-registry";
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import {
+  BookOpenIcon,
   ClockClockwiseIcon,
   CloudIcon,
   FileTextIcon,
+  GithubLogoIcon,
+  LightningIcon,
   PlusIcon,
   StarIcon,
+  TableIcon,
   TrashIcon,
   UserCircleIcon,
   UsersThreeIcon,
@@ -442,9 +446,9 @@ export function HomeDashboard() {
 
   return (
     <main className="flex min-h-screen flex-col bg-background">
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center gap-6 px-5 py-8 sm:px-8 sm:py-10">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center gap-5 px-4 py-6 sm:gap-6 sm:px-8 sm:py-10">
         <Card className="w-full overflow-hidden border-border/60 bg-card">
-          <CardContent className="grid gap-8 px-6 py-6 md:grid-cols-[minmax(0,1.3fr)_320px] md:px-8 md:py-8">
+          <CardContent className="grid gap-6 px-5 py-5 sm:px-6 sm:py-6 md:grid-cols-[minmax(0,1.3fr)_320px] md:gap-8 md:px-8 md:py-8">
             <section className="space-y-5">
               <Link className="inline-flex" href="/">
                 <Badge className="gap-2 px-2.5 py-1" variant="ghost">
@@ -460,10 +464,10 @@ export function HomeDashboard() {
               </Link>
 
               <div className="space-y-3">
-                <h1 className="max-w-xl font-serif text-4xl tracking-tight sm:text-5xl">
+                <h1 className="max-w-xl font-serif text-3xl tracking-tight sm:text-5xl">
                   Documents, kept close and easy to reopen.
                 </h1>
-                <p className="max-w-2xl text-base text-muted-foreground sm:text-lg">
+                <p className="max-w-2xl text-muted-foreground text-sm sm:text-lg">
                   A minimal front page for your recent workbooks, with the
                   current session in view and the latest edits surfaced first.
                 </p>
@@ -618,10 +622,10 @@ export function HomeDashboard() {
                       )}
                       key={document.id}
                     >
-                      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
                         <button
                           aria-label={`Open ${document.name}`}
-                          className="grid min-w-0 gap-4 px-4 py-4 text-left outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring/50 sm:px-5 md:grid-cols-[minmax(0,1fr)_180px] md:items-center"
+                          className="grid min-w-0 gap-3 px-4 pt-4 text-left outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring/50 sm:px-5 md:grid-cols-[minmax(0,1fr)_180px] md:items-center md:gap-4 md:py-4"
                           onClick={() => {
                             handleOpenDocument(document.id);
                           }}
@@ -650,7 +654,7 @@ export function HomeDashboard() {
                                   Shared
                                 </Badge>
                               ) : null}
-                              <span className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
+                              <span className="inline-flex items-center gap-1.5 break-all text-muted-foreground text-xs">
                                 <CloudIcon
                                   className="size-3.5"
                                   weight="duotone"
@@ -660,7 +664,7 @@ export function HomeDashboard() {
                             </div>
                           </div>
 
-                          <div className="space-y-1 text-sm">
+                          <div className="space-y-1 text-xs sm:text-sm">
                             <p className="font-medium">
                               {formatRelativeDate(document.updatedAt)}
                             </p>
@@ -672,6 +676,7 @@ export function HomeDashboard() {
 
                         <div className="flex items-center px-4 pb-4 sm:px-5 md:justify-end md:px-5 md:py-4 md:pl-0">
                           <Button
+                            className="w-full sm:w-auto"
                             onClick={() => {
                               setDeleteErrorMessage(null);
                               setPendingDeleteDocument(document);
@@ -691,6 +696,83 @@ export function HomeDashboard() {
                 })}
               </ul>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="w-full overflow-hidden border-border/60 bg-card">
+          <CardContent className="space-y-5 px-5 py-5 sm:px-6 sm:py-6 md:px-8">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">About Papyrus</Badge>
+                  <Badge variant="outline">Preview</Badge>
+                </div>
+                <div className="space-y-1">
+                  <h2 className="font-serif text-xl tracking-tight sm:text-3xl">
+                    A local-first spreadsheet workspace
+                  </h2>
+                  <p className="max-w-2xl text-muted-foreground text-sm sm:text-base">
+                    Papyrus is built for fast editing, reliable local
+                    persistence, and gradually expanding collaboration and
+                    formula support.
+                  </p>
+                </div>
+              </div>
+
+              <div className="w-full space-y-2 rounded-none border border-border/60 bg-background px-4 py-4 md:w-auto md:min-w-64">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">Author</Badge>
+                  <p className="font-medium text-sm">Harsh Sahu</p>
+                </div>
+                <a
+                  className="inline-flex items-center gap-2 font-medium text-primary text-xs underline-offset-4 hover:underline"
+                  href="https://github.com/parazeeknova"
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  <GithubLogoIcon className="size-4" weight="fill" />
+                  @parazeeknova
+                </a>
+              </div>
+            </div>
+
+            <section
+              aria-label="About Papyrus"
+              className="grid gap-3 sm:grid-cols-3"
+            >
+              <div className="space-y-2 rounded-none border border-border/60 bg-background px-4 py-4">
+                <LightningIcon className="size-4 text-primary" weight="fill" />
+                <div>
+                  <p className="font-medium text-sm">Fast editing</p>
+                  <p className="text-muted-foreground text-xs/relaxed">
+                    Large visible sheets stay responsive with a spreadsheet
+                    interface tuned for focused work.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-none border border-border/60 bg-background px-4 py-4">
+                <TableIcon className="size-4 text-primary" weight="fill" />
+                <div>
+                  <p className="font-medium text-sm">Local persistence</p>
+                  <p className="text-muted-foreground text-xs/relaxed">
+                    Workbooks are stored in the browser so recent files stay
+                    close and reopen quickly.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-none border border-border/60 bg-background px-4 py-4">
+                <BookOpenIcon className="size-4 text-primary" weight="fill" />
+                <div>
+                  <p className="font-medium text-sm">Growing feature set</p>
+                  <p className="text-muted-foreground text-xs/relaxed">
+                    Collaboration, sync, and workbook capabilities are already
+                    in place and still expanding.
+                  </p>
+                </div>
+              </div>
+            </section>
           </CardContent>
         </Card>
       </div>
