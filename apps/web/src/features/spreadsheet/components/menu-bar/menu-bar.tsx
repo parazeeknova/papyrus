@@ -9,7 +9,6 @@ import {
   ArrowClockwiseIcon,
   CloudCheckIcon,
   ListIcon,
-  SquaresFourIcon,
   StarIcon,
 } from "@phosphor-icons/react";
 import dynamic from "next/dynamic";
@@ -789,24 +788,6 @@ export function SpreadsheetMenuBar({
             collaborationPeers={collaborationPeers}
             collaborationStatusLabel={collaborationStatusLabel}
           />
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                className={`gap-1 text-xs ${isGalleryOpen ? "bg-accent text-accent-foreground" : ""}`}
-                onClick={onToggleGallery}
-                size="sm"
-                variant="ghost"
-              >
-                <SquaresFourIcon
-                  className="size-3.5"
-                  weight={isGalleryOpen ? "fill" : "bold"}
-                />
-                Templates
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Template gallery</TooltipContent>
-          </Tooltip>
         </div>
 
         <div className="hidden h-10 items-center gap-2 px-3 md:flex">
@@ -931,26 +912,6 @@ export function SpreadsheetMenuBar({
               collaborationPeers={collaborationPeers}
               collaborationStatusLabel={collaborationStatusLabel}
             />
-
-            <Separator className="mx-1 h-5" orientation="vertical" />
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  className={`gap-1 text-xs ${isGalleryOpen ? "bg-accent text-accent-foreground" : ""}`}
-                  onClick={onToggleGallery}
-                  size="sm"
-                  variant="ghost"
-                >
-                  <SquaresFourIcon
-                    className="size-3.5"
-                    weight={isGalleryOpen ? "fill" : "bold"}
-                  />
-                  <span className="hidden sm:inline">Templates</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Template gallery</TooltipContent>
-            </Tooltip>
 
             <Separator className="mx-1 h-5" orientation="vertical" />
 

@@ -4,22 +4,15 @@ import type { CellTextTransform } from "@papyrus/core/workbook-types";
 import {
   ArrowClockwiseIcon,
   ArrowCounterClockwiseIcon,
-  CellSignalFullIcon,
   ClipboardTextIcon,
   ColumnsIcon,
   CopyIcon,
   DotsThreeIcon,
   MagnifyingGlassIcon,
-  PaintBrushIcon,
   PaintBucketIcon,
-  PrinterIcon,
-  RectangleIcon,
   RowsIcon,
   ScissorsIcon,
   TextAaIcon,
-  TextAlignCenterIcon,
-  TextAlignLeftIcon,
-  TextAlignRightIcon,
   TextBolderIcon,
   TextItalicIcon,
   TextStrikethroughIcon,
@@ -314,15 +307,6 @@ export function Toolbar({
           label="Delete column"
           onClick={onDeleteColumn}
         />
-        <Separator className="mx-1 h-5" orientation="vertical" />
-        <ToolbarButton
-          icon={<PrinterIcon weight="bold" />}
-          label="Print (Ctrl+P)"
-        />
-        <ToolbarButton
-          icon={<PaintBrushIcon weight="bold" />}
-          label="Format painter"
-        />
 
         <Separator className="mx-1 h-5" orientation="vertical" />
 
@@ -517,39 +501,6 @@ export function Toolbar({
           disabled={loading}
           icon={<PaintBucketIcon weight="bold" />}
           label="Fill color"
-        />
-
-        <Separator className="mx-1 h-5" orientation="vertical" />
-
-        {/* Alignment */}
-        <ToolbarButton
-          disabled={loading}
-          icon={<TextAlignLeftIcon weight="bold" />}
-          label="Align left"
-        />
-        <ToolbarButton
-          disabled={loading}
-          icon={<TextAlignCenterIcon weight="bold" />}
-          label="Align center"
-        />
-        <ToolbarButton
-          disabled={loading}
-          icon={<TextAlignRightIcon weight="bold" />}
-          label="Align right"
-        />
-
-        <Separator className="mx-1 h-5" orientation="vertical" />
-
-        {/* Merge / Borders */}
-        <ToolbarButton
-          disabled={loading}
-          icon={<CellSignalFullIcon weight="bold" />}
-          label="Merge cells"
-        />
-        <ToolbarButton
-          disabled={loading}
-          icon={<RectangleIcon weight="bold" />}
-          label="Borders"
         />
       </div>
 

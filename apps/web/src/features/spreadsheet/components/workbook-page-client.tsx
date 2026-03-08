@@ -12,7 +12,6 @@ import { SpreadsheetGrid } from "@/web/features/spreadsheet/components/core/spre
 import { Toolbar } from "@/web/features/spreadsheet/components/core/toolbar";
 import { FindReplaceDialog } from "@/web/features/spreadsheet/components/dialogs/find-replace-dialog";
 import { SpreadsheetMenuBar } from "@/web/features/spreadsheet/components/menu-bar/menu-bar";
-import { TemplateGalleryPanel } from "@/web/features/spreadsheet/components/template-gallery";
 import { useSpreadsheet } from "@/web/features/spreadsheet/hooks/use-spreadsheet";
 import { getDefaultSyncServerUrl } from "@/web/features/spreadsheet/lib/collaboration";
 import { colToLetter } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
@@ -325,7 +324,6 @@ function WorkbookPageContent({
         workbookId={activeWorkbook?.id ?? null}
         workbookName={activeWorkbook?.name ?? "Untitled spreadsheet"}
       />
-      {isGalleryOpen ? <TemplateGalleryPanel /> : null}
       <Toolbar
         activeFontFamily={activeSelectionFormat?.fontFamily ?? null}
         activeFontSize={activeSelectionFormat?.fontSize ?? null}
