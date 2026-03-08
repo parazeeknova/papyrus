@@ -84,7 +84,7 @@ interface CellComponentProps {
   isActive: boolean;
   isEditing: boolean;
   isSelected: boolean;
-  onCommit: () => void;
+  onCommit: (direction?: "down" | "left" | "right" | "up") => void;
   onContextMenu: (
     pos: CellPosition,
     event: ReactMouseEvent<HTMLButtonElement>
@@ -158,21 +158,22 @@ const CellComponent = memo(function CellComponent({
       <input
         className="absolute inset-0 z-10 border-2 border-primary bg-background px-1.5 text-xs outline-none"
         disabled={disabled}
-        onBlur={onCommit}
+        onBlur={() => {
+          onCommit();
+        }}
         onChange={(e) => {
           onValueChange(row, col, e.target.value);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            onCommit();
+            onCommit(e.shiftKey ? "up" : "down");
           } else if (e.key === "Escape") {
             e.preventDefault();
             onCommit();
           } else if (e.key === "Tab") {
             e.preventDefault();
-            onCommit();
-            onKeyDown(e);
+            onCommit(e.shiftKey ? "left" : "right");
           }
         }}
         ref={inputRef}
@@ -389,15 +390,21 @@ export function SpreadsheetGrid({
       if (e.key === "ArrowUp") {
         e.preventDefault();
         navigateFromActive("up");
-      } else if (e.key === "ArrowDown" || e.key === "Enter") {
+      } else if (e.key === "ArrowDown") {
         e.preventDefault();
         navigateFromActive("down");
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         navigateFromActive("left");
-      } else if (e.key === "ArrowRight" || e.key === "Tab") {
+      } else if (e.key === "ArrowRight") {
         e.preventDefault();
         navigateFromActive("right");
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        navigateFromActive(e.shiftKey ? "up" : "down");
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        navigateFromActive(e.shiftKey ? "left" : "right");
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (canEdit && activeCell) {
           e.preventDefault();
@@ -409,6 +416,16 @@ export function SpreadsheetGrid({
       }
     },
     [activeCell, canEdit, navigateFromActive, setCellValue, startEditing]
+  );
+
+  const handleCellEditCommit = useCallback(
+    (direction?: "down" | "left" | "right" | "up") => {
+      stopEditing();
+      if (direction) {
+        navigateFromActive(direction);
+      }
+    },
+    [navigateFromActive, stopEditing]
   );
 
   const rowVirtualizer = useVirtualizer({
@@ -1145,7 +1162,7 @@ export function SpreadsheetGrid({
                           isActive={isActive}
                           isEditing={isEditing}
                           isSelected={isSelected}
-                          onCommit={stopEditing}
+                          onCommit={handleCellEditCommit}
                           onContextMenu={handleCellContextMenu}
                           onDoubleClick={(position) => {
                             if (canEdit) {

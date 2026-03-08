@@ -10,7 +10,7 @@ interface FormulaBarProps {
   cellRaw: string;
   disabled?: boolean;
   getCellReferenceLabel: (row: number, col: number) => string;
-  onCommit: () => void;
+  onCommit: (direction?: "down" | "up") => void;
   onValueChange: (value: string) => void;
   primaryColumnName: string;
 }
@@ -55,7 +55,7 @@ export function FormulaBar({
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            onCommit();
+            onCommit(e.shiftKey ? "up" : "down");
           }
           if (e.key === "Escape") {
             e.preventDefault();

@@ -150,12 +150,15 @@ function WorkbookPageContent({
     [activeCell, setCellValue]
   );
 
-  const handleFormulaCommit = useCallback(() => {
-    stopEditing();
-    if (activeCell) {
-      navigateFromActive("down");
-    }
-  }, [activeCell, navigateFromActive, stopEditing]);
+  const handleFormulaCommit = useCallback(
+    (direction: "down" | "up" = "down") => {
+      stopEditing();
+      if (activeCell) {
+        navigateFromActive(direction);
+      }
+    },
+    [activeCell, navigateFromActive, stopEditing]
+  );
 
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isFindReplaceOpen, setIsFindReplaceOpen] = useState(false);
