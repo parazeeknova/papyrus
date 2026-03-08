@@ -68,6 +68,7 @@ interface ActiveWorkbookSession {
   doc: Doc;
   handleDocUpdate: (update: Uint8Array, origin: unknown) => void;
   handleUndoStackChange: () => void;
+  hasAppliedRealtimeSnapshot: boolean;
   isSharedSession: boolean;
   persistence: WorkbookPersistence | null;
   sessionId: number;
@@ -754,10 +755,18 @@ export const createSpreadsheetStoreController = (
           (column, index) =>
             column.name !== snapshot.activeSheetColumns[index]?.name
         );
+      const didColumnsShallowChange =
+        didColumnsChange ||
+        state.activeSheetColumns.some(
+          (column, index) =>
+            column.width !== snapshot.activeSheetColumns[index]?.width
+        );
 
       return {
         activeSheetCells: snapshot.activeSheetCells,
-        activeSheetColumns: snapshot.activeSheetColumns,
+        activeSheetColumns: didColumnsShallowChange
+          ? snapshot.activeSheetColumns
+          : state.activeSheetColumns,
         activeSheetFormats: snapshot.activeSheetFormats,
         activeSheetId: snapshot.activeSheetId,
         activeSheetRowHeights: snapshot.activeSheetRowHeights,
@@ -941,7 +950,6 @@ export const createSpreadsheetStoreController = (
     });
 
     const socket = new WebSocket(wsUrl);
-    let hasAppliedInitialSnapshot = false;
     moduleState.collaborationSocket = socket;
     moduleState.collaborationSocketWorkbookId = activeWorkbookId;
     moduleState.connectingRealtimeTransport = false;
@@ -997,7 +1005,10 @@ export const createSpreadsheetStoreController = (
             getWorkbookMeta(moduleState.activeWorkbookSession.doc).updatedAt
           ) > getWorkbookUpdatedAtFromEncodedUpdate(message.payload.update);
 
-        if (isSharedSession && !hasAppliedInitialSnapshot) {
+        if (
+          isSharedSession &&
+          !moduleState.activeWorkbookSession.hasAppliedRealtimeSnapshot
+        ) {
           resetWorkbook(
             moduleState.activeWorkbookSession.doc,
             REALTIME_SYNC_ORIGIN
@@ -1009,7 +1020,7 @@ export const createSpreadsheetStoreController = (
           decodeBase64ToUpdate(message.payload.update),
           REALTIME_SYNC_ORIGIN
         );
-        hasAppliedInitialSnapshot = true;
+        moduleState.activeWorkbookSession.hasAppliedRealtimeSnapshot = true;
 
         if (isSharedSession) {
           applySnapshot(moduleState.activeWorkbookSession.doc);
@@ -1250,6 +1261,7 @@ export const createSpreadsheetStoreController = (
       doc,
       handleDocUpdate: () => undefined,
       handleUndoStackChange: () => undefined,
+      hasAppliedRealtimeSnapshot: false,
       isSharedSession,
       persistence,
       sessionId: moduleState.nextWorkbookSessionId,

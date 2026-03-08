@@ -7,6 +7,7 @@ import type {
 import type {
   CellFormat,
   CellTextTransform,
+  PersistedCellRecord,
 } from "@papyrus/core/workbook-types";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,6 +44,8 @@ const DEFAULT_COLS = 100;
 const DEFAULT_ROWS = 100_000;
 const DEFAULT_VISIBLE_ROWS = 1000;
 const ROW_EXPANSION_STEP = 1000;
+const SHEET_STATUS_VISIBILITY_DELAY_MS = 150;
+const WORKER_INIT_SYNC_DELAY_MS = 180;
 const EMPTY_CELL: CellData = { raw: "", computed: "" };
 const EMPTY_CELL_FORMAT: CellFormat = {};
 const LAST_SYNC_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
@@ -431,25 +434,47 @@ export function useSpreadsheet({
   const [computedCells, setComputedCells] = useState<Record<string, CellData>>(
     {}
   );
+  const [isSheetComputing, setIsSheetComputing] = useState(false);
+  const [showSheetLoadingStatus, setShowSheetLoadingStatus] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [collaborationIdentity, setCollaborationIdentity] =
     useState<CollaboratorIdentity | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const activeColumnNames = useMemo(
-    () => activeSheetColumns.map((column) => column.name),
-    [activeSheetColumns]
-  );
+  const previousColumnNamesRef = useRef<string[]>([]);
+  const activeColumnNames = useMemo(() => {
+    const next = activeSheetColumns.map((column) => column.name);
+    const prev = previousColumnNamesRef.current;
+    if (
+      prev.length === next.length &&
+      prev.every((name, i) => name === next[i])
+    ) {
+      return prev;
+    }
+    previousColumnNamesRef.current = next;
+    return next;
+  }, [activeSheetColumns]);
   const columnCount = activeColumnNames.length || DEFAULT_COLS;
   const [totalRowCount] = useState(DEFAULT_ROWS);
   const [rowCount, setRowCount] = useState(DEFAULT_VISIBLE_ROWS);
 
   const workerRef = useRef<Worker | null>(null);
-  const workerCellsRef = useRef<Record<string, CellData>>({});
   const clipboardRef = useRef<ClipboardPayload | null>(null);
-  const workerColumnNamesRef = useRef<string[]>([]);
+  const activeWorkerRequestIdRef = useRef(0);
+  const latestActiveColumnNamesRef = useRef<string[]>(activeColumnNames);
+  const latestActiveSheetCellsRef =
+    useRef<Record<string, PersistedCellRecord>>(activeSheetCells);
+  const pendingWorkerInitFrameRef = useRef<number | null>(null);
+  const pendingWorkerInitTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const previousSheetIdRef = useRef<string | null>(null);
+  const shouldSkipNextWorkerSyncRef = useRef(true);
+  const visibleWorkerInitInFlightRef = useRef(false);
   const stopRealtimeRef = useRef(stopRealtime);
   stopRealtimeRef.current = stopRealtime;
+  const realtimeCleanupTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const resolvedRequestedAccessRole = requestedAccessRole ?? "editor";
   const effectiveCollaborationAccessRole = isSharedSession
     ? collaborationAccessRole
@@ -471,19 +496,6 @@ export function useSpreadsheet({
     () => normalizeSelectionRange(selection, columnCount, rowCount),
     [selection, columnCount, rowCount]
   );
-  const activeSheetCellsForWorker = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.entries(activeSheetCells).map(([cellKey, cellData]) => [
-          cellKey,
-          {
-            raw: cellData.raw,
-            computed: cellData.raw,
-          },
-        ])
-      ),
-    [activeSheetCells]
-  );
 
   // Initialize Worker
   useEffect(() => {
@@ -497,7 +509,13 @@ export function useSpreadsheet({
       e: MessageEvent<SpreadsheetWorkerResponse>
     ) => {
       if (e.data.type === "READY") {
+        if (e.data.payload.requestId !== activeWorkerRequestIdRef.current) {
+          return;
+        }
+
         setComputedCells(applySpreadsheetPatch({}, e.data.payload.patch));
+        setIsSheetComputing(false);
+        visibleWorkerInitInFlightRef.current = false;
         return;
       }
 
@@ -509,6 +527,12 @@ export function useSpreadsheet({
     };
 
     return () => {
+      if (pendingWorkerInitFrameRef.current !== null) {
+        window.cancelAnimationFrame(pendingWorkerInitFrameRef.current);
+      }
+      if (pendingWorkerInitTimeoutRef.current !== null) {
+        clearTimeout(pendingWorkerInitTimeoutRef.current);
+      }
       workerRef.current?.terminate();
     };
   }, []);
@@ -603,9 +627,21 @@ export function useSpreadsheet({
 
   // Unmount-only cleanup: tears down the WebSocket only when the component
   // truly unmounts (navigating away), not on every effect re-fire.
+  // Uses a deferred timeout so StrictMode's simulated unmount is cancelled
+  // by the immediate remount, preventing unnecessary socket teardown.
   useEffect(() => {
+    // Cancel any pending cleanup from a previous StrictMode cycle
+    if (realtimeCleanupTimeoutRef.current !== null) {
+      clearTimeout(realtimeCleanupTimeoutRef.current);
+      realtimeCleanupTimeoutRef.current = null;
+    }
+
     return () => {
-      stopRealtimeRef.current();
+      const ref = stopRealtimeRef;
+      realtimeCleanupTimeoutRef.current = setTimeout(() => {
+        realtimeCleanupTimeoutRef.current = null;
+        ref.current();
+      }, 0);
     };
   }, []);
 
@@ -620,16 +656,96 @@ export function useSpreadsheet({
   }, []);
 
   useEffect(() => {
-    workerCellsRef.current = activeSheetCellsForWorker;
-    workerColumnNamesRef.current = activeColumnNames;
-    workerRef.current?.postMessage({
-      type: "INIT",
-      payload: {
-        cells: workerCellsRef.current,
-        columnNames: workerColumnNamesRef.current,
-      },
+    latestActiveSheetCellsRef.current = activeSheetCells;
+  }, [activeSheetCells]);
+
+  useEffect(() => {
+    if (workerResetKey.length === 0) {
+      return;
+    }
+
+    latestActiveColumnNamesRef.current = activeColumnNames;
+
+    if (pendingWorkerInitFrameRef.current !== null) {
+      window.cancelAnimationFrame(pendingWorkerInitFrameRef.current);
+      pendingWorkerInitFrameRef.current = null;
+    }
+
+    if (pendingWorkerInitTimeoutRef.current !== null) {
+      clearTimeout(pendingWorkerInitTimeoutRef.current);
+      pendingWorkerInitTimeoutRef.current = null;
+    }
+
+    activeWorkerRequestIdRef.current += 1;
+    const requestId = activeWorkerRequestIdRef.current;
+
+    setComputedCells({});
+    setIsSheetComputing(true);
+    visibleWorkerInitInFlightRef.current = true;
+    shouldSkipNextWorkerSyncRef.current = true;
+
+    pendingWorkerInitFrameRef.current = window.requestAnimationFrame(() => {
+      pendingWorkerInitFrameRef.current = null;
+      pendingWorkerInitTimeoutRef.current = setTimeout(() => {
+        pendingWorkerInitTimeoutRef.current = null;
+        workerRef.current?.postMessage({
+          type: "INIT",
+          payload: {
+            cells: latestActiveSheetCellsRef.current,
+            columnNames: latestActiveColumnNamesRef.current,
+            requestId,
+          },
+        });
+      }, 0);
     });
-  }, [activeColumnNames, activeSheetCellsForWorker]);
+  }, [activeColumnNames, workerResetKey]);
+
+  useEffect(() => {
+    latestActiveSheetCellsRef.current = activeSheetCells;
+
+    if (shouldSkipNextWorkerSyncRef.current) {
+      shouldSkipNextWorkerSyncRef.current = false;
+      return;
+    }
+
+    if (visibleWorkerInitInFlightRef.current) {
+      return;
+    }
+
+    if (pendingWorkerInitTimeoutRef.current !== null) {
+      clearTimeout(pendingWorkerInitTimeoutRef.current);
+    }
+
+    activeWorkerRequestIdRef.current += 1;
+    const requestId = activeWorkerRequestIdRef.current;
+
+    pendingWorkerInitTimeoutRef.current = setTimeout(() => {
+      pendingWorkerInitTimeoutRef.current = null;
+      workerRef.current?.postMessage({
+        type: "INIT",
+        payload: {
+          cells: latestActiveSheetCellsRef.current,
+          columnNames: latestActiveColumnNamesRef.current,
+          requestId,
+        },
+      });
+    }, WORKER_INIT_SYNC_DELAY_MS);
+  }, [activeSheetCells]);
+
+  useEffect(() => {
+    if (!isSheetComputing) {
+      setShowSheetLoadingStatus(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setShowSheetLoadingStatus(true);
+    }, SHEET_STATUS_VISIBILITY_DELAY_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [isSheetComputing]);
 
   useEffect(() => {
     if (workerResetKey.length === 0) {
@@ -1429,6 +1545,7 @@ export function useSpreadsheet({
     importErrorMessage,
     importFileName,
     importPhase,
+    isSheetComputing,
     lastSyncErrorMessage,
     lastSyncedLabel,
     findNext,
@@ -1483,6 +1600,7 @@ export function useSpreadsheet({
     replaceCurrent,
     rowCount,
     saveState,
+    sheetLoadStatusLabel: showSheetLoadingStatus ? "Loading sheet" : null,
     sharingAccessRole: activeWorkbook?.sharingAccessRole ?? "viewer",
     sharingEnabled: activeWorkbook?.sharingEnabled ?? false,
     sheets,

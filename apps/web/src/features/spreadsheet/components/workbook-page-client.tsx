@@ -87,6 +87,7 @@ function WorkbookPageContent({
     importWorkbookFromExcel,
     lastSyncErrorMessage,
     lastSyncedLabel,
+    sheetLoadStatusLabel,
     pasteSelection,
     redo,
     reorderColumn,
@@ -158,12 +159,17 @@ function WorkbookPageContent({
       colToLetter(index)
     );
   }, [columnCount]);
+  const activeSheetName = useMemo(() => {
+    return sheets.find((sheet) => sheet.id === activeSheetId)?.name ?? null;
+  }, [activeSheetId, sheets]);
   const visibleSheets = isInitialLoad ? [INITIAL_LOADING_SHEET] : sheets;
   const visibleActiveSheetId = isInitialLoad
     ? INITIAL_LOADING_SHEET.id
     : activeSheetId;
   const getLoadingCellData = useCallback(() => BLANK_CELL, []);
   const navigateWhileLoading = useCallback(() => null, []);
+  const transientStatusLabel = importPhaseLabel ?? sheetLoadStatusLabel;
+  const transientStatusDetail = importFileName ?? activeSheetName;
 
   const handleFormulaChange = useCallback(
     (value: string) => {
@@ -232,8 +238,6 @@ function WorkbookPageContent({
         collaborationErrorMessage={collaborationErrorMessage}
         collaborationPeers={collaborationPeers}
         collaborationStatus={collaborationStatus}
-        importFileName={importFileName}
-        importStatusLabel={importPhaseLabel}
         isFavorite={activeWorkbook?.isFavorite ?? false}
         isGalleryOpen={isGalleryOpen}
         lastSyncErrorMessage={lastSyncErrorMessage}
@@ -316,6 +320,8 @@ function WorkbookPageContent({
         sharingAccessRole={sharingAccessRole}
         sharingEnabled={sharingEnabled}
         syncServerUrl={syncServerUrl}
+        transientStatusDetail={transientStatusDetail}
+        transientStatusLabel={transientStatusLabel}
         workbookId={activeWorkbook?.id ?? null}
         workbookName={activeWorkbook?.name ?? "Untitled spreadsheet"}
       />

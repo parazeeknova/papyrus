@@ -1,3 +1,4 @@
+import type { PersistedCellRecord } from "@papyrus/core/workbook-types";
 import {
   cellId,
   computeCell,
@@ -15,6 +16,8 @@ let cells = new Map<string, CellData>();
 let dependencies = new Map<string, Set<string>>();
 let dependents = new Map<string, Set<string>>();
 let columnNames: string[] = [];
+
+type WorkerInitCellRecord = CellData | PersistedCellRecord;
 
 const recomputeAll = (): SpreadsheetPatch => {
   const patch: SpreadsheetPatch = { deletions: [], updates: {} };
@@ -159,7 +162,7 @@ const recomputeFrom = (startKey: string): SpreadsheetPatch => {
 };
 
 const resetState = (
-  initialCells: Record<string, CellData>,
+  initialCells: Record<string, WorkerInitCellRecord>,
   nextColumnNames: string[]
 ) => {
   cells = new Map<string, CellData>();
@@ -169,8 +172,15 @@ const resetState = (
 
   for (const [cellKey, cellData] of Object.entries(initialCells)) {
     const normalizedKey = normalizeCellId(cellKey);
-    upsertCell(normalizedKey, cellData);
-    setDependencyEdges(normalizedKey, cellData.raw);
+    const normalizedCell: CellData = {
+      computed:
+        "computed" in cellData && typeof cellData.computed === "string"
+          ? cellData.computed
+          : cellData.raw,
+      raw: cellData.raw,
+    };
+    upsertCell(normalizedKey, normalizedCell);
+    setDependencyEdges(normalizedKey, normalizedCell.raw);
   }
 };
 
@@ -185,6 +195,7 @@ const handleInit = (message: SpreadsheetWorkerMessage) => {
     type: "READY",
     payload: {
       patch,
+      requestId: message.payload.requestId,
     },
   } satisfies SpreadsheetWorkerResponse);
 };

@@ -1,3 +1,5 @@
+import type { PersistedCellRecord } from "@papyrus/core/workbook-types";
+
 export type SelectionMode = "cells" | "columns" | "rows";
 
 export interface CellData {
@@ -34,8 +36,9 @@ export type SpreadsheetWorkerMessage =
   | {
       type: "INIT";
       payload: {
-        cells?: Record<string, CellData>;
+        cells?: Record<string, CellData | PersistedCellRecord>;
         columnNames?: string[];
+        requestId?: number;
       };
     }
   | {
@@ -48,6 +51,7 @@ export type SpreadsheetWorkerResponse =
       type: "READY";
       payload: {
         patch: SpreadsheetPatch;
+        requestId?: number;
       };
     }
   | {

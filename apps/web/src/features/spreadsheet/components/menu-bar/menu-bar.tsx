@@ -68,8 +68,6 @@ interface SpreadsheetMenuBarProps {
   collaborationErrorMessage: string | null;
   collaborationPeers: CollaboratorPresence[];
   collaborationStatus: "connected" | "connecting" | "disconnected";
-  importFileName: string | null;
-  importStatusLabel: string | null;
   isFavorite: boolean;
   isGalleryOpen: boolean;
   lastSyncErrorMessage: string | null;
@@ -108,6 +106,8 @@ interface SpreadsheetMenuBarProps {
   sharingAccessRole: CollaborationAccessRole;
   sharingEnabled: boolean;
   syncServerUrl: string | null;
+  transientStatusDetail: string | null;
+  transientStatusLabel: string | null;
   workbookId: string | null;
   workbookName: string;
 }
@@ -352,15 +352,15 @@ function PresenceDropdown({
   );
 }
 
-interface ImportStatusIndicatorProps {
-  fileName: string | null;
+interface TransientStatusIndicatorProps {
+  detail: string | null;
   statusLabel: string | null;
 }
 
-function ImportStatusIndicator({
-  fileName,
+function TransientStatusIndicator({
+  detail,
   statusLabel,
-}: ImportStatusIndicatorProps) {
+}: TransientStatusIndicatorProps) {
   if (!statusLabel) {
     return null;
   }
@@ -377,7 +377,7 @@ function ImportStatusIndicator({
         </div>
       </TooltipTrigger>
       <TooltipContent side="bottom">
-        {fileName ? `${statusLabel}: ${fileName}` : statusLabel}
+        {detail ? `${statusLabel}: ${detail}` : statusLabel}
       </TooltipContent>
     </Tooltip>
   );
@@ -393,8 +393,6 @@ export function SpreadsheetMenuBar({
   collaborationErrorMessage,
   collaborationPeers,
   collaborationStatus,
-  importFileName,
-  importStatusLabel,
   isGalleryOpen,
   isFavorite,
   lastSyncErrorMessage,
@@ -427,6 +425,8 @@ export function SpreadsheetMenuBar({
   sharingAccessRole,
   sharingEnabled,
   syncServerUrl,
+  transientStatusDetail,
+  transientStatusLabel,
   workbookId,
   workbookName,
 }: SpreadsheetMenuBarProps) {
@@ -779,9 +779,9 @@ export function SpreadsheetMenuBar({
             saveState={saveState}
           />
 
-          <ImportStatusIndicator
-            fileName={importFileName}
-            statusLabel={importStatusLabel}
+          <TransientStatusIndicator
+            detail={transientStatusDetail}
+            statusLabel={transientStatusLabel}
           />
 
           <PresenceDropdown
@@ -917,9 +917,9 @@ export function SpreadsheetMenuBar({
               saveState={saveState}
             />
 
-            <ImportStatusIndicator
-              fileName={importFileName}
-              statusLabel={importStatusLabel}
+            <TransientStatusIndicator
+              detail={transientStatusDetail}
+              statusLabel={transientStatusLabel}
             />
           </div>
 
