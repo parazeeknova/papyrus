@@ -601,8 +601,8 @@ export function SpreadsheetMenuBar({
           <DialogHeader>
             <DialogTitle>Delete spreadsheet?</DialogTitle>
             <DialogDescription>
-              This permanently removes `{workbookName}` from IndexedDB on this
-              device.
+              This permanently removes `{workbookName}` from local browser
+              storage, IndexedDB, and any synced cloud copies.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

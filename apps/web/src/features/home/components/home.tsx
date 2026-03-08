@@ -1,15 +1,19 @@
 "use client";
 
 import { createWorkbookId } from "@papyrus/core/workbook-doc";
-import { listWorkbookRegistryEntries } from "@papyrus/core/workbook-registry";
+import { deleteWorkbookPersistence } from "@papyrus/core/workbook-persistence";
+import {
+  deleteWorkbookRegistryEntry,
+  listWorkbookRegistryEntries,
+} from "@papyrus/core/workbook-registry";
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import {
-  ArrowRightIcon,
   ClockClockwiseIcon,
   CloudIcon,
   FileTextIcon,
   PlusIcon,
   StarIcon,
+  TrashIcon,
   UserCircleIcon,
   UsersThreeIcon,
   WarningCircleIcon,
@@ -19,6 +23,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useState } from "react";
+import { Doc } from "yjs";
 import { Badge } from "@/web/components/ui/badge";
 import { Button } from "@/web/components/ui/button";
 import {
@@ -28,9 +33,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/web/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/web/components/ui/dialog";
 import { Separator } from "@/web/components/ui/separator";
 import { firebaseAuth } from "@/web/features/auth/lib/firebase-auth";
-import { listRemoteWorkbooks } from "@/web/features/spreadsheet/lib/firestore-workbook-sync";
+import {
+  deleteRemoteWorkbook,
+  listRemoteWorkbooks,
+} from "@/web/features/spreadsheet/lib/firestore-workbook-sync";
+import { deleteSharedWorkbookAccess } from "@/web/features/spreadsheet/lib/share-registry";
 import { useSpreadsheetStore } from "@/web/features/spreadsheet/store/spreadsheet-store";
 import { cn } from "@/web/lib/utils";
 
@@ -215,48 +232,110 @@ export function HomeDashboard() {
   const router = useRouter();
   const openWorkbook = useSpreadsheetStore((state) => state.openWorkbook);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [documents, setDocuments] = useState<DashboardDocument[]>([]);
+  const [localDocuments, setLocalDocuments] = useState<WorkbookMeta[]>([]);
+  const [remoteDocuments, setRemoteDocuments] = useState<WorkbookMeta[]>([]);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isCreatingDocument, setIsCreatingDocument] = useState(false);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
-  const [loadErrorMessage, setLoadErrorMessage] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeletingDocument, setIsDeletingDocument] = useState(false);
+  const [localLoadErrorMessage, setLocalLoadErrorMessage] = useState<
+    string | null
+  >(null);
+  const [remoteLoadErrorMessage, setRemoteLoadErrorMessage] = useState<
+    string | null
+  >(null);
+  const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(
+    null
+  );
+  const [pendingDeleteDocument, setPendingDeleteDocument] =
+    useState<DashboardDocument | null>(null);
+  const documents = mergeDocuments(localDocuments, remoteDocuments);
+  const loadErrorMessage = localLoadErrorMessage ?? remoteLoadErrorMessage;
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadLocalDocuments = async (): Promise<void> => {
+      try {
+        const nextLocalDocuments = await listWorkbookRegistryEntries();
+        if (isCancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setLocalDocuments(nextLocalDocuments);
+          setIsLoadingDocuments(false);
+          setLocalLoadErrorMessage(null);
+        });
+      } catch {
+        if (isCancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setIsLoadingDocuments(false);
+          setLocalLoadErrorMessage(
+            "Couldn't read local documents in this browser."
+          );
+        });
+      }
+    };
+
+    loadLocalDocuments().catch(() => {
+      if (isCancelled) {
+        return;
+      }
+
+      startTransition(() => {
+        setIsLoadingDocuments(false);
+        setLocalLoadErrorMessage("Couldn't load local documents.");
+      });
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
     let latestRequestId = 0;
 
-    const loadDocuments = async (
+    const loadRemoteDocuments = async (
       user: User | null,
       requestId: number
     ): Promise<void> => {
-      let localDocuments: WorkbookMeta[] = [];
-      let remoteDocuments: WorkbookMeta[] = [];
-      let nextErrorMessage: string | null = null;
-
-      try {
-        localDocuments = await listWorkbookRegistryEntries();
-      } catch {
-        nextErrorMessage = "Couldn't read local documents in this browser.";
-      }
-
-      if (user) {
-        try {
-          remoteDocuments = await listRemoteWorkbooks(user.uid);
-        } catch {
-          nextErrorMessage ??=
-            "Couldn't refresh synced documents. Showing local data instead.";
-        }
-      }
-
-      if (isCancelled || requestId !== latestRequestId) {
+      if (!user) {
+        startTransition(() => {
+          setRemoteDocuments([]);
+          setRemoteLoadErrorMessage(null);
+        });
         return;
       }
 
-      startTransition(() => {
-        setDocuments(mergeDocuments(localDocuments, remoteDocuments));
-        setIsLoadingDocuments(false);
-        setLoadErrorMessage(nextErrorMessage);
-      });
+      try {
+        const nextRemoteDocuments = await listRemoteWorkbooks(user.uid);
+        if (isCancelled || requestId !== latestRequestId) {
+          return;
+        }
+
+        startTransition(() => {
+          setRemoteDocuments(nextRemoteDocuments);
+          setRemoteLoadErrorMessage(null);
+        });
+      } catch {
+        if (isCancelled || requestId !== latestRequestId) {
+          return;
+        }
+
+        startTransition(() => {
+          setRemoteDocuments([]);
+          setRemoteLoadErrorMessage(
+            "Couldn't refresh synced documents. Showing local data instead."
+          );
+        });
+      }
     };
 
     const unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
@@ -266,17 +345,19 @@ export function HomeDashboard() {
 
       setCurrentUser(nextUser);
       setIsAuthReady(true);
-      setIsLoadingDocuments(true);
       latestRequestId += 1;
-      const nextRequestId = latestRequestId;
 
-      loadDocuments(nextUser, nextRequestId).catch(() => {
-        if (isCancelled || nextRequestId !== latestRequestId) {
+      loadRemoteDocuments(nextUser, latestRequestId).catch(() => {
+        if (isCancelled) {
           return;
         }
 
-        setIsLoadingDocuments(false);
-        setLoadErrorMessage("Couldn't load documents.");
+        startTransition(() => {
+          setRemoteDocuments([]);
+          setRemoteLoadErrorMessage(
+            "Couldn't refresh synced documents. Showing local data instead."
+          );
+        });
       });
     });
 
@@ -296,6 +377,61 @@ export function HomeDashboard() {
       router.push(`/workbook/${workbookId}`);
     } finally {
       setIsCreatingDocument(false);
+    }
+  };
+
+  const handleOpenDocument = (workbookId: string): void => {
+    router.push(`/workbook/${workbookId}`);
+  };
+
+  const handleDeleteDialogChange = (nextOpen: boolean): void => {
+    if (isDeletingDocument) {
+      return;
+    }
+
+    setIsDeleteDialogOpen(nextOpen);
+    if (!nextOpen) {
+      setPendingDeleteDocument(null);
+    }
+  };
+
+  const handleDeleteDocument = async (): Promise<void> => {
+    if (!pendingDeleteDocument) {
+      return;
+    }
+
+    setIsDeletingDocument(true);
+    setDeleteErrorMessage(null);
+
+    try {
+      if (currentUser) {
+        await deleteRemoteWorkbook(currentUser.uid, pendingDeleteDocument.id);
+        await deleteSharedWorkbookAccess(pendingDeleteDocument.id);
+      }
+
+      await deleteWorkbookPersistence(pendingDeleteDocument.id, new Doc());
+      await deleteWorkbookRegistryEntry(pendingDeleteDocument.id);
+
+      startTransition(() => {
+        setLocalDocuments((currentDocuments) =>
+          currentDocuments.filter(
+            (document) => document.id !== pendingDeleteDocument.id
+          )
+        );
+        setRemoteDocuments((currentDocuments) =>
+          currentDocuments.filter(
+            (document) => document.id !== pendingDeleteDocument.id
+          )
+        );
+        setPendingDeleteDocument(null);
+        setIsDeleteDialogOpen(false);
+      });
+    } catch {
+      setDeleteErrorMessage(
+        `Couldn't delete "${pendingDeleteDocument.name}". Try again.`
+      );
+    } finally {
+      setIsDeletingDocument(false);
     }
   };
 
@@ -431,6 +567,16 @@ export function HomeDashboard() {
               </div>
             ) : null}
 
+            {deleteErrorMessage ? (
+              <div className="flex items-start gap-2 rounded-none border border-destructive/20 bg-destructive/5 px-3 py-3 text-destructive text-sm">
+                <WarningCircleIcon
+                  className="mt-0.5 size-4 shrink-0"
+                  weight="fill"
+                />
+                <p>{deleteErrorMessage}</p>
+              </div>
+            ) : null}
+
             {isLoadingDocuments ? (
               <div className="grid gap-3">
                 {LOADING_PLACEHOLDER_IDS.map((placeholderId) => (
@@ -467,58 +613,78 @@ export function HomeDashboard() {
                   return (
                     <li
                       className={cn(
-                        "grid gap-4 bg-background/60 px-4 py-4 transition-colors sm:px-5 md:grid-cols-[minmax(0,1fr)_180px_auto]",
-                        index > 0 && "border-border/70 border-t",
-                        "hover:bg-muted/30"
+                        "bg-background/60 transition-colors hover:bg-muted/30",
+                        index > 0 && "border-border/70 border-t"
                       )}
                       key={document.id}
                     >
-                      <div className="min-w-0 space-y-2">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <p className="truncate font-medium text-sm sm:text-base">
-                            {document.name}
-                          </p>
-                          {document.isFavorite ? (
-                            <StarIcon
-                              className="size-4 shrink-0 text-primary"
-                              weight="fill"
-                            />
-                          ) : null}
+                      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                        <button
+                          aria-label={`Open ${document.name}`}
+                          className="grid min-w-0 gap-4 px-4 py-4 text-left outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring/50 sm:px-5 md:grid-cols-[minmax(0,1fr)_180px] md:items-center"
+                          onClick={() => {
+                            handleOpenDocument(document.id);
+                          }}
+                          type="button"
+                        >
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <p className="truncate font-medium text-sm sm:text-base">
+                                {document.name}
+                              </p>
+                              {document.isFavorite ? (
+                                <StarIcon
+                                  className="size-4 shrink-0 text-primary"
+                                  weight="fill"
+                                />
+                              ) : null}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant={sourceBadge.variant}>
+                                {sourceBadge.label}
+                              </Badge>
+                              {document.sharingEnabled ? (
+                                <Badge className="gap-1.5" variant="outline">
+                                  <UsersThreeIcon weight="duotone" />
+                                  Shared
+                                </Badge>
+                              ) : null}
+                              <span className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
+                                <CloudIcon
+                                  className="size-3.5"
+                                  weight="duotone"
+                                />
+                                {document.id}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1 text-sm">
+                            <p className="font-medium">
+                              {formatRelativeDate(document.updatedAt)}
+                            </p>
+                            <p className="text-muted-foreground text-xs">
+                              {formatAbsoluteDate(document.updatedAt)}
+                            </p>
+                          </div>
+                        </button>
+
+                        <div className="flex items-center px-4 pb-4 sm:px-5 md:justify-end md:px-5 md:py-4 md:pl-0">
+                          <Button
+                            onClick={() => {
+                              setDeleteErrorMessage(null);
+                              setPendingDeleteDocument(document);
+                              setIsDeleteDialogOpen(true);
+                            }}
+                            size="sm"
+                            type="button"
+                            variant="destructive"
+                          >
+                            <TrashIcon weight="bold" />
+                            Delete
+                          </Button>
                         </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={sourceBadge.variant}>
-                            {sourceBadge.label}
-                          </Badge>
-                          {document.sharingEnabled ? (
-                            <Badge className="gap-1.5" variant="outline">
-                              <UsersThreeIcon weight="duotone" />
-                              Shared
-                            </Badge>
-                          ) : null}
-                          <span className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
-                            <CloudIcon className="size-3.5" weight="duotone" />
-                            {document.id}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1 text-sm">
-                        <p className="font-medium">
-                          {formatRelativeDate(document.updatedAt)}
-                        </p>
-                        <p className="text-muted-foreground text-xs">
-                          {formatAbsoluteDate(document.updatedAt)}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center md:justify-end">
-                        <Button asChild size="sm" variant="ghost">
-                          <Link href={`/workbook/${document.id}`}>
-                            Open
-                            <ArrowRightIcon weight="bold" />
-                          </Link>
-                        </Button>
                       </div>
                     </li>
                   );
@@ -528,6 +694,44 @@ export function HomeDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog onOpenChange={handleDeleteDialogChange} open={isDeleteDialogOpen}>
+        <DialogContent
+          className="sm:max-w-md"
+          showCloseButton={!isDeletingDocument}
+        >
+          <DialogHeader>
+            <DialogTitle>Delete workbook?</DialogTitle>
+            <DialogDescription>
+              This permanently removes `
+              {pendingDeleteDocument?.name ?? "this workbook"}` from local
+              browser storage, IndexedDB, and any synced cloud copies.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              disabled={isDeletingDocument}
+              onClick={() => {
+                handleDeleteDialogChange(false);
+              }}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isDeletingDocument}
+              onClick={() => {
+                handleDeleteDocument().catch(() => undefined);
+              }}
+              type="button"
+              variant="destructive"
+            >
+              {isDeletingDocument ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div aria-hidden className="flex w-full items-center">
         <div className="h-2 w-full bg-primary" />
