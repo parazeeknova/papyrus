@@ -5,13 +5,22 @@ defmodule PapyrusCollabWeb.UserSocket do
 
   alias PapyrusCollab.Auth
 
+  channel "cloud_workbooks", PapyrusCollabWeb.CloudWorkbookChannel
   channel "workbook:*", PapyrusCollabWeb.WorkbookChannel
 
   @impl true
   def connect(params, socket, _connect_info) do
     case Auth.authenticate_socket(params) do
-      {:ok, identity} -> {:ok, assign(socket, :identity, identity)}
-      :error -> :error
+      {:ok, identity} ->
+        token = Map.get(params, "token")
+
+        {:ok,
+         socket
+         |> assign(:firebase_token, token)
+         |> assign(:identity, identity)}
+
+      :error ->
+        :error
     end
   end
 

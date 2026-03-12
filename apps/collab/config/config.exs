@@ -13,6 +13,9 @@ config :papyrus_collab,
 config :papyrus_collab, PapyrusCollab.Auth,
   id_token_verifier: PapyrusCollab.Firebase.IdTokenVerifier
 
+config :papyrus_collab, PapyrusCollab.CloudWorkbooks.Store,
+  adapter: PapyrusCollab.CloudWorkbooks.Store.Firestore
+
 config :papyrus_collab, PapyrusCollab.Collaboration.BackupStore,
   adapter: PapyrusCollab.Collaboration.BackupStore.InMemory
 

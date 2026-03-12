@@ -14,6 +14,7 @@ defmodule PapyrusCollabWeb.ChannelCase do
 
   setup _tags do
     PapyrusCollab.Collaboration.reset_backup_store()
+    PapyrusCollab.CloudWorkbooks.reset()
     :ok
   end
 
