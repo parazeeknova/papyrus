@@ -112,10 +112,10 @@ const moduleState: SpreadsheetStoreModuleState = {
   remoteSyncTimeout: null,
 };
 
-const FIRESTORE_SYNC_DEBOUNCE_MS = 2500;
-const FIRESTORE_LEASE_RETRY_MS = 3000;
-const FIRESTORE_SYNC_ORIGIN = "firestore-sync";
-const FIRESTORE_SYNC_CLIENT_ID = crypto.randomUUID();
+const CLOUD_SYNC_DEBOUNCE_MS = 2500;
+const CLOUD_SYNC_LEASE_RETRY_MS = 3000;
+const CLOUD_SYNC_ORIGIN = "cloud-sync";
+const CLOUD_SYNC_CLIENT_ID = crypto.randomUUID();
 const IMPORT_EXPORT_MIN_COLUMN_COUNT = 100;
 const IMPORT_EXPORT_SHEET_FALLBACK_NAME = "Sheet1";
 const syncLogger = createLogger({ scope: "spreadsheet-sync" });
@@ -256,7 +256,7 @@ const persistRemoteWorkbookLocally = async (
 
   try {
     await waitForWorkbookPersistence(persistence);
-    applyUpdate(doc, workbook.update, FIRESTORE_SYNC_ORIGIN);
+    applyUpdate(doc, workbook.update, CLOUD_SYNC_ORIGIN);
     await upsertWorkbookRegistryEntry(
       buildPersistedWorkbookMeta(
         getWorkbookMeta(doc),
@@ -346,10 +346,10 @@ export const createSpreadsheetStoreController = (
     if (isActiveSession(session)) {
       set({ remoteSyncStatus: "pending" });
     }
-    syncLogger.debug("Scheduled debounced Firestore workbook sync.");
+    syncLogger.debug("Scheduled debounced cloud workbook sync.");
     moduleState.remoteSyncTimeout = setTimeout(() => {
       flushRemoteWorkbookSync(session).catch((error) => {
-        syncLogger.error("Failed to flush Firestore workbook sync.", error);
+        syncLogger.error("Failed to flush cloud workbook sync.", error);
         if (isActiveSession(session)) {
           set({
             lastSyncErrorMessage:
@@ -359,7 +359,7 @@ export const createSpreadsheetStoreController = (
           });
         }
       });
-    }, options?.delayMs ?? FIRESTORE_SYNC_DEBOUNCE_MS);
+    }, options?.delayMs ?? CLOUD_SYNC_DEBOUNCE_MS);
   };
 
   const flushRemoteWorkbookSync = async (
@@ -378,7 +378,7 @@ export const createSpreadsheetStoreController = (
 
     if (!session.dirty) {
       syncLogger.debug(
-        "Skipped Firestore sync because there are no local workbook changes."
+        "Skipped cloud sync because there are no local workbook changes."
       );
       return false;
     }
@@ -392,15 +392,15 @@ export const createSpreadsheetStoreController = (
     const hasLease = await cloudWorkbookStore.acquireSyncLease(
       currentUserId,
       localSnapshot.workbook.id,
-      FIRESTORE_SYNC_CLIENT_ID
+      CLOUD_SYNC_CLIENT_ID
     );
     if (!hasLease) {
       syncLogger.debug(
-        `Skipped Firestore sync for workbook ${localSnapshot.workbook.id}; another client holds the lease.`
+        `Skipped cloud sync for workbook ${localSnapshot.workbook.id}; another client holds the lease.`
       );
       if (options?.scheduleRetryOnLeaseFailure !== false) {
         scheduleRemoteWorkbookSync(session, {
-          delayMs: options?.retryDelayMs ?? FIRESTORE_LEASE_RETRY_MS,
+          delayMs: options?.retryDelayMs ?? CLOUD_SYNC_LEASE_RETRY_MS,
         });
       } else if (isActiveSession(session)) {
         set({ remoteSyncStatus: "pending" });
@@ -416,13 +416,13 @@ export const createSpreadsheetStoreController = (
 
     if (remoteWorkbook) {
       syncLogger.debug(
-        `Merging remote Firestore state into workbook ${localSnapshot.workbook.id} before upload.`
+        `Merging remote cloud state into workbook ${localSnapshot.workbook.id} before upload.`
       );
-      applyUpdate(session.doc, remoteWorkbook.update, FIRESTORE_SYNC_ORIGIN);
+      applyUpdate(session.doc, remoteWorkbook.update, CLOUD_SYNC_ORIGIN);
     }
 
     const mergedSnapshot = getWorkbookSnapshot(session.doc);
-    await cloudWorkbookStore.writeWorkbook(
+    const writeResult = await cloudWorkbookStore.writeWorkbook(
       currentUserId,
       {
         activeSheetId: mergedSnapshot.activeSheetId,
@@ -430,27 +430,25 @@ export const createSpreadsheetStoreController = (
         update: encodeStateAsUpdate(session.doc),
         version: remoteWorkbook?.version ?? 0,
       },
-      FIRESTORE_SYNC_CLIENT_ID
+      CLOUD_SYNC_CLIENT_ID
     );
     syncLogger.info(
-      `Synced workbook ${mergedSnapshot.workbook.id} to Firestore for ${currentUserId}.`
+      `Synced workbook ${mergedSnapshot.workbook.id} through Phoenix for ${currentUserId}.`
     );
     session.dirty = false;
-    const persistedLastSyncedAt = new Date().toISOString();
-    const nextRemoteVersion = (remoteWorkbook?.version ?? 0) + 1;
     if (isActiveSession(session)) {
       set({
         lastSyncErrorMessage: null,
-        lastSyncedAt: getTimestampValue(persistedLastSyncedAt),
+        lastSyncedAt: getTimestampValue(writeResult.lastSyncedAt),
         remoteSyncStatus: "synced",
-        remoteVersion: nextRemoteVersion,
+        remoteVersion: writeResult.version,
       });
     }
     await upsertWorkbookRegistryEntry(
       buildPersistedWorkbookMeta(
         mergedSnapshot.workbook,
-        persistedLastSyncedAt,
-        nextRemoteVersion
+        writeResult.lastSyncedAt,
+        writeResult.version
       )
     );
     if (isActiveSession(session)) {
@@ -503,7 +501,7 @@ export const createSpreadsheetStoreController = (
         applyUpdate(
           moduleState.activeWorkbookSession.doc,
           remoteWorkbook.update,
-          FIRESTORE_SYNC_ORIGIN
+          CLOUD_SYNC_ORIGIN
         );
         await upsertWorkbookRegistryEntry(
           buildPersistedWorkbookMeta(
@@ -522,7 +520,7 @@ export const createSpreadsheetStoreController = (
     }
 
     // Promote local guest workbooks sequentially after login so each upload
-    // sees a stable Firestore view and the user gets deterministic error
+    // sees a stable server view and the user gets deterministic error
     // handling if a specific workbook cannot be upgraded.
     for (const localWorkbookMeta of localWorkbooks) {
       const remoteWorkbookMeta = remoteById.get(localWorkbookMeta.id);
@@ -548,19 +546,19 @@ export const createSpreadsheetStoreController = (
               localWorkbookMeta.name
             );
 
-      await cloudWorkbookStore.writeWorkbook(
+      const writeResult = await cloudWorkbookStore.writeWorkbook(
         user.uid,
         localWorkbook,
-        FIRESTORE_SYNC_CLIENT_ID
+        CLOUD_SYNC_CLIENT_ID
       );
       syncLogger.info(
-        `Uploaded local workbook ${localWorkbook.meta.id} to Firestore.`
+        `Uploaded local workbook ${localWorkbook.meta.id} through Phoenix.`
       );
 
       set({
         lastSyncErrorMessage: null,
-        lastSyncedAt: Date.now(),
-        remoteVersion: localWorkbook.version + 1,
+        lastSyncedAt: getTimestampValue(writeResult.lastSyncedAt),
+        remoteVersion: writeResult.version,
       });
 
       if (
@@ -784,7 +782,7 @@ export const createSpreadsheetStoreController = (
       }
 
       if (remoteWorkbook) {
-        applyUpdate(doc, remoteWorkbook.update, FIRESTORE_SYNC_ORIGIN);
+        applyUpdate(doc, remoteWorkbook.update, CLOUD_SYNC_ORIGIN);
         await upsertWorkbookRegistryEntry(
           buildPersistedWorkbookMeta(
             remoteWorkbook.meta,
@@ -817,7 +815,7 @@ export const createSpreadsheetStoreController = (
     session.handleDocUpdate = (_update: Uint8Array, origin: unknown) => {
       applySnapshot(doc);
 
-      if (!(session.isSharedSession || origin === FIRESTORE_SYNC_ORIGIN)) {
+      if (!(session.isSharedSession || origin === CLOUD_SYNC_ORIGIN)) {
         session.dirty = true;
         scheduleRemoteWorkbookSync(session);
       }
@@ -869,7 +867,7 @@ export const createSpreadsheetStoreController = (
           remoteVersion: null,
         });
         if (moduleState.hasResolvedInitialAuthState) {
-          syncLogger.info("Signed out; paused Firestore workbook syncing.");
+          syncLogger.info("Signed out; paused cloud workbook syncing.");
         }
 
         moduleState.hasResolvedInitialAuthState = true;
@@ -889,7 +887,7 @@ export const createSpreadsheetStoreController = (
         })
         .catch((error) => {
           syncLogger.error(
-            "Failed to reconcile Firestore workbooks after login.",
+            "Failed to reconcile cloud workbooks after login.",
             error
           );
           set({

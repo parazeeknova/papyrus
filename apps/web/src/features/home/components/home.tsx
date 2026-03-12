@@ -46,10 +46,7 @@ import {
 } from "@/web/components/ui/dialog";
 import { Separator } from "@/web/components/ui/separator";
 import { firebaseAuth } from "@/web/features/auth/lib/firebase-auth";
-import {
-  deleteRemoteWorkbook,
-  listRemoteWorkbooks,
-} from "@/web/features/spreadsheet/lib/firestore-workbook-sync";
+import { cloudWorkbookStore } from "@/web/features/spreadsheet/lib/cloud-workbook-store";
 import { useSpreadsheetStore } from "@/web/features/spreadsheet/store/spreadsheet-store";
 import { cn } from "@/web/lib/utils";
 
@@ -317,7 +314,9 @@ export function HomeDashboard() {
       }
 
       try {
-        const nextRemoteDocuments = await listRemoteWorkbooks(user.uid);
+        const nextRemoteDocuments = await cloudWorkbookStore.listWorkbooks(
+          user.uid
+        );
         if (isCancelled || requestId !== latestRequestId) {
           return;
         }
@@ -407,7 +406,10 @@ export function HomeDashboard() {
 
     try {
       if (currentUser) {
-        await deleteRemoteWorkbook(currentUser.uid, pendingDeleteDocument.id);
+        await cloudWorkbookStore.deleteWorkbook(
+          currentUser.uid,
+          pendingDeleteDocument.id
+        );
       }
 
       await deleteWorkbookPersistence(pendingDeleteDocument.id, new Doc());

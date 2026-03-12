@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import type { CloudWorkbookState } from "./cloud-workbook-store";
 
-const firestoreSyncMocks = {
-  acquireWorkbookSyncLease: mock<
+const cloudChannelClientMocks = {
+  acquireRemoteWorkbookSyncLease: mock<
     (uid: string, workbookId: string, clientId: string) => Promise<boolean>
   >(() => Promise.resolve(true)),
   deleteRemoteWorkbook: mock<
@@ -20,24 +20,35 @@ const firestoreSyncMocks = {
       uid: string,
       workbook: CloudWorkbookState,
       clientId: string
-    ) => Promise<void>
-  >(() => Promise.resolve(undefined)),
+    ) => Promise<{
+      lastSyncedAt: string;
+      version: number;
+    }>
+  >(() =>
+    Promise.resolve({
+      lastSyncedAt: "2026-03-13T00:00:00.000Z",
+      version: 5,
+    })
+  ),
 };
 
-mock.module("@/web/features/spreadsheet/lib/firestore-workbook-sync", () => {
-  return firestoreSyncMocks;
-});
+mock.module(
+  "@/web/features/spreadsheet/lib/cloud-workbook-channel-client",
+  () => {
+    return cloudChannelClientMocks;
+  }
+);
 
 const { cloudWorkbookStore } = await import("./cloud-workbook-store");
 
 describe("cloudWorkbookStore", () => {
   beforeEach(() => {
-    for (const mockFn of Object.values(firestoreSyncMocks)) {
+    for (const mockFn of Object.values(cloudChannelClientMocks)) {
       mockFn.mockClear();
     }
   });
 
-  test("delegates workbook sync operations to the firestore adapter", async () => {
+  test("delegates workbook sync operations to the phoenix channel client", async () => {
     const workbook = {
       activeSheetId: "sheet-1",
       meta: {
@@ -58,10 +69,17 @@ describe("cloudWorkbookStore", () => {
 
     const listedWorkbooks = [workbook.meta];
 
-    firestoreSyncMocks.acquireWorkbookSyncLease.mockResolvedValue(true);
-    firestoreSyncMocks.listRemoteWorkbooks.mockResolvedValue(listedWorkbooks);
-    firestoreSyncMocks.readRemoteWorkbook.mockResolvedValue(workbook);
-    firestoreSyncMocks.writeRemoteWorkbook.mockResolvedValue(undefined);
+    cloudChannelClientMocks.acquireRemoteWorkbookSyncLease.mockResolvedValue(
+      true
+    );
+    cloudChannelClientMocks.listRemoteWorkbooks.mockResolvedValue(
+      listedWorkbooks
+    );
+    cloudChannelClientMocks.readRemoteWorkbook.mockResolvedValue(workbook);
+    cloudChannelClientMocks.writeRemoteWorkbook.mockResolvedValue({
+      lastSyncedAt: "2026-03-13T00:00:00.000Z",
+      version: 5,
+    });
 
     await expect(
       cloudWorkbookStore.acquireSyncLease("user-1", "workbook-1", "client-1")
@@ -74,35 +92,36 @@ describe("cloudWorkbookStore", () => {
     ).resolves.toEqual(workbook);
     await expect(
       cloudWorkbookStore.writeWorkbook("user-1", workbook, "client-1")
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({
+      lastSyncedAt: "2026-03-13T00:00:00.000Z",
+      version: 5,
+    });
 
-    expect(firestoreSyncMocks.acquireWorkbookSyncLease).toHaveBeenCalledWith(
-      "user-1",
-      "workbook-1",
-      "client-1"
-    );
-    expect(firestoreSyncMocks.listRemoteWorkbooks).toHaveBeenCalledWith(
+    expect(
+      cloudChannelClientMocks.acquireRemoteWorkbookSyncLease
+    ).toHaveBeenCalledWith("user-1", "workbook-1", "client-1");
+    expect(cloudChannelClientMocks.listRemoteWorkbooks).toHaveBeenCalledWith(
       "user-1"
     );
-    expect(firestoreSyncMocks.readRemoteWorkbook).toHaveBeenCalledWith(
+    expect(cloudChannelClientMocks.readRemoteWorkbook).toHaveBeenCalledWith(
       "user-1",
       "workbook-1"
     );
-    expect(firestoreSyncMocks.writeRemoteWorkbook).toHaveBeenCalledWith(
+    expect(cloudChannelClientMocks.writeRemoteWorkbook).toHaveBeenCalledWith(
       "user-1",
       workbook,
       "client-1"
     );
   });
 
-  test("delegates remote workbook deletion to the firestore adapter", async () => {
-    firestoreSyncMocks.deleteRemoteWorkbook.mockResolvedValue(undefined);
+  test("delegates remote workbook deletion to the phoenix channel client", async () => {
+    cloudChannelClientMocks.deleteRemoteWorkbook.mockResolvedValue(undefined);
 
     await expect(
       cloudWorkbookStore.deleteWorkbook("user-1", "workbook-1")
     ).resolves.toBeUndefined();
 
-    expect(firestoreSyncMocks.deleteRemoteWorkbook).toHaveBeenCalledWith(
+    expect(cloudChannelClientMocks.deleteRemoteWorkbook).toHaveBeenCalledWith(
       "user-1",
       "workbook-1"
     );

@@ -195,7 +195,7 @@ function getManualSyncTooltipLabel(
     | "synced"
 ): string {
   if (remoteSyncStatus === "disabled") {
-    return "Sign in with Google to sync this workbook to Firestore.";
+    return "Sign in with Google to sync this workbook through the cloud backend.";
   }
 
   return canManualSync
@@ -256,7 +256,7 @@ function SyncStatusDropdown({
           <div>
             <p className="font-medium text-foreground text-sm">Sync details</p>
             <p className="text-muted-foreground">
-              Firestore persistence status for this workbook.
+              Cloud sync status for this workbook.
             </p>
           </div>
 

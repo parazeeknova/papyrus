@@ -1,15 +1,21 @@
 "use client";
 
+import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import {
-  acquireWorkbookSyncLease,
+  acquireRemoteWorkbookSyncLease,
+  type CloudWorkbookWriteResult,
   deleteRemoteWorkbook,
   listRemoteWorkbooks,
-  type RemoteWorkbookState,
   readRemoteWorkbook,
   writeRemoteWorkbook,
-} from "@/web/features/spreadsheet/lib/firestore-workbook-sync";
+} from "@/web/features/spreadsheet/lib/cloud-workbook-channel-client";
 
-export type CloudWorkbookState = RemoteWorkbookState;
+export interface CloudWorkbookState {
+  activeSheetId: string | null;
+  meta: WorkbookMeta;
+  update: Uint8Array;
+  version: number;
+}
 
 export interface CloudWorkbookStore {
   acquireSyncLease: (
@@ -27,11 +33,11 @@ export interface CloudWorkbookStore {
     uid: string,
     workbook: CloudWorkbookState,
     clientId: string
-  ) => Promise<void>;
+  ) => Promise<CloudWorkbookWriteResult>;
 }
 
 export const cloudWorkbookStore: CloudWorkbookStore = {
-  acquireSyncLease: acquireWorkbookSyncLease,
+  acquireSyncLease: acquireRemoteWorkbookSyncLease,
   deleteWorkbook: deleteRemoteWorkbook,
   listWorkbooks: listRemoteWorkbooks,
   readWorkbook: readRemoteWorkbook,
