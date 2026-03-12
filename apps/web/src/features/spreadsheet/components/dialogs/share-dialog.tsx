@@ -103,9 +103,10 @@ export function ShareDialog({
       (left, right) => right.updatedAt - left.updatedAt
     );
   }, [collaborators]);
+  const canConfigureSharing = canManageSharing && syncServerUrl !== null;
 
   const copyLink = async (): Promise<void> => {
-    if (!sharingEnabled || shareLink.length === 0) {
+    if (!(canConfigureSharing && sharingEnabled && shareLink.length > 0)) {
       return;
     }
 
@@ -156,17 +157,19 @@ export function ShareDialog({
         <div className="space-y-4 px-4 py-4">
           <div className="flex items-center justify-between rounded-none border border-border bg-muted/30 px-3 py-2">
             <div>
-              <p className="font-medium text-xs">Realtime collaboration</p>
+              <p className="font-medium text-xs">Cloud collaboration</p>
               <p className="text-muted-foreground text-xs">
                 {realtimeErrorMessage
                   ? realtimeErrorMessage
-                  : syncServerUrl
-                    ? realtimeStatus === "connected"
-                      ? "Connected to the sync server."
-                      : realtimeStatus === "connecting"
-                        ? "Connecting to the sync server."
-                        : "Sync server unreachable right now."
-                    : "No sync server configured yet."}
+                  : canManageSharing
+                    ? syncServerUrl
+                      ? realtimeStatus === "connected"
+                        ? "Connected to the sync server."
+                        : realtimeStatus === "connecting"
+                          ? "Connecting to the sync server."
+                          : "Sync server unreachable right now."
+                      : "Sharing will come back once the new collaboration backend is connected."
+                    : "Sign in with Google to unlock cloud sync and sharing."}
               </p>
             </div>
             <Badge
@@ -181,23 +184,31 @@ export function ShareDialog({
               <div>
                 <p className="font-medium text-xs">Share access</p>
                 <p className="text-muted-foreground text-xs">
-                  Turn sharing on before sending a link.
+                  {canManageSharing
+                    ? syncServerUrl
+                      ? "Turn sharing on before sending a link."
+                      : "Sharing controls are paused until the new backend is ready."
+                    : "Sign in with Google to unlock sharing controls."}
                 </p>
               </div>
               <Button
-                disabled={!canManageSharing}
+                disabled={!canConfigureSharing}
                 onClick={() => {
                   onUpdateSharingEnabled(!sharingEnabled);
                 }}
                 size="sm"
                 variant={sharingEnabled ? "default" : "outline"}
               >
-                {sharingEnabled ? "Sharing on" : "Enable sharing"}
+                {syncServerUrl
+                  ? sharingEnabled
+                    ? "Sharing on"
+                    : "Enable sharing"
+                  : "Backend pending"}
               </Button>
             </div>
             <div className="flex gap-2">
               <Button
-                disabled={!(canManageSharing && sharingEnabled)}
+                disabled={!(canConfigureSharing && sharingEnabled)}
                 onClick={() => {
                   onUpdateSharingAccessRole("viewer");
                 }}
@@ -207,7 +218,7 @@ export function ShareDialog({
                 Viewer
               </Button>
               <Button
-                disabled={!(canManageSharing && sharingEnabled)}
+                disabled={!(canConfigureSharing && sharingEnabled)}
                 onClick={() => {
                   onUpdateSharingAccessRole("editor");
                 }}
@@ -229,15 +240,23 @@ export function ShareDialog({
             <div className="flex gap-2">
               <Input
                 placeholder={
-                  canManageSharing
+                  canConfigureSharing
                     ? "Enable sharing to generate a link"
-                    : "Sign in as the owner to manage sharing"
+                    : canManageSharing
+                      ? "Sharing returns with the new collaboration backend"
+                      : "Sign in with Google to unlock sharing"
                 }
                 readOnly
-                value={sharingEnabled ? shareLink : ""}
+                value={canConfigureSharing && sharingEnabled ? shareLink : ""}
               />
               <Button
-                disabled={!sharingEnabled || shareLink.length === 0}
+                disabled={
+                  !(
+                    canConfigureSharing &&
+                    sharingEnabled &&
+                    shareLink.length > 0
+                  )
+                }
                 onClick={() => {
                   copyLink().catch(() => undefined);
                 }}

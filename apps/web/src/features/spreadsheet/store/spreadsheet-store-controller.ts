@@ -34,6 +34,10 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import { applyUpdate, Doc, encodeStateAsUpdate, type UndoManager } from "yjs";
 import { firebaseAuth } from "@/web/features/auth/lib/firebase-auth";
 import {
+  shouldHydrateLocalWorkbook,
+  shouldUploadLocalWorkbook,
+} from "@/web/features/spreadsheet/lib/cloud-sync-reconciliation";
+import {
   acquireWorkbookSyncLease,
   listRemoteWorkbooks,
   type RemoteWorkbookState,
@@ -495,11 +499,7 @@ export const createSpreadsheetStoreController = (
 
     for (const remoteWorkbookMeta of remoteWorkbooks) {
       const localWorkbookMeta = localById.get(remoteWorkbookMeta.id);
-      if (
-        localWorkbookMeta &&
-        getTimestampValue(localWorkbookMeta.updatedAt) >=
-          getTimestampValue(remoteWorkbookMeta.updatedAt)
-      ) {
+      if (!shouldHydrateLocalWorkbook(remoteWorkbookMeta, localWorkbookMeta)) {
         continue;
       }
 
@@ -542,13 +542,12 @@ export const createSpreadsheetStoreController = (
       await persistRemoteWorkbookLocally(remoteWorkbook);
     }
 
+    // Promote local guest workbooks sequentially after login so each upload
+    // sees a stable Firestore view and the user gets deterministic error
+    // handling if a specific workbook cannot be upgraded.
     for (const localWorkbookMeta of localWorkbooks) {
       const remoteWorkbookMeta = remoteById.get(localWorkbookMeta.id);
-      if (
-        remoteWorkbookMeta &&
-        getTimestampValue(remoteWorkbookMeta.updatedAt) >=
-          getTimestampValue(localWorkbookMeta.updatedAt)
-      ) {
+      if (!shouldUploadLocalWorkbook(localWorkbookMeta, remoteWorkbookMeta)) {
         continue;
       }
 

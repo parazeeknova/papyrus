@@ -184,6 +184,25 @@ function formatPresenceCell(
   return `${colToLetter(activeCell.col)}${activeCell.row + 1}`;
 }
 
+function getManualSyncTooltipLabel(
+  canManualSync: boolean,
+  remoteSyncStatus:
+    | "disabled"
+    | "error"
+    | "idle"
+    | "pending"
+    | "syncing"
+    | "synced"
+): string {
+  if (remoteSyncStatus === "disabled") {
+    return "Sign in with Google to sync this workbook to Firestore.";
+  }
+
+  return canManualSync
+    ? "Sync workbooks to cloud"
+    : "Manual sync available every 5 seconds";
+}
+
 const GoogleAuthDialog = dynamic(
   async () =>
     import("@/web/features/auth/components/google-auth-dialog").then(
@@ -526,6 +545,10 @@ export function SpreadsheetMenuBar({
               : "Local only";
   const hasPendingChanges = remoteSyncStatus === "pending";
   const collaborationStatusLabel = getPresenceStatusLabel(collaborationStatus);
+  const manualSyncTooltipLabel = getManualSyncTooltipLabel(
+    canManualSync,
+    remoteSyncStatus
+  );
 
   return (
     <>
@@ -825,9 +848,7 @@ export function SpreadsheetMenuBar({
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {canManualSync
-                ? "Sync workbooks to cloud"
-                : "Manual sync available every 5 seconds"}
+              {manualSyncTooltipLabel}
             </TooltipContent>
           </Tooltip>
 
@@ -945,9 +966,7 @@ export function SpreadsheetMenuBar({
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                {canManualSync
-                  ? "Sync workbooks to cloud"
-                  : "Manual sync available every 5 seconds"}
+                {manualSyncTooltipLabel}
               </TooltipContent>
             </Tooltip>
 
