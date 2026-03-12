@@ -8,13 +8,13 @@ import {
 import { Doc } from "yjs";
 import type { StateCreator } from "zustand";
 import { cloudWorkbookStore } from "@/web/features/workbook/cloud-sync/lib/cloud-workbook-store";
-import type { SpreadsheetStoreController } from "../spreadsheet-store-controller";
-import type { SpreadsheetStoreState } from "../spreadsheet-store-types";
+import type { WorkbookStoreController } from "../workbook-store-controller";
+import type { WorkbookStoreState } from "../workbook-store-types";
 
 const MANUAL_SYNC_COOLDOWN_MS = 5000;
 
 type WorkbookSliceState = Pick<
-  SpreadsheetStoreState,
+  WorkbookStoreState,
   | "activeWorkbook"
   | "createWorkbook"
   | "deleteWorkbook"
@@ -39,15 +39,15 @@ type WorkbookSliceState = Pick<
   | "workbooks"
 >;
 
-const sortWorkbooks = (workbooks: SpreadsheetStoreState["workbooks"]) => {
+const sortWorkbooks = (workbooks: WorkbookStoreState["workbooks"]) => {
   return workbooks.toSorted((left, right) =>
     right.lastOpenedAt.localeCompare(left.lastOpenedAt)
   );
 };
 
 export const createWorkbookSlice = (
-  controller: SpreadsheetStoreController
-): StateCreator<SpreadsheetStoreState, [], [], WorkbookSliceState> => {
+  controller: WorkbookStoreController
+): StateCreator<WorkbookStoreState, [], [], WorkbookSliceState> => {
   controller.initializeAuthSync();
 
   return (_set, get) => ({

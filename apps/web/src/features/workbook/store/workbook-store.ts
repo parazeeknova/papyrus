@@ -4,12 +4,12 @@ import { create } from "zustand";
 import { createEditingSlice } from "./slices/editing-slice";
 import { createRealtimeSlice } from "./slices/realtime-slice";
 import { createWorkbookSlice } from "./slices/workbook-slice";
-import { createSpreadsheetStoreController } from "./spreadsheet-store-controller";
-import type { SpreadsheetStoreState } from "./spreadsheet-store-types";
+import { createWorkbookStoreController } from "./workbook-store-controller";
+import type { WorkbookStoreState } from "./workbook-store-types";
 
-export const useSpreadsheetStore = create<SpreadsheetStoreState>()(
+export const useWorkbookStore = create<WorkbookStoreState>()(
   (set, get, api) => {
-    const controller = createSpreadsheetStoreController(set, get);
+    const controller = createWorkbookStoreController(set, get);
 
     return {
       ...createRealtimeSlice()(set, get, api),

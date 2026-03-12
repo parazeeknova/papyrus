@@ -23,7 +23,7 @@ import type {
   SpreadsheetPatch,
   SpreadsheetWorkerResponse,
 } from "@/web/features/workbook/editor/lib/spreadsheet-types";
-import { useSpreadsheetStore } from "@/web/features/workbook/store/spreadsheet-store";
+import { useWorkbookStore } from "@/web/features/workbook/store/workbook-store";
 import { firebaseAuth } from "@/web/platform/firebase/client";
 
 // biome-ignore lint/performance/noBarrelFile: skip re-exporting from index for better path clarity
@@ -426,113 +426,107 @@ export function useSpreadsheet({
   requestedAccessRole = null,
   workbookId = null,
 }: UseSpreadsheetOptions = {}) {
-  const activeSheetCells = useSpreadsheetStore(
-    (state) => state.activeSheetCells
-  );
-  const activeSheetColumns = useSpreadsheetStore(
+  const activeSheetCells = useWorkbookStore((state) => state.activeSheetCells);
+  const activeSheetColumns = useWorkbookStore(
     (state) => state.activeSheetColumns
   );
-  const activeSheetFormats = useSpreadsheetStore(
+  const activeSheetFormats = useWorkbookStore(
     (state) => state.activeSheetFormats
   );
-  const activeSheetRowHeights = useSpreadsheetStore(
+  const activeSheetRowHeights = useWorkbookStore(
     (state) => state.activeSheetRowHeights
   );
-  const activeSheetId = useSpreadsheetStore((state) => state.activeSheetId);
-  const activeWorkbook = useSpreadsheetStore((state) => state.activeWorkbook);
-  const canRedo = useSpreadsheetStore((state) => state.canRedo);
-  const canUndo = useSpreadsheetStore((state) => state.canUndo);
-  const collaborationAccessRole = useSpreadsheetStore(
+  const activeSheetId = useWorkbookStore((state) => state.activeSheetId);
+  const activeWorkbook = useWorkbookStore((state) => state.activeWorkbook);
+  const canRedo = useWorkbookStore((state) => state.canRedo);
+  const canUndo = useWorkbookStore((state) => state.canUndo);
+  const collaborationAccessRole = useWorkbookStore(
     (state) => state.collaborationAccessRole
   );
-  const collaborationErrorMessage = useSpreadsheetStore(
+  const collaborationErrorMessage = useWorkbookStore(
     (state) => state.collaborationErrorMessage
   );
-  const collaborationPeers = useSpreadsheetStore(
+  const collaborationPeers = useWorkbookStore(
     (state) => state.collaborationPeers
   );
-  const collaborationStatus = useSpreadsheetStore(
+  const collaborationStatus = useWorkbookStore(
     (state) => state.collaborationStatus
   );
-  const createSheet = useSpreadsheetStore((state) => state.createSheet);
-  const createWorkbook = useSpreadsheetStore((state) => state.createWorkbook);
-  const deleteColumns = useSpreadsheetStore((state) => state.deleteColumns);
-  const deleteRows = useSpreadsheetStore((state) => state.deleteRows);
-  const deleteSheet = useSpreadsheetStore((state) => state.deleteSheet);
-  const deleteWorkbook = useSpreadsheetStore((state) => state.deleteWorkbook);
-  const exportActiveSheetToCsv = useSpreadsheetStore(
+  const createSheet = useWorkbookStore((state) => state.createSheet);
+  const createWorkbook = useWorkbookStore((state) => state.createWorkbook);
+  const deleteColumns = useWorkbookStore((state) => state.deleteColumns);
+  const deleteRows = useWorkbookStore((state) => state.deleteRows);
+  const deleteSheet = useWorkbookStore((state) => state.deleteSheet);
+  const deleteWorkbook = useWorkbookStore((state) => state.deleteWorkbook);
+  const exportActiveSheetToCsv = useWorkbookStore(
     (state) => state.exportActiveSheetToCsv
   );
-  const exportWorkbookToExcel = useSpreadsheetStore(
+  const exportWorkbookToExcel = useWorkbookStore(
     (state) => state.exportWorkbookToExcel
   );
-  const hydrationState = useSpreadsheetStore((state) => state.hydrationState);
-  const importActiveSheetFromCsv = useSpreadsheetStore(
+  const hydrationState = useWorkbookStore((state) => state.hydrationState);
+  const importActiveSheetFromCsv = useWorkbookStore(
     (state) => state.importActiveSheetFromCsv
   );
-  const importErrorMessage = useSpreadsheetStore(
+  const importErrorMessage = useWorkbookStore(
     (state) => state.importErrorMessage
   );
-  const importFileName = useSpreadsheetStore((state) => state.importFileName);
-  const importPhase = useSpreadsheetStore((state) => state.importPhase);
-  const importWorkbookFromExcel = useSpreadsheetStore(
+  const importFileName = useWorkbookStore((state) => state.importFileName);
+  const importPhase = useWorkbookStore((state) => state.importPhase);
+  const importWorkbookFromExcel = useWorkbookStore(
     (state) => state.importWorkbookFromExcel
   );
-  const insertColumns = useSpreadsheetStore((state) => state.insertColumns);
-  const insertRows = useSpreadsheetStore((state) => state.insertRows);
-  const isRemoteSyncAuthenticated = useSpreadsheetStore(
+  const insertColumns = useWorkbookStore((state) => state.insertColumns);
+  const insertRows = useWorkbookStore((state) => state.insertRows);
+  const isRemoteSyncAuthenticated = useWorkbookStore(
     (state) => state.isRemoteSyncAuthenticated
   );
-  const lastSyncErrorMessage = useSpreadsheetStore(
+  const lastSyncErrorMessage = useWorkbookStore(
     (state) => state.lastSyncErrorMessage
   );
-  const lastSyncedAt = useSpreadsheetStore((state) => state.lastSyncedAt);
-  const manualSyncCooldownUntil = useSpreadsheetStore(
+  const lastSyncedAt = useWorkbookStore((state) => state.lastSyncedAt);
+  const manualSyncCooldownUntil = useWorkbookStore(
     (state) => state.manualSyncCooldownUntil
   );
-  const hydrateWorkbookList = useSpreadsheetStore(
+  const hydrateWorkbookList = useWorkbookStore(
     (state) => state.hydrateWorkbookList
   );
-  const openWorkbook = useSpreadsheetStore((state) => state.openWorkbook);
-  const reorderColumn = useSpreadsheetStore((state) => state.reorderColumn);
-  const reorderRow = useSpreadsheetStore((state) => state.reorderRow);
-  const renameColumn = useSpreadsheetStore((state) => state.renameColumn);
-  const renameWorkbook = useSpreadsheetStore((state) => state.renameWorkbook);
-  const redo = useSpreadsheetStore((state) => state.redo);
-  const remoteVersion = useSpreadsheetStore((state) => state.remoteVersion);
-  const remoteSyncStatus = useSpreadsheetStore(
-    (state) => state.remoteSyncStatus
-  );
-  const resizeColumn = useSpreadsheetStore((state) => state.resizeColumn);
-  const resizeRow = useSpreadsheetStore((state) => state.resizeRow);
-  const saveState = useSpreadsheetStore((state) => state.saveState);
-  const setActiveSheet = useSpreadsheetStore((state) => state.setActiveSheet);
-  const setPersistedCellFormats = useSpreadsheetStore(
+  const openWorkbook = useWorkbookStore((state) => state.openWorkbook);
+  const reorderColumn = useWorkbookStore((state) => state.reorderColumn);
+  const reorderRow = useWorkbookStore((state) => state.reorderRow);
+  const renameColumn = useWorkbookStore((state) => state.renameColumn);
+  const renameWorkbook = useWorkbookStore((state) => state.renameWorkbook);
+  const redo = useWorkbookStore((state) => state.redo);
+  const remoteVersion = useWorkbookStore((state) => state.remoteVersion);
+  const remoteSyncStatus = useWorkbookStore((state) => state.remoteSyncStatus);
+  const resizeColumn = useWorkbookStore((state) => state.resizeColumn);
+  const resizeRow = useWorkbookStore((state) => state.resizeRow);
+  const saveState = useWorkbookStore((state) => state.saveState);
+  const setActiveSheet = useWorkbookStore((state) => state.setActiveSheet);
+  const setPersistedCellFormats = useWorkbookStore(
     (state) => state.setCellFormats
   );
-  const setPersistedCellValuesAndFormats = useSpreadsheetStore(
+  const setPersistedCellValuesAndFormats = useWorkbookStore(
     (state) => state.setCellValuesAndFormats
   );
-  const setCellValuesByKey = useSpreadsheetStore(
+  const setCellValuesByKey = useWorkbookStore(
     (state) => state.setCellValuesByKey
   );
-  const setPersistedCellValue = useSpreadsheetStore(
-    (state) => state.setCellValue
-  );
-  const setWorkbookFavorite = useSpreadsheetStore(
+  const setPersistedCellValue = useWorkbookStore((state) => state.setCellValue);
+  const setWorkbookFavorite = useWorkbookStore(
     (state) => state.setWorkbookFavorite
   );
-  const setWorkbookSharingAccessRole = useSpreadsheetStore(
+  const setWorkbookSharingAccessRole = useWorkbookStore(
     (state) => state.setWorkbookSharingAccessRole
   );
-  const setWorkbookSharingEnabled = useSpreadsheetStore(
+  const setWorkbookSharingEnabled = useWorkbookStore(
     (state) => state.setWorkbookSharingEnabled
   );
-  const sheets = useSpreadsheetStore((state) => state.sheets);
-  const syncNow = useSpreadsheetStore((state) => state.syncNow);
-  const undo = useSpreadsheetStore((state) => state.undo);
-  const workbooks = useSpreadsheetStore((state) => state.workbooks);
-  const workerResetKey = useSpreadsheetStore((state) => state.workerResetKey);
+  const sheets = useWorkbookStore((state) => state.sheets);
+  const syncNow = useWorkbookStore((state) => state.syncNow);
+  const undo = useWorkbookStore((state) => state.undo);
+  const workbooks = useWorkbookStore((state) => state.workbooks);
+  const workerResetKey = useWorkbookStore((state) => state.workerResetKey);
   const [activeCell, setActiveCell] = useState<CellPosition | null>(null);
   const [editingCell, setEditingCell] = useState<CellPosition | null>(null);
   const [editingDraft, setEditingDraft] = useState("");

@@ -33,11 +33,11 @@ import {
   rewriteFormulaColumnName,
   rewriteFormulaReferences,
 } from "@/web/features/workbook/editor/lib/spreadsheet-engine";
-import type { SpreadsheetStoreController } from "../spreadsheet-store-controller";
-import type { SpreadsheetStoreState } from "../spreadsheet-store-types";
+import type { WorkbookStoreController } from "../workbook-store-controller";
+import type { WorkbookStoreState } from "../workbook-store-types";
 
 type EditingSliceState = Pick<
-  SpreadsheetStoreState,
+  WorkbookStoreState,
   | "activeSheetCells"
   | "activeSheetColumns"
   | "activeSheetFormats"
@@ -107,11 +107,11 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
 }
 
 function buildInsertedColumns(
-  currentColumns: SpreadsheetStoreState["activeSheetColumns"],
+  currentColumns: WorkbookStoreState["activeSheetColumns"],
   startColumn: number,
   columnCount: number
-): SpreadsheetStoreState["activeSheetColumns"] {
-  const nextColumns: SpreadsheetStoreState["activeSheetColumns"] = [];
+): WorkbookStoreState["activeSheetColumns"] {
+  const nextColumns: WorkbookStoreState["activeSheetColumns"] = [];
   const usedColumnNames = new Set<string>();
   const reservedCustomColumnNames = new Set(
     currentColumns.flatMap((column, index) => {
@@ -192,8 +192,8 @@ function buildInsertedColumns(
 }
 
 const updateSharingState = async (
-  controller: SpreadsheetStoreController,
-  set: (partial: Partial<SpreadsheetStoreState>) => void,
+  controller: WorkbookStoreController,
+  set: (partial: Partial<WorkbookStoreState>) => void,
   updater: () => void,
   rollback: () => void
 ): Promise<boolean> => {
@@ -214,8 +214,8 @@ const updateSharingState = async (
 };
 
 export const createEditingSlice = (
-  controller: SpreadsheetStoreController
-): StateCreator<SpreadsheetStoreState, [], [], EditingSliceState> => {
+  controller: WorkbookStoreController
+): StateCreator<WorkbookStoreState, [], [], EditingSliceState> => {
   return (set, get) => ({
     activeSheetCells: {},
     activeSheetColumns: [],
@@ -266,7 +266,7 @@ export const createEditingSlice = (
       );
       const nextColumnNames = nextColumns.map((column) => column.name);
       const nextCells: Record<string, string> = {};
-      const nextFormats: SpreadsheetStoreState["activeSheetFormats"] = {};
+      const nextFormats: WorkbookStoreState["activeSheetFormats"] = {};
 
       for (const [storedCellKey, cellValue] of Object.entries(
         get().activeSheetCells
@@ -454,7 +454,7 @@ export const createEditingSlice = (
       }));
 
       const nextCells: Record<string, string> = {};
-      const nextFormats: SpreadsheetStoreState["activeSheetFormats"] = {};
+      const nextFormats: WorkbookStoreState["activeSheetFormats"] = {};
       for (const [storedCellKey, cellValue] of Object.entries(
         get().activeSheetCells
       )) {
@@ -775,7 +775,7 @@ export const createEditingSlice = (
       }));
       const nextColumnNames = nextColumns.map((column) => column.name);
       const nextCells: Record<string, string> = {};
-      const nextFormats: SpreadsheetStoreState["activeSheetFormats"] = {};
+      const nextFormats: WorkbookStoreState["activeSheetFormats"] = {};
 
       for (const [storedCellKey, cellValue] of Object.entries(
         get().activeSheetCells

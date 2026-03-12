@@ -26,7 +26,7 @@ export type RemoteSyncStatus =
 
 export type SaveState = "error" | "saved" | "saving";
 
-export interface SpreadsheetStoreState {
+export interface WorkbookStoreState {
   activeSheetCells: Record<string, PersistedCellRecord>;
   activeSheetColumns: SheetColumn[];
   activeSheetFormats: Record<string, CellFormat>;
@@ -98,8 +98,6 @@ export interface SpreadsheetStoreState {
   workerResetKey: string;
 }
 
-export type SpreadsheetStoreGetState =
-  StoreApi<SpreadsheetStoreState>["getState"];
+export type WorkbookStoreGetState = StoreApi<WorkbookStoreState>["getState"];
 
-export type SpreadsheetStoreSetState =
-  StoreApi<SpreadsheetStoreState>["setState"];
+export type WorkbookStoreSetState = StoreApi<WorkbookStoreState>["setState"];

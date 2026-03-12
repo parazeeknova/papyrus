@@ -28,7 +28,7 @@ import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useState } from "react";
 import { Doc } from "yjs";
 import { cloudWorkbookStore } from "@/web/features/workbook/cloud-sync/lib/cloud-workbook-store";
-import { useSpreadsheetStore } from "@/web/features/workbook/store/spreadsheet-store";
+import { useWorkbookStore } from "@/web/features/workbook/store/workbook-store";
 import { firebaseAuth } from "@/web/platform/firebase/client";
 import { cn } from "@/web/shared/lib/utils";
 import { Badge } from "@/web/shared/ui/badge";
@@ -229,7 +229,7 @@ function AccountAvatar({ user }: { user: User | null }) {
 
 export function HomeDashboard() {
   const router = useRouter();
-  const openWorkbook = useSpreadsheetStore((state) => state.openWorkbook);
+  const openWorkbook = useWorkbookStore((state) => state.openWorkbook);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [localDocuments, setLocalDocuments] = useState<WorkbookMeta[]>([]);
   const [remoteDocuments, setRemoteDocuments] = useState<WorkbookMeta[]>([]);

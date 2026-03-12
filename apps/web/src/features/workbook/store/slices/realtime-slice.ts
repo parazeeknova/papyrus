@@ -1,10 +1,10 @@
 "use client";
 
 import type { StateCreator } from "zustand";
-import type { SpreadsheetStoreState } from "../spreadsheet-store-types";
+import type { WorkbookStoreState } from "../workbook-store-types";
 
 type RealtimeSliceState = Pick<
-  SpreadsheetStoreState,
+  WorkbookStoreState,
   | "collaborationAccessRole"
   | "collaborationErrorMessage"
   | "collaborationPeers"
@@ -12,7 +12,7 @@ type RealtimeSliceState = Pick<
 >;
 
 export const createRealtimeSlice = (): StateCreator<
-  SpreadsheetStoreState,
+  WorkbookStoreState,
   [],
   [],
   RealtimeSliceState

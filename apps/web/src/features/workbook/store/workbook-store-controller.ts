@@ -50,9 +50,9 @@ import {
 } from "@/web/features/workbook/import-export/lib/workbook-file-format";
 import { firebaseAuth } from "@/web/platform/firebase/client";
 import type {
-  SpreadsheetStoreGetState,
-  SpreadsheetStoreSetState,
-} from "./spreadsheet-store-types";
+  WorkbookStoreGetState,
+  WorkbookStoreSetState,
+} from "./workbook-store-types";
 
 type WorkbookPersistence = ReturnType<typeof attachWorkbookPersistence>;
 
@@ -67,7 +67,7 @@ interface ActiveWorkbookSession {
   undoManager: UndoManager | null;
 }
 
-interface SpreadsheetStoreModuleState {
+interface WorkbookStoreModuleState {
   activeWorkbookSession: ActiveWorkbookSession | null;
   currentAuthenticatedUser: User | null;
   hasInitializedAuthSync: boolean;
@@ -77,7 +77,7 @@ interface SpreadsheetStoreModuleState {
   remoteSyncTimeout: ReturnType<typeof setTimeout> | null;
 }
 
-export interface SpreadsheetStoreController {
+export interface WorkbookStoreController {
   activateWorkbook: (
     workbookId: string,
     fallbackName?: string,
@@ -102,7 +102,7 @@ export interface SpreadsheetStoreController {
   syncUndoManager: (doc: Doc) => void;
 }
 
-const moduleState: SpreadsheetStoreModuleState = {
+const moduleState: WorkbookStoreModuleState = {
   activeWorkbookSession: null,
   currentAuthenticatedUser: null,
   hasInitializedAuthSync: false,
@@ -282,10 +282,10 @@ const getUndoState = (
   };
 };
 
-export const createSpreadsheetStoreController = (
-  set: SpreadsheetStoreSetState,
-  get: SpreadsheetStoreGetState
-): SpreadsheetStoreController => {
+export const createWorkbookStoreController = (
+  set: WorkbookStoreSetState,
+  get: WorkbookStoreGetState
+): WorkbookStoreController => {
   const refreshWorkbookRegistry = async (): Promise<void> => {
     const workbooks = await listWorkbookRegistryEntries();
     set({ workbooks: sortWorkbooks(workbooks) });
