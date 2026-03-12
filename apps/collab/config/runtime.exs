@@ -26,6 +26,13 @@ config :papyrus_collab, PapyrusCollabWeb.Endpoint,
 config :papyrus_collab, PapyrusCollab.Firebase.IdTokenVerifier,
   project_id: System.get_env("FIREBASE_PROJECT_ID")
 
+config :papyrus_collab, PapyrusCollab.Collaboration.BackupStore.Dets,
+  path:
+    System.get_env(
+      "COLLAB_BACKUP_PATH",
+      Path.join(System.tmp_dir!(), "papyrus-collab/backups.dets")
+    )
+
 if posthog_api_key = System.get_env("POSTHOG_API_KEY") do
   config :posthog,
     api_host: System.get_env("POSTHOG_API_HOST", "https://us.i.posthog.com"),
