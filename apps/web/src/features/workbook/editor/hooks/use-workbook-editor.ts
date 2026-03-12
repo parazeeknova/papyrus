@@ -579,10 +579,14 @@ export function useWorkbookEditor({
   const previousSheetIdRef = useRef<string | null>(null);
   const shouldSkipNextWorkerSyncRef = useRef(true);
   const visibleWorkerInitInFlightRef = useRef(false);
-  const fallbackAccessRole = requestedAccessRole ?? "editor";
+  const fallbackAccessRole = isSharedSession
+    ? "viewer"
+    : (requestedAccessRole ?? "editor");
   const effectiveCollaborationAccessRole =
     collaborationAccessRole ?? fallbackAccessRole;
-  const canEdit = effectiveCollaborationAccessRole === "editor";
+  const canEdit = isSharedSession
+    ? collaborationAccessRole === "editor"
+    : effectiveCollaborationAccessRole === "editor";
   const canManageSharing = currentUser !== null && !isSharedSession && canEdit;
   const canConfigureSharing = canManageSharing && SHARING_BACKEND_READY;
   const normalizedSelection = useMemo(

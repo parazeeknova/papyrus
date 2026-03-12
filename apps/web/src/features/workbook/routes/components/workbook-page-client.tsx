@@ -13,6 +13,7 @@ import { FindReplaceDialog } from "@/web/features/workbook/editor/components/dia
 import { SpreadsheetMenuBar } from "@/web/features/workbook/editor/components/menu-bar/menu-bar";
 import { useWorkbookEditor } from "@/web/features/workbook/editor/hooks/use-workbook-editor";
 import { colToLetter } from "@/web/features/workbook/editor/lib/spreadsheet-engine";
+import { getCollabWebSocketUrl } from "@/web/platform/phoenix/socket-client";
 
 const INITIAL_LOADING_SHEET: SheetMeta = {
   createdAt: "",
@@ -41,6 +42,7 @@ function WorkbookPageContent({
   workbookId,
 }: WorkbookPageClientProps) {
   const router = useRouter();
+  const syncServerUrl = getCollabWebSocketUrl();
 
   const {
     activeCell,
@@ -478,7 +480,7 @@ function WorkbookPageContent({
         showFormulaBar={showFormulaBar}
         showGridlines={showGridlines}
         strikethroughActive={activeSelectionFormat?.strikethrough ?? false}
-        syncServerUrl={null}
+        syncServerUrl={syncServerUrl}
         textTransform={activeSelectionFormat?.textTransform ?? null}
         transientStatusDetail={transientStatusDetail}
         transientStatusLabel={transientStatusLabel}

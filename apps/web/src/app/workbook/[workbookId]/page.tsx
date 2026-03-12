@@ -1,18 +1,26 @@
+import { parseWorkbookRouteAccess } from "@/web/features/workbook/collaboration/lib/collaboration";
 import { WorkbookPageShell } from "@/web/features/workbook/routes/components/workbook-page-shell";
 
 interface WorkbookPageProps {
   params: Promise<{
     workbookId: string;
   }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function WorkbookPage({ params }: WorkbookPageProps) {
+export default async function WorkbookPage({
+  params,
+  searchParams,
+}: WorkbookPageProps) {
   const { workbookId } = await params;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const { isSharedSession, requestedAccessRole } =
+    parseWorkbookRouteAccess(resolvedSearchParams);
 
   return (
     <WorkbookPageShell
-      // Shared-session routing stays off until Phoenix owns share authorization.
-      isSharedSession={false}
+      isSharedSession={isSharedSession}
+      requestedAccessRole={requestedAccessRole}
       workbookId={workbookId}
     />
   );

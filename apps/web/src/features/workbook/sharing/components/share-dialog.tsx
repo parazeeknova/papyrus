@@ -13,7 +13,10 @@ import {
 } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 import { CollaboratorAvatar } from "@/web/features/workbook/collaboration/components/collaborator-avatar";
-import { SHARING_BACKEND_READY } from "@/web/features/workbook/collaboration/lib/collaboration";
+import {
+  buildWorkbookShareUrl,
+  SHARING_BACKEND_READY,
+} from "@/web/features/workbook/collaboration/lib/collaboration";
 import { Badge } from "@/web/shared/ui/badge";
 import { Button } from "@/web/shared/ui/button";
 import {
@@ -59,9 +62,11 @@ export function ShareDialog({
   sharingAccessRole,
   sharingEnabled,
   syncServerUrl,
+  workbookId,
   workbookName,
 }: ShareDialogProps) {
   const [open, setOpen] = useState(false);
+  const [copyLabel, setCopyLabel] = useState("Copy link");
 
   const visibleCollaborators = useMemo(() => {
     return [...collaborators].sort(
@@ -71,6 +76,17 @@ export function ShareDialog({
   const isRealtimeBackendReady =
     syncServerUrl !== null && SHARING_BACKEND_READY;
   const canConfigureSharing = canManageSharing && isRealtimeBackendReady;
+  const shareLink = useMemo(() => {
+    if (!(workbookId && typeof window !== "undefined")) {
+      return "";
+    }
+
+    return buildWorkbookShareUrl(
+      window.location.origin,
+      workbookId,
+      sharingAccessRole
+    );
+  }, [sharingAccessRole, workbookId]);
 
   return (
     <DropdownMenu onOpenChange={setOpen} open={open}>
@@ -122,11 +138,11 @@ export function ShareDialog({
                   : canManageSharing
                     ? isRealtimeBackendReady
                       ? realtimeStatus === "connected"
-                        ? "Connected to the sync server."
+                        ? "Connected to the Phoenix collaboration server."
                         : realtimeStatus === "connecting"
-                          ? "Connecting to the sync server."
-                          : "Sync server unreachable right now."
-                      : "Sharing is disabled while the Phoenix collaboration backend is rebuilt."
+                          ? "Connecting to the Phoenix collaboration server."
+                          : "The Phoenix collaboration server is unreachable right now."
+                      : "Configure the collaboration websocket URL to unlock sharing."
                     : "Sign in with Google to unlock cloud sync and sharing."}
               </p>
             </div>
@@ -145,7 +161,7 @@ export function ShareDialog({
                   {canManageSharing
                     ? isRealtimeBackendReady
                       ? "Turn sharing on before sending a link."
-                      : "Sharing controls stay off until the Phoenix backend owns link access."
+                      : "Sharing controls stay off until the collaboration URL is configured."
                     : "Sign in with Google to unlock sharing controls."}
                 </p>
               </div>
@@ -201,14 +217,31 @@ export function ShareDialog({
                   canConfigureSharing
                     ? "Enable sharing to generate a link"
                     : canManageSharing
-                      ? "Share links stay disabled until the Phoenix backend is ready"
+                      ? "Share links stay disabled until the collaboration URL is ready"
                       : "Sign in with Google to unlock sharing"
                 }
                 readOnly
-                value=""
+                value={sharingEnabled ? shareLink : ""}
               />
-              <Button disabled variant="outline">
-                Unavailable
+              <Button
+                disabled={!(canConfigureSharing && sharingEnabled && shareLink)}
+                onClick={() => {
+                  if (!shareLink) {
+                    return;
+                  }
+
+                  navigator.clipboard
+                    .writeText(shareLink)
+                    .then(() => {
+                      setCopyLabel("Copied");
+                    })
+                    .catch(() => {
+                      setCopyLabel("Retry copy");
+                    });
+                }}
+                variant="outline"
+              >
+                {copyLabel}
               </Button>
             </div>
           </div>

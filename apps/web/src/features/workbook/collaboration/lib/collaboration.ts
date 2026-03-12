@@ -1,5 +1,3 @@
-"use client";
-
 import type {
   CollaborationAccessRole,
   CollaboratorIdentity,
@@ -28,7 +26,57 @@ const COLLABORATOR_ICONS = [
   "shooting-star",
 ] as const;
 
-export const SHARING_BACKEND_READY = false;
+export const SHARING_BACKEND_READY = true;
+
+type WorkbookRouteSearchParams = Record<string, string | string[] | undefined>;
+
+function readSingleQueryValue(
+  value: string | string[] | undefined
+): string | null {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return Array.isArray(value) ? (value[0] ?? null) : null;
+}
+
+export function parseWorkbookRouteAccess(
+  searchParams?: WorkbookRouteSearchParams
+): {
+  isSharedSession: boolean;
+  requestedAccessRole: CollaborationAccessRole | null;
+} {
+  const shared = readSingleQueryValue(searchParams?.shared);
+  const access = readSingleQueryValue(searchParams?.access);
+
+  return {
+    isSharedSession: shared === "1" || shared === "true",
+    requestedAccessRole: isCollaborationAccessRole(access) ? access : null,
+  };
+}
+
+export function buildWorkbookSharePath(
+  workbookId: string,
+  accessRole: CollaborationAccessRole
+): string {
+  const query = new URLSearchParams({
+    access: accessRole,
+    shared: "1",
+  });
+
+  return `/workbook/${encodeURIComponent(workbookId)}?${query.toString()}`;
+}
+
+export function buildWorkbookShareUrl(
+  origin: string,
+  workbookId: string,
+  accessRole: CollaborationAccessRole
+): string {
+  return new URL(
+    buildWorkbookSharePath(workbookId, accessRole),
+    origin
+  ).toString();
+}
 
 export function getCollaboratorInitials(name: string): string {
   const words = name.trim().split(WHITESPACE_PATTERN);
