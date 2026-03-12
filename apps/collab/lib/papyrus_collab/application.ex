@@ -11,6 +11,10 @@ defmodule PapyrusCollab.Application do
       PapyrusCollabWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:papyrus_collab, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: PapyrusCollab.PubSub},
+      PapyrusCollabWeb.Presence,
+      {Registry, keys: :unique, name: PapyrusCollab.Collaboration.RoomRegistry},
+      PapyrusCollab.Collaboration.BackupStore,
+      PapyrusCollab.Collaboration.RoomSupervisor,
       # Start a worker by calling: PapyrusCollab.Worker.start_link(arg)
       # {PapyrusCollab.Worker, arg},
       # Start to serve requests, typically the last entry

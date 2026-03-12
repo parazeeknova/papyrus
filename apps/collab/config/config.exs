@@ -10,6 +10,9 @@ import Config
 config :papyrus_collab,
   generators: [timestamp_type: :utc_datetime]
 
+config :papyrus_collab, PapyrusCollab.Collaboration.BackupStore,
+  adapter: PapyrusCollab.Collaboration.BackupStore.InMemory
+
 # Configure the endpoint
 config :papyrus_collab, PapyrusCollabWeb.Endpoint,
   url: [host: "localhost"],
