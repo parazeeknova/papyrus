@@ -117,7 +117,7 @@ interface SheetFooterSelectionSummary {
   sum: number | null;
 }
 
-interface UseSpreadsheetOptions {
+interface UseWorkbookEditorOptions {
   isSharedSession?: boolean;
   requestedAccessRole?: CollaborationAccessRole | null;
   workbookId?: string | null;
@@ -421,11 +421,11 @@ const applySpreadsheetPatch = (
   return next;
 };
 
-export function useSpreadsheet({
+export function useWorkbookEditor({
   isSharedSession = false,
   requestedAccessRole = null,
   workbookId = null,
-}: UseSpreadsheetOptions = {}) {
+}: UseWorkbookEditorOptions = {}) {
   const activeSheetCells = useWorkbookStore((state) => state.activeSheetCells);
   const activeSheetColumns = useWorkbookStore(
     (state) => state.activeSheetColumns
@@ -492,6 +492,12 @@ export function useSpreadsheet({
     (state) => state.hydrateWorkbookList
   );
   const openWorkbook = useWorkbookStore((state) => state.openWorkbook);
+  const publishCollaborationPresence = useWorkbookStore(
+    (state) => state.publishCollaborationPresence
+  );
+  const publishCollaborationTyping = useWorkbookStore(
+    (state) => state.publishCollaborationTyping
+  );
   const reorderColumn = useWorkbookStore((state) => state.reorderColumn);
   const reorderRow = useWorkbookStore((state) => state.reorderRow);
   const renameColumn = useWorkbookStore((state) => state.renameColumn);
@@ -573,13 +579,10 @@ export function useSpreadsheet({
   const previousSheetIdRef = useRef<string | null>(null);
   const shouldSkipNextWorkerSyncRef = useRef(true);
   const visibleWorkerInitInFlightRef = useRef(false);
-  const resolvedRequestedAccessRole = requestedAccessRole ?? "editor";
-  const effectiveCollaborationAccessRole = isSharedSession
-    ? collaborationAccessRole
-    : (collaborationAccessRole ?? resolvedRequestedAccessRole);
-  const canEdit = isSharedSession
-    ? effectiveCollaborationAccessRole === "editor"
-    : resolvedRequestedAccessRole === "editor";
+  const fallbackAccessRole = requestedAccessRole ?? "editor";
+  const effectiveCollaborationAccessRole =
+    collaborationAccessRole ?? fallbackAccessRole;
+  const canEdit = effectiveCollaborationAccessRole === "editor";
   const canManageSharing = currentUser !== null && !isSharedSession && canEdit;
   const canConfigureSharing = canManageSharing && SHARING_BACKEND_READY;
   const normalizedSelection = useMemo(
@@ -830,6 +833,33 @@ export function useSpreadsheet({
     setEditingCell(null);
     setSelection(null);
   }, [workerResetKey]);
+
+  useEffect(() => {
+    publishCollaborationPresence({
+      activeCell,
+      selection,
+      sheetId: activeSheetId,
+    });
+  }, [activeCell, activeSheetId, publishCollaborationPresence, selection]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      publishCollaborationTyping({
+        typing:
+          editingCell && activeSheetId
+            ? {
+                cell: editingCell,
+                draft: editingDraft,
+                sheetId: activeSheetId,
+              }
+            : null,
+      });
+    }, 120);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [activeSheetId, editingCell, editingDraft, publishCollaborationTyping]);
 
   const getCellData = useCallback(
     (row: number, col: number): CellData => {

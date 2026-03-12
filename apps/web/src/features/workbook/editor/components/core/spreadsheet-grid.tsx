@@ -38,7 +38,7 @@ import {
   cellId,
   type SelectionMode,
   type SelectionRange,
-} from "@/web/features/workbook/editor/hooks/use-spreadsheet";
+} from "@/web/features/workbook/editor/hooks/use-workbook-editor";
 import { cn } from "@/web/shared/lib/utils";
 import { Button } from "@/web/shared/ui/button";
 import { Input } from "@/web/shared/ui/input";

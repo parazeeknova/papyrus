@@ -3,15 +3,14 @@
 import type { CollaborationAccessRole } from "@papyrus/core/collaboration-types";
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import { createLogger } from "@papyrus/logs";
-import { onAuthStateChanged } from "firebase/auth";
-import { type Channel, Socket } from "phoenix";
-import { env } from "@/web/platform/env/client-env";
-import { firebaseAuth } from "@/web/platform/firebase/client";
+import type { Channel } from "phoenix";
+import { ensurePhoenixSocketConnection } from "@/web/platform/phoenix/socket-client";
+import {
+  decodeBase64ToBinary,
+  encodeBinaryToBase64,
+} from "@/web/platform/phoenix/update-base64";
 
-const CHANNEL_JOIN_TIMEOUT_MS = 10_000;
 const CLOUD_WORKBOOKS_TOPIC = "cloud_workbooks";
-const DEFAULT_COLLAB_PORT = 4000;
-const DEVICE_ID_STORAGE_KEY = "papyrus-collab-device-id";
 const collabLogger = createLogger({ scope: "cloud-workbook-channel" });
 
 export interface ChannelRemoteWorkbookState {
@@ -29,38 +28,11 @@ export interface CloudWorkbookWriteResult {
 interface CloudWorkbookChannelConnection {
   channel: Channel;
   ready: Promise<Channel>;
-  socket: Socket;
   token: string;
   uid: string;
 }
 
 let activeConnection: CloudWorkbookChannelConnection | null = null;
-let authListenerRegistered = false;
-let fallbackDeviceId: string | null = null;
-
-function assertSignedInUser(uid: string) {
-  const currentUser = firebaseAuth.currentUser;
-  if (!currentUser) {
-    throw new Error("Google sign-in is required for cloud sync.");
-  }
-
-  if (currentUser.uid !== uid) {
-    throw new Error("Cloud sync user mismatch.");
-  }
-
-  return currentUser;
-}
-
-function decodeBase64ToUpdate(value: string): Uint8Array {
-  const binary = atob(value);
-  const result = new Uint8Array(binary.length);
-
-  for (const [index, char] of Array.from(binary).entries()) {
-    result[index] = char.charCodeAt(0);
-  }
-
-  return result;
-}
 
 function disconnectActiveConnection(): void {
   if (!activeConnection) {
@@ -73,47 +45,8 @@ function disconnectActiveConnection(): void {
   try {
     connection.channel.leave();
   } finally {
-    connection.socket.disconnect();
+    activeConnection = null;
   }
-}
-
-function encodeUpdateToBase64(update: Uint8Array): string {
-  let binary = "";
-
-  for (let index = 0; index < update.length; index += 0x80_00) {
-    binary += String.fromCharCode(...update.subarray(index, index + 0x80_00));
-  }
-
-  return btoa(binary);
-}
-
-function getCollabWebSocketUrl(): string | null {
-  if (env.NEXT_PUBLIC_COLLAB_WS_URL) {
-    return env.NEXT_PUBLIC_COLLAB_WS_URL;
-  }
-
-  if (typeof window === "undefined" || process.env.NODE_ENV === "production") {
-    return null;
-  }
-
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.hostname}:${DEFAULT_COLLAB_PORT}/ws`;
-}
-
-function getOrCreateSocketDeviceId(): string {
-  if (typeof window === "undefined") {
-    fallbackDeviceId ??= crypto.randomUUID();
-    return fallbackDeviceId;
-  }
-
-  const existingDeviceId = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY);
-  if (existingDeviceId) {
-    return existingDeviceId;
-  }
-
-  const nextDeviceId = crypto.randomUUID();
-  window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, nextDeviceId);
-  return nextDeviceId;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -199,31 +132,9 @@ function parseRemoteWorkbookState(
   };
 }
 
-function registerAuthListener() {
-  if (authListenerRegistered || typeof window === "undefined") {
-    return;
-  }
-
-  authListenerRegistered = true;
-  onAuthStateChanged(firebaseAuth, (nextUser) => {
-    if (nextUser) {
-      return;
-    }
-
-    disconnectActiveConnection();
-  });
-}
-
 async function ensureCloudWorkbookChannel(uid: string): Promise<Channel> {
-  registerAuthListener();
-
-  const currentUser = assertSignedInUser(uid);
-  const token = await currentUser.getIdToken();
-  const collabUrl = getCollabWebSocketUrl();
-
-  if (!collabUrl) {
-    throw new Error("The collaboration websocket URL is not configured.");
-  }
+  const socketConnection = await ensurePhoenixSocketConnection(uid);
+  const { socket, token } = socketConnection;
 
   if (
     activeConnection &&
@@ -234,16 +145,6 @@ async function ensureCloudWorkbookChannel(uid: string): Promise<Channel> {
   }
 
   disconnectActiveConnection();
-
-  const socket = new Socket(collabUrl, {
-    params: {
-      device_id: getOrCreateSocketDeviceId(),
-      token,
-    },
-    timeout: CHANNEL_JOIN_TIMEOUT_MS,
-  });
-
-  socket.connect();
 
   const channel = socket.channel(CLOUD_WORKBOOKS_TOPIC, {});
   const ready = new Promise<Channel>((resolve, reject) => {
@@ -262,23 +163,18 @@ async function ensureCloudWorkbookChannel(uid: string): Promise<Channel> {
       });
   });
 
-  socket.onClose(() => {
-    if (activeConnection?.socket === socket) {
+  channel.onClose(() => {
+    if (activeConnection?.channel === channel) {
       activeConnection = null;
     }
   });
-
-  socket.onError((error: unknown) => {
-    collabLogger.warn("Phoenix cloud sync socket error.", error);
-    if (activeConnection?.socket === socket) {
-      activeConnection = null;
-    }
+  channel.onError((error: unknown) => {
+    collabLogger.warn("Phoenix cloud sync channel error.", error);
   });
 
   activeConnection = {
     channel,
     ready,
-    socket,
     token,
     uid,
   };
@@ -386,7 +282,7 @@ export async function readRemoteWorkbook(
   return {
     activeSheetId: workbook.activeSheetId,
     meta: workbook.meta,
-    update: decodeBase64ToUpdate(workbook.updateBase64),
+    update: decodeBase64ToBinary(workbook.updateBase64),
     version: workbook.version,
   };
 }
@@ -409,7 +305,7 @@ export async function writeRemoteWorkbook(
     workbook: {
       activeSheetId: workbook.activeSheetId,
       meta: workbook.meta,
-      updateBase64: encodeUpdateToBase64(workbook.update),
+      updateBase64: encodeBinaryToBase64(workbook.update),
       version: workbook.version,
     },
   });

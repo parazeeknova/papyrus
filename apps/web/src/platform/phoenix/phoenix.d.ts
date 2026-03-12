@@ -11,6 +11,10 @@ declare module "phoenix" {
   export interface Channel {
     join(timeout?: number): Push;
     leave(timeout?: number): Push;
+    off(event: string, ref?: number): void;
+    on(event: string, callback: (payload?: unknown) => void): number;
+    onClose(callback: (event?: unknown) => void): void;
+    onError(callback: (reason?: unknown) => void): void;
     push(event: string, payload: unknown, timeout?: number): Push;
   }
 

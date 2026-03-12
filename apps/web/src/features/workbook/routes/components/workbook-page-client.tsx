@@ -11,7 +11,7 @@ import { SpreadsheetGrid } from "@/web/features/workbook/editor/components/core/
 import { Toolbar } from "@/web/features/workbook/editor/components/core/toolbar";
 import { FindReplaceDialog } from "@/web/features/workbook/editor/components/dialogs/find-replace-dialog";
 import { SpreadsheetMenuBar } from "@/web/features/workbook/editor/components/menu-bar/menu-bar";
-import { useSpreadsheet } from "@/web/features/workbook/editor/hooks/use-spreadsheet";
+import { useWorkbookEditor } from "@/web/features/workbook/editor/hooks/use-workbook-editor";
 import { colToLetter } from "@/web/features/workbook/editor/lib/spreadsheet-engine";
 
 const INITIAL_LOADING_SHEET: SheetMeta = {
@@ -134,7 +134,7 @@ function WorkbookPageContent({
     undo,
     navigateFromActive,
     workbooks,
-  } = useSpreadsheet({
+  } = useWorkbookEditor({
     isSharedSession,
     requestedAccessRole,
     workbookId,

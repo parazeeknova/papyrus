@@ -12,7 +12,7 @@ export const useWorkbookStore = create<WorkbookStoreState>()(
     const controller = createWorkbookStoreController(set, get);
 
     return {
-      ...createRealtimeSlice()(set, get, api),
+      ...createRealtimeSlice(controller)(set, get, api),
       ...createWorkbookSlice(controller)(set, get, api),
       ...createEditingSlice(controller)(set, get, api),
     };

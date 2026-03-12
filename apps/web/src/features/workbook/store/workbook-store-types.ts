@@ -3,6 +3,7 @@
 import type {
   CollaborationAccessRole,
   CollaboratorPresence,
+  CollaboratorSelectionRange,
 } from "@papyrus/core/collaboration-types";
 import type {
   CellFormat,
@@ -65,6 +66,18 @@ export interface WorkbookStoreState {
     name?: string,
     isSharedSession?: boolean
   ) => Promise<void>;
+  publishCollaborationPresence: (payload: {
+    activeCell: { col: number; row: number } | null;
+    selection: CollaboratorSelectionRange | null;
+    sheetId: string | null;
+  }) => void;
+  publishCollaborationTyping: (payload: {
+    typing: {
+      cell: { col: number; row: number };
+      draft: string;
+      sheetId: string;
+    } | null;
+  }) => void;
   redo: () => Promise<void>;
   remoteSyncStatus: RemoteSyncStatus;
   remoteVersion: number | null;

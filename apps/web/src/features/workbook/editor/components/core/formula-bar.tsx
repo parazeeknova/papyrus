@@ -1,6 +1,6 @@
 "use client";
 
-import type { CellPosition } from "@/web/features/workbook/editor/hooks/use-spreadsheet";
+import type { CellPosition } from "@/web/features/workbook/editor/hooks/use-workbook-editor";
 import { Badge } from "@/web/shared/ui/badge";
 import { Input } from "@/web/shared/ui/input";
 import { Separator } from "@/web/shared/ui/separator";
