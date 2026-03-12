@@ -8,6 +8,7 @@
     "test": "turbo run test",
     "check-types": "turbo run check-types",
     "check": "ultracite fix",
+    "verify:pr": "bun x ultracite check && turbo run check && turbo run check-types && turbo run test",
     "prepare": "lefthook install"
   },
   "devDependencies": {

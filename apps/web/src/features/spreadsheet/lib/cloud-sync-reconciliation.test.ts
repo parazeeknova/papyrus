@@ -1,5 +1,5 @@
+import { describe, expect, test } from "bun:test";
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
-import { describe, expect, it } from "vitest";
 import {
   shouldHydrateLocalWorkbook,
   shouldUploadLocalWorkbook,
@@ -21,13 +21,13 @@ function createWorkbookMeta(updatedAt: string): WorkbookMeta {
 }
 
 describe("cloud sync reconciliation", () => {
-  it("hydrates a missing local workbook from the remote snapshot", () => {
+  test("hydrates a missing local workbook from the remote snapshot", () => {
     expect(
       shouldHydrateLocalWorkbook(createWorkbookMeta("2026-03-12T12:00:00.000Z"))
     ).toBe(true);
   });
 
-  it("hydrates the local workbook when the remote version is newer", () => {
+  test("hydrates the local workbook when the remote version is newer", () => {
     expect(
       shouldHydrateLocalWorkbook(
         createWorkbookMeta("2026-03-12T12:00:00.000Z"),
@@ -36,7 +36,7 @@ describe("cloud sync reconciliation", () => {
     ).toBe(true);
   });
 
-  it("keeps the local workbook when it is at least as new as the remote one", () => {
+  test("keeps the local workbook when it is at least as new as the remote one", () => {
     expect(
       shouldHydrateLocalWorkbook(
         createWorkbookMeta("2026-03-12T11:00:00.000Z"),
@@ -51,13 +51,13 @@ describe("cloud sync reconciliation", () => {
     ).toBe(false);
   });
 
-  it("uploads a local workbook when no remote copy exists yet", () => {
+  test("uploads a local workbook when no remote copy exists yet", () => {
     expect(
       shouldUploadLocalWorkbook(createWorkbookMeta("2026-03-12T12:00:00.000Z"))
     ).toBe(true);
   });
 
-  it("uploads the local workbook when it is newer than the remote copy", () => {
+  test("uploads the local workbook when it is newer than the remote copy", () => {
     expect(
       shouldUploadLocalWorkbook(
         createWorkbookMeta("2026-03-12T12:00:00.000Z"),
@@ -66,7 +66,7 @@ describe("cloud sync reconciliation", () => {
     ).toBe(true);
   });
 
-  it("skips uploads when the remote copy is at least as new", () => {
+  test("skips uploads when the remote copy is at least as new", () => {
     expect(
       shouldUploadLocalWorkbook(
         createWorkbookMeta("2026-03-12T11:00:00.000Z"),

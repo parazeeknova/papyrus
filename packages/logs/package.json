@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check-types": "tsc --noEmit --pretty"
+    "check-types": "tsc --noEmit --pretty",
+    "test": "bun test"
   },
   "exports": {
     ".": "./src/index.ts"

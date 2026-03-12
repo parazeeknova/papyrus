@@ -11,6 +11,6 @@
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "bun.test.d.ts"],
   "exclude": ["node_modules"]
 }

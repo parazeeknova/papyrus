@@ -1,39 +1,56 @@
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CloudWorkbookState } from "./cloud-workbook-store";
 
-const firestoreSyncMocks = vi.hoisted(() => {
-  return {
-    acquireWorkbookSyncLease: vi.fn(),
-    deleteRemoteWorkbook: vi.fn(),
-    listRemoteWorkbooks: vi.fn(),
-    readRemoteWorkbook: vi.fn(),
-    writeRemoteWorkbook: vi.fn(),
-  };
-});
+const firestoreSyncMocks = {
+  acquireWorkbookSyncLease: mock<
+    (uid: string, workbookId: string, clientId: string) => Promise<boolean>
+  >(() => Promise.resolve(true)),
+  deleteRemoteWorkbook: mock<
+    (uid: string, workbookId: string) => Promise<void>
+  >(() => Promise.resolve(undefined)),
+  listRemoteWorkbooks: mock<(uid: string) => Promise<WorkbookMeta[]>>(() =>
+    Promise.resolve([])
+  ),
+  readRemoteWorkbook: mock<
+    (uid: string, workbookId: string) => Promise<CloudWorkbookState | null>
+  >(() => Promise.resolve(null)),
+  writeRemoteWorkbook: mock<
+    (
+      uid: string,
+      workbook: CloudWorkbookState,
+      clientId: string
+    ) => Promise<void>
+  >(() => Promise.resolve(undefined)),
+};
 
-const shareRegistryMocks = vi.hoisted(() => {
-  return {
-    deleteSharedWorkbookAccess: vi.fn(),
-    upsertSharedWorkbookAccess: vi.fn(),
-  };
-});
+const shareRegistryMocks = {
+  deleteSharedWorkbookAccess: mock(() => Promise.resolve(undefined)),
+  upsertSharedWorkbookAccess: mock(() => Promise.resolve(undefined)),
+};
 
-vi.mock("@/web/features/spreadsheet/lib/firestore-workbook-sync", () => {
+mock.module("@/web/features/spreadsheet/lib/firestore-workbook-sync", () => {
   return firestoreSyncMocks;
 });
 
-vi.mock("@/web/features/spreadsheet/lib/share-registry", () => {
+mock.module("@/web/features/spreadsheet/lib/share-registry", () => {
   return shareRegistryMocks;
 });
 
-import { cloudWorkbookStore } from "./cloud-workbook-store";
+const { cloudWorkbookStore } = await import("./cloud-workbook-store");
 
 describe("cloudWorkbookStore", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    for (const mockFn of Object.values(firestoreSyncMocks)) {
+      mockFn.mockClear();
+    }
+
+    for (const mockFn of Object.values(shareRegistryMocks)) {
+      mockFn.mockClear();
+    }
   });
 
-  it("delegates workbook sync operations to the firestore adapter", async () => {
+  test("delegates workbook sync operations to the firestore adapter", async () => {
     const workbook = {
       activeSheetId: "sheet-1",
       meta: {
@@ -91,7 +108,7 @@ describe("cloudWorkbookStore", () => {
     );
   });
 
-  it("delegates sharing updates to the share registry adapter", async () => {
+  test("delegates sharing updates to the share registry adapter", async () => {
     const workbook = {
       id: "workbook-1",
       sharingAccessRole: "editor" as const,
@@ -117,7 +134,7 @@ describe("cloudWorkbookStore", () => {
     );
   });
 
-  it("delegates remote workbook deletion to the firestore adapter", async () => {
+  test("delegates remote workbook deletion to the firestore adapter", async () => {
     firestoreSyncMocks.deleteRemoteWorkbook.mockResolvedValue(undefined);
 
     await expect(

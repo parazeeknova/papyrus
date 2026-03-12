@@ -9,7 +9,6 @@ import {
   WarningCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { FirebaseError } from "firebase/app";
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -25,6 +24,12 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/web/components/ui/dropdown-menu";
+import {
+  getAccountEmail,
+  getAccountInitials,
+  getAccountName,
+  getAuthErrorMessage,
+} from "@/web/features/auth/lib/auth-presentation";
 import {
   firebaseAuth,
   googleAuthProvider,
@@ -43,39 +48,6 @@ const AVATAR_DIMENSIONS = {
   dialog: 48,
   trigger: 32,
 } as const;
-const WHITESPACE_PATTERN = /\s+/;
-
-function getAccountName(user: User | null): string {
-  return user?.displayName ?? user?.email ?? "Google account";
-}
-
-function getAccountEmail(user: User | null): string {
-  return user?.email ?? "Email unavailable";
-}
-
-function getAccountInitials(user: User | null): string {
-  const source = getAccountName(user).trim();
-  const [first = "G", second = ""] = source.split(WHITESPACE_PATTERN);
-
-  return `${first[0] ?? "G"}${second[0] ?? ""}`.toUpperCase();
-}
-
-function getAuthErrorMessage(error: unknown): string | null {
-  if (error instanceof FirebaseError) {
-    switch (error.code) {
-      case "auth/popup-blocked":
-        return "Allow pop-ups in this browser to continue with Google.";
-      case "auth/popup-closed-by-user":
-        return null;
-      case "auth/unauthorized-domain":
-        return "Add this origin to Firebase Authentication authorized domains.";
-      default:
-        return "Google sign-in failed. Verify your Firebase Auth setup.";
-    }
-  }
-
-  return "Google sign-in failed. Please try again.";
-}
 
 function AccountAvatar({ className, user, variant }: AvatarProps) {
   const dimension = AVATAR_DIMENSIONS[variant];

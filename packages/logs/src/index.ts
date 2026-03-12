@@ -11,12 +11,21 @@ interface LoggerOptions {
   scope?: string;
 }
 
+export interface LogRecord {
+  level: LogLevel;
+  message: string;
+  meta: unknown[];
+  scope?: string;
+}
+
 type LogMethod = (message: string, ...meta: unknown[]) => void;
+type LogSink = (record: LogRecord) => void;
 
 const nodeEnv =
   (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env
     ?.NODE_ENV ?? "production";
 const isDevelopment = nodeEnv === "development";
+const logSinks = new Set<LogSink>();
 
 function writeLog(
   level: LogLevel,
@@ -24,7 +33,18 @@ function writeLog(
   message: string,
   meta: unknown[]
 ) {
+  const record: LogRecord = {
+    level,
+    message,
+    meta,
+    scope,
+  };
+
   if (!isDevelopment) {
+    for (const sink of logSinks) {
+      sink(record);
+    }
+
     return;
   }
 
@@ -37,6 +57,18 @@ function writeLog(
         : console.info;
 
   consoleMethod(prefix, message, ...meta);
+
+  for (const sink of logSinks) {
+    sink(record);
+  }
+}
+
+export function registerLogSink(sink: LogSink): () => void {
+  logSinks.add(sink);
+
+  return () => {
+    logSinks.delete(sink);
+  };
 }
 
 export function createLogger(options: LoggerOptions = {}) {
