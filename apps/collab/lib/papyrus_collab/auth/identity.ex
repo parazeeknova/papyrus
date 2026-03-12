@@ -11,6 +11,17 @@ defmodule PapyrusCollab.Auth.Identity do
         }
 
   @spec from_claims(map()) :: {:ok, t()} | :error
+  def from_claims(%{"sub" => user_id} = claims)
+      when is_binary(user_id) and byte_size(user_id) > 0 do
+    {:ok,
+     %__MODULE__{
+       device_id: "pending",
+       email: Map.get(claims, "email"),
+       user_id: user_id
+     }}
+  end
+
+  @spec from_claims(map()) :: {:ok, t()} | :error
   def from_claims(%{"user_id" => user_id} = claims)
       when is_binary(user_id) and byte_size(user_id) > 0 do
     {:ok,

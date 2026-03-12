@@ -15,6 +15,7 @@ defmodule PapyrusCollab.Application do
       {Registry, keys: :unique, name: PapyrusCollab.Collaboration.RoomRegistry},
       PapyrusCollab.Collaboration.BackupStore,
       PapyrusCollab.Collaboration.RoomSupervisor,
+      PapyrusCollab.Firebase.PublicKeys,
       # Start a worker by calling: PapyrusCollab.Worker.start_link(arg)
       # {PapyrusCollab.Worker, arg},
       # Start to serve requests, typically the last entry

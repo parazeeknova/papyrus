@@ -7,6 +7,9 @@ config :papyrus_collab, PapyrusCollabWeb.Endpoint,
   secret_key_base: "0k11Vxx557zAO3uicW6ixKNPWNaDDkz5QHt/xfB063GG8gyJ4HlMVFP8N88vGwLd",
   server: false
 
+config :papyrus_collab, PapyrusCollab.Auth,
+  id_token_verifier: PapyrusCollab.Auth.TestTokenVerifier
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 

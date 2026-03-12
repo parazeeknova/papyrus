@@ -10,8 +10,14 @@ import Config
 config :papyrus_collab,
   generators: [timestamp_type: :utc_datetime]
 
+config :papyrus_collab, PapyrusCollab.Auth,
+  id_token_verifier: PapyrusCollab.Firebase.IdTokenVerifier
+
 config :papyrus_collab, PapyrusCollab.Collaboration.BackupStore,
   adapter: PapyrusCollab.Collaboration.BackupStore.InMemory
+
+config :papyrus_collab, PapyrusCollab.Firebase.IdTokenVerifier,
+  key_source: PapyrusCollab.Firebase.PublicKeys
 
 # Configure the endpoint
 config :papyrus_collab, PapyrusCollabWeb.Endpoint,

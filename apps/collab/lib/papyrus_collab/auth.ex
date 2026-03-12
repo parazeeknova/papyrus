@@ -2,15 +2,12 @@ defmodule PapyrusCollab.Auth do
   @moduledoc false
 
   alias PapyrusCollab.Auth.Identity
-  alias PapyrusCollabWeb.Endpoint
-
-  @socket_token_max_age 86_400
-  @socket_token_salt "collaboration socket"
 
   @spec authenticate_socket(map()) :: {:ok, Identity.t()} | :error
   def authenticate_socket(params) when is_map(params) do
     with token when is_binary(token) <- Map.get(params, "token"),
-         {:ok, identity} <- verify_socket_token(token),
+         {:ok, claims} <- verifier().verify(token),
+         {:ok, identity} <- Identity.from_claims(claims),
          {:ok, device_id} <- fetch_device_id(params) do
       {:ok, Identity.with_device_id(identity, device_id)}
     else
@@ -25,14 +22,13 @@ defmodule PapyrusCollab.Auth do
       "user_id" => identity.user_id
     }
 
-    Phoenix.Token.sign(Endpoint, @socket_token_salt, claims)
-  end
+    module = verifier()
 
-  @spec verify_socket_token(String.t()) :: {:ok, Identity.t()} | :error
-  def verify_socket_token(token) when is_binary(token) do
-    case Phoenix.Token.verify(Endpoint, @socket_token_salt, token, max_age: @socket_token_max_age) do
-      {:ok, claims} -> Identity.from_claims(claims)
-      {:error, _reason} -> :error
+    if Code.ensure_loaded?(module) and function_exported?(module, :sign, 1) do
+      module.sign(claims)
+    else
+      raise ArgumentError,
+            "the configured auth verifier does not support signing test socket tokens"
     end
   end
 
@@ -42,4 +38,8 @@ defmodule PapyrusCollab.Auth do
   end
 
   defp fetch_device_id(_params), do: :error
+
+  defp verifier do
+    Application.fetch_env!(:papyrus_collab, __MODULE__)[:id_token_verifier]
+  end
 end
