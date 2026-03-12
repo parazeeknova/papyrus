@@ -3,8 +3,8 @@ import { Nunito_Sans } from "next/font/google";
 // biome-ignore lint/suspicious/noTsIgnore: vercel build fix for css imports
 // @ts-ignore - this is a css file, but next doesn't know how to handle it
 import "./globals.css";
-import { AppProviders } from "@/web/app/providers";
-import { cn } from "@/web/lib/utils";
+import { AppProviders } from "@/web/platform/providers/app-providers";
+import { cn } from "@/web/shared/lib/utils";
 
 const nunitoSans = Nunito_Sans({ variable: "--font-sans" });
 export const metadata: Metadata = {

@@ -1,4 +1,4 @@
-import { getPostHogServer } from "@/web/features/observability/lib/posthog-server";
+import { getPostHogServer } from "@/web/platform/posthog/lib/posthog-server";
 
 export function register(): void {
   return;

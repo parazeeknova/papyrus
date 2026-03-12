@@ -17,13 +17,6 @@ import {
 } from "firebase/auth";
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { Badge } from "@/web/components/ui/badge";
-import { Button } from "@/web/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/web/components/ui/dropdown-menu";
 import {
   getAccountEmail,
   getAccountInitials,
@@ -33,8 +26,15 @@ import {
 import {
   firebaseAuth,
   googleAuthProvider,
-} from "@/web/features/auth/lib/firebase-auth";
-import { cn } from "@/web/lib/utils";
+} from "@/web/platform/firebase/client";
+import { cn } from "@/web/shared/lib/utils";
+import { Badge } from "@/web/shared/ui/badge";
+import { Button } from "@/web/shared/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/web/shared/ui/dropdown-menu";
 
 type PendingAction = "idle" | "signing-in" | "signing-out";
 

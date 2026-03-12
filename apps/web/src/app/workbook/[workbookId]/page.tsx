@@ -1,4 +1,4 @@
-import { WorkbookPageShell } from "./workbook-page-shell";
+import { WorkbookPageShell } from "@/web/features/workbook/routes/components/workbook-page-shell";
 
 interface WorkbookPageProps {
   params: Promise<{

@@ -34,6 +34,13 @@ defmodule PapyrusCollab.MixProject do
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
+  defp test_paths do
+    [
+      "test",
+      "lib"
+    ]
+  end
+
   # Specifies your project dependencies.
   #
   # Type `mix help deps` for examples and options.
@@ -67,6 +74,7 @@ defmodule PapyrusCollab.MixProject do
         "credo --strict",
         "test"
       ],
+      test: ["test #{Enum.join(test_paths(), " ")}"],
       precommit: ["check", "deps.unlock --unused"]
     ]
   end
