@@ -16,6 +16,9 @@ config :papyrus_collab, PapyrusCollab.Auth,
 config :papyrus_collab, PapyrusCollab.CloudWorkbooks.Store,
   adapter: PapyrusCollab.CloudWorkbooks.Store.Firestore
 
+config :papyrus_collab, PapyrusCollab.Collaboration.AccessPolicy,
+  adapter: PapyrusCollab.Collaboration.AccessPolicy.CloudWorkbooks
+
 config :papyrus_collab, PapyrusCollab.Collaboration.BackupStore,
   adapter: PapyrusCollab.Collaboration.BackupStore.InMemory
 
