@@ -19,6 +19,13 @@ config :papyrus_collab, PapyrusCollab.Collaboration.BackupStore,
 config :papyrus_collab, PapyrusCollab.Firebase.IdTokenVerifier,
   key_source: PapyrusCollab.Firebase.PublicKeys
 
+config :posthog,
+  api_host: "https://us.i.posthog.com",
+  api_key: "test",
+  enable: false,
+  enable_error_tracking: true,
+  in_app_otp_apps: [:papyrus_collab]
+
 # Configure the endpoint
 config :papyrus_collab, PapyrusCollabWeb.Endpoint,
   url: [host: "localhost"],

@@ -26,6 +26,13 @@ config :papyrus_collab, PapyrusCollabWeb.Endpoint,
 config :papyrus_collab, PapyrusCollab.Firebase.IdTokenVerifier,
   project_id: System.get_env("FIREBASE_PROJECT_ID")
 
+if posthog_api_key = System.get_env("POSTHOG_API_KEY") do
+  config :posthog,
+    api_host: System.get_env("POSTHOG_API_HOST", "https://us.i.posthog.com"),
+    api_key: posthog_api_key,
+    enable: true
+end
+
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

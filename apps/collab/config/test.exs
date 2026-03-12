@@ -10,6 +10,11 @@ config :papyrus_collab, PapyrusCollabWeb.Endpoint,
 config :papyrus_collab, PapyrusCollab.Auth,
   id_token_verifier: PapyrusCollab.Auth.TestTokenVerifier
 
+config :posthog,
+  api_key: "test",
+  enable: true,
+  test_mode: true
+
 # Print only warnings and errors during test
 config :logger, level: :warning
 
