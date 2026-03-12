@@ -1,0 +1,12 @@
+{
+  "name": "@papyrus/collab",
+  "private": true,
+  "scripts": {
+    "build": "mix compile",
+    "check": "mix check",
+    "check-types": "mix compile --warnings-as-errors",
+    "dev": "mix phx.server",
+    "format": "mix format",
+    "test": "mix test"
+  }
+}

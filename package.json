@@ -4,6 +4,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "format": "turbo run format",
     "test": "turbo run test",
     "check-types": "turbo run check-types",
     "check": "ultracite fix",

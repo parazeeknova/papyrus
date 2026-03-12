@@ -10,3 +10,9 @@ pre-commit:
         - "**/*.jsonc"
         - "**/*.css"
       stage_fixed: true
+    - run: cd apps/collab && mix format
+      glob:
+        - "apps/collab/**/*.ex"
+        - "apps/collab/**/*.exs"
+        - "apps/collab/mix.exs"
+      stage_fixed: true
