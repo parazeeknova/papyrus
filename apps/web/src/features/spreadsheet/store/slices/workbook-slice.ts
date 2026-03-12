@@ -7,8 +7,7 @@ import {
 } from "@papyrus/core/workbook-registry";
 import { Doc } from "yjs";
 import type { StateCreator } from "zustand";
-import { deleteRemoteWorkbook } from "@/web/features/spreadsheet/lib/firestore-workbook-sync";
-import { deleteSharedWorkbookAccess } from "@/web/features/spreadsheet/lib/share-registry";
+import { cloudWorkbookStore } from "@/web/features/spreadsheet/lib/cloud-workbook-store";
 import type { SpreadsheetStoreController } from "../spreadsheet-store-controller";
 import type { SpreadsheetStoreState } from "../spreadsheet-store-types";
 
@@ -74,8 +73,11 @@ export const createWorkbookSlice = (
         const currentAuthenticatedUser =
           controller.getCurrentAuthenticatedUser();
         if (currentAuthenticatedUser) {
-          await deleteRemoteWorkbook(currentAuthenticatedUser.uid, workbookId);
-          await deleteSharedWorkbookAccess(workbookId);
+          await cloudWorkbookStore.deleteWorkbook(
+            currentAuthenticatedUser.uid,
+            workbookId
+          );
+          await cloudWorkbookStore.deleteSharingAccess(workbookId);
         }
 
         await controller.closeActiveWorkbookSession();

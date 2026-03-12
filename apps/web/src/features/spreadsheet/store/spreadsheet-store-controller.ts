@@ -38,13 +38,9 @@ import {
   shouldUploadLocalWorkbook,
 } from "@/web/features/spreadsheet/lib/cloud-sync-reconciliation";
 import {
-  acquireWorkbookSyncLease,
-  listRemoteWorkbooks,
-  type RemoteWorkbookState,
-  readRemoteWorkbook,
-  writeRemoteWorkbook,
-} from "@/web/features/spreadsheet/lib/firestore-workbook-sync";
-import { upsertSharedWorkbookAccess } from "@/web/features/spreadsheet/lib/share-registry";
+  type CloudWorkbookState,
+  cloudWorkbookStore,
+} from "@/web/features/spreadsheet/lib/cloud-workbook-store";
 import { colToLetter } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 import {
   exportCsvFile,
@@ -229,7 +225,7 @@ const buildImportedSheetCells = (rows: string[][]): Record<string, string> => {
 const loadLocalWorkbookState = async (
   workbookId: string,
   fallbackName?: string
-): Promise<RemoteWorkbookState> => {
+): Promise<CloudWorkbookState> => {
   const doc = new Doc();
   const persistence = attachWorkbookPersistence(workbookId, doc);
 
@@ -254,7 +250,7 @@ const loadLocalWorkbookState = async (
 };
 
 const persistRemoteWorkbookLocally = async (
-  workbook: RemoteWorkbookState
+  workbook: CloudWorkbookState
 ): Promise<void> => {
   const doc = new Doc();
   const persistence = attachWorkbookPersistence(workbook.meta.id, doc);
@@ -308,7 +304,7 @@ export const createSpreadsheetStoreController = (
     }
 
     const workbook = getWorkbookMeta(moduleState.activeWorkbookSession.doc);
-    await upsertSharedWorkbookAccess(
+    await cloudWorkbookStore.upsertSharingAccess(
       moduleState.currentAuthenticatedUser.uid,
       workbook
     );
@@ -412,7 +408,7 @@ export const createSpreadsheetStoreController = (
 
     const localSnapshot = getWorkbookSnapshot(session.doc);
     const currentUserId = moduleState.currentAuthenticatedUser.uid;
-    const hasLease = await acquireWorkbookSyncLease(
+    const hasLease = await cloudWorkbookStore.acquireSyncLease(
       currentUserId,
       localSnapshot.workbook.id,
       FIRESTORE_SYNC_CLIENT_ID
@@ -432,7 +428,7 @@ export const createSpreadsheetStoreController = (
       return false;
     }
 
-    const remoteWorkbook = await readRemoteWorkbook(
+    const remoteWorkbook = await cloudWorkbookStore.readWorkbook(
       currentUserId,
       localSnapshot.workbook.id
     );
@@ -445,7 +441,7 @@ export const createSpreadsheetStoreController = (
     }
 
     const mergedSnapshot = getWorkbookSnapshot(session.doc);
-    await writeRemoteWorkbook(
+    await cloudWorkbookStore.writeWorkbook(
       currentUserId,
       {
         activeSheetId: mergedSnapshot.activeSheetId,
@@ -485,7 +481,9 @@ export const createSpreadsheetStoreController = (
 
   const reconcileRemoteWorkbooks = async (user: User): Promise<void> => {
     const localWorkbooks = sortWorkbooks(await listWorkbookRegistryEntries());
-    const remoteWorkbooks = sortWorkbooks(await listRemoteWorkbooks(user.uid));
+    const remoteWorkbooks = sortWorkbooks(
+      await cloudWorkbookStore.listWorkbooks(user.uid)
+    );
     set({ lastSyncErrorMessage: null, remoteSyncStatus: "syncing" });
     syncLogger.info(
       `Reconciling ${localWorkbooks.length} local and ${remoteWorkbooks.length} remote workbooks for ${user.uid}.`
@@ -503,7 +501,7 @@ export const createSpreadsheetStoreController = (
         continue;
       }
 
-      const remoteWorkbook = await readRemoteWorkbook(
+      const remoteWorkbook = await cloudWorkbookStore.readWorkbook(
         user.uid,
         remoteWorkbookMeta.id
       );
@@ -569,7 +567,7 @@ export const createSpreadsheetStoreController = (
               localWorkbookMeta.name
             );
 
-      await writeRemoteWorkbook(
+      await cloudWorkbookStore.writeWorkbook(
         user.uid,
         localWorkbook,
         FIRESTORE_SYNC_CLIENT_ID
@@ -794,7 +792,7 @@ export const createSpreadsheetStoreController = (
       moduleState.currentAuthenticatedUser &&
       getWorkbookMeta(doc).id.length === 0
     ) {
-      const remoteWorkbook = await readRemoteWorkbook(
+      const remoteWorkbook = await cloudWorkbookStore.readWorkbook(
         moduleState.currentAuthenticatedUser.uid,
         workbookId
       );
