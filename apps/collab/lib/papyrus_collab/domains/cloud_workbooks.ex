@@ -17,7 +17,8 @@ defmodule PapyrusCollab.CloudWorkbooks do
   def delete_workbook(%Identity{user_id: user_id}, token, workbook_id)
       when is_binary(token) and byte_size(token) > 0 and is_binary(workbook_id) and
              byte_size(workbook_id) > 0 do
-    with :ok <- Store.delete_workbook(user_id, token, workbook_id) do
+    with :ok <- PapyrusCollab.SharedWorkbooks.delete_workbook(token, workbook_id),
+         :ok <- Store.delete_workbook(user_id, token, workbook_id) do
       LeaseStore.release(user_id, workbook_id)
     end
   end
@@ -42,9 +43,21 @@ defmodule PapyrusCollab.CloudWorkbooks do
 
   def read_workbook(%Identity{}, _token, _workbook_id), do: {:error, :invalid_workbook_id}
 
+  @spec read_workbook_as_owner(String.t(), String.t(), String.t()) ::
+          {:ok, map() | nil} | {:error, term()}
+  def read_workbook_as_owner(owner_id, token, workbook_id)
+      when is_binary(owner_id) and byte_size(owner_id) > 0 and is_binary(token) and
+             byte_size(token) > 0 and is_binary(workbook_id) and byte_size(workbook_id) > 0 do
+    Store.read_workbook(owner_id, token, workbook_id)
+  end
+
+  def read_workbook_as_owner(_owner_id, _token, _workbook_id),
+    do: {:error, :invalid_workbook_id}
+
   @spec reset() :: :ok
   def reset do
     :ok = LeaseStore.reset()
+    :ok = PapyrusCollab.SharedWorkbooks.reset()
     Store.reset()
   end
 
@@ -53,9 +66,23 @@ defmodule PapyrusCollab.CloudWorkbooks do
   def write_workbook(%Identity{user_id: user_id}, token, workbook, client_id)
       when is_binary(token) and byte_size(token) > 0 and is_map(workbook) and is_binary(client_id) and
              byte_size(client_id) > 0 do
-    Store.write_workbook(user_id, token, workbook, client_id)
+    with :ok <- PapyrusCollab.SharedWorkbooks.sync_workbook(user_id, token, workbook) do
+      Store.write_workbook(user_id, token, workbook, client_id)
+    end
   end
 
   def write_workbook(%Identity{}, _token, _workbook, _client_id),
+    do: {:error, :invalid_workbook_payload}
+
+  @spec write_workbook_as_owner(String.t(), String.t(), map(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def write_workbook_as_owner(owner_id, token, workbook, client_id)
+      when is_binary(owner_id) and byte_size(owner_id) > 0 and is_binary(token) and
+             byte_size(token) > 0 and is_map(workbook) and is_binary(client_id) and
+             byte_size(client_id) > 0 do
+    Store.write_workbook(owner_id, token, workbook, client_id)
+  end
+
+  def write_workbook_as_owner(_owner_id, _token, _workbook, _client_id),
     do: {:error, :invalid_workbook_payload}
 end

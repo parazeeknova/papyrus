@@ -143,6 +143,66 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
     assert persisted_workbook["meta"]["remoteVersion"] == 2
   end
 
+  test "shared editors persist workbook snapshots into the owner namespace without mutating share settings" do
+    workbook_id = unique_workbook_id()
+    owner_identity = identity("owner-1", "device-owner", "owner@example.com")
+
+    assert {:ok, %{version: 1}} =
+             CloudWorkbooks.write_workbook(
+               owner_identity,
+               "firebase-token",
+               shared_workbook_payload(workbook_id, "editor"),
+               "seed-client"
+             )
+
+    allow_realtime_access(
+      "editor-1",
+      workbook_id,
+      "editor",
+      shared_workbook_payload(workbook_id, "editor"),
+      owner_identity.user_id
+    )
+
+    assert {:ok, socket} =
+             connect(
+               UserSocket,
+               socket_params("editor-1", "device-editor", "editor@example.com")
+             )
+
+    assert {:ok, response, socket} =
+             subscribe_and_join(socket, WorkbookChannel, "workbook:" <> workbook_id)
+
+    assert response.accessRole == "editor"
+
+    snapshot_ref =
+      push(socket, "snapshot:push", %{
+        "clientId" => "client-editor",
+        "workbook" =>
+          shared_workbook_payload(
+            workbook_id,
+            "viewer",
+            "AQIDBAUG",
+            1
+          )
+          |> put_in(["meta", "sharingEnabled"], false)
+          |> Map.put("collaborationVersion", 1)
+      })
+
+    assert_reply snapshot_ref, :ok, %{version: 2}
+
+    assert {:ok, owner_workbook} =
+             CloudWorkbooks.read_workbook(owner_identity, "firebase-token", workbook_id)
+
+    assert owner_workbook["updateBase64"] == "AQIDBAUG"
+    assert owner_workbook["meta"]["sharingAccessRole"] == "editor"
+    assert owner_workbook["meta"]["sharingEnabled"] == true
+
+    shared_identity = identity("editor-1", "device-editor", "editor@example.com")
+
+    assert {:ok, nil} =
+             CloudWorkbooks.read_workbook(shared_identity, "firebase-token", workbook_id)
+  end
+
   test "viewers can publish presence but cannot push typing, sync, or snapshots" do
     workbook_id = unique_workbook_id()
     allow_realtime_access("viewer-1", workbook_id, "viewer", workbook_payload(workbook_id))
@@ -210,11 +270,22 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
              subscribe_and_join(socket, WorkbookChannel, "workbook:" <> workbook_id)
   end
 
-  defp allow_realtime_access(user_id, workbook_id, access_role, workbook) do
+  defp allow_realtime_access(
+         user_id,
+         workbook_id,
+         access_role,
+         workbook,
+         owner_id \\ nil
+       ) do
+    resolved_owner_id = owner_id || user_id
+
     responses =
       Application.get_env(:papyrus_collab, TestAdapter, [])
       |> Keyword.get(:responses, %{})
-      |> Map.put({user_id, workbook_id}, %{access_role: access_role, workbook: workbook})
+      |> Map.put(
+        {user_id, workbook_id},
+        %{access_role: access_role, owner_id: resolved_owner_id, workbook: workbook}
+      )
 
     Application.put_env(:papyrus_collab, TestAdapter, responses: responses)
   end
@@ -248,5 +319,16 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
       "updateBase64" => update_base64,
       "version" => version
     }
+  end
+
+  defp shared_workbook_payload(
+         workbook_id,
+         sharing_access_role,
+         update_base64 \\ "AQID",
+         version \\ 0
+       ) do
+    workbook_payload(workbook_id, update_base64, version)
+    |> put_in(["meta", "sharingAccessRole"], sharing_access_role)
+    |> put_in(["meta", "sharingEnabled"], true)
   end
 end

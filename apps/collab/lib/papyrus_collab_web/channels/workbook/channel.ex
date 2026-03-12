@@ -14,7 +14,7 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
     identity = socket.assigns.identity
     token = socket.assigns.firebase_token
 
-    with {:ok, %{access_role: access_role, workbook: workbook}} <-
+    with {:ok, %{access_role: access_role, owner_id: owner_id, workbook: workbook}} <-
            Collaboration.authorize_realtime_workbook(identity, token, workbook_id),
          {:ok, snapshot} <-
            maybe_bootstrap_snapshot(workbook_id, workbook, identity),
@@ -30,6 +30,7 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
          workbookId: workbook_id
        },
        assign(socket, :access_role, access_role)
+       |> assign(:owner_id, owner_id)
        |> assign(:workbook_id, workbook_id)}
     else
       {:error, :forbidden} ->
@@ -79,7 +80,7 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
                identity
              ),
            {:ok, persisted_workbook} <-
-             CloudWorkbooks.write_workbook(identity, token, normalized_workbook, client_id) do
+             persist_snapshot_workbook(socket, token, normalized_workbook, client_id) do
         broadcast_from!(socket, "snapshot", %{
           update: normalized_workbook["updateBase64"],
           version: snapshot.version
@@ -169,6 +170,54 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
 
     :ok
   end
+
+  # Shared editors are allowed to mutate workbook content, but owner-only
+  # sharing metadata stays server-authoritative even when they flush snapshots.
+  defp persist_snapshot_workbook(socket, token, workbook, client_id) do
+    identity = socket.assigns.identity
+
+    if socket.assigns.owner_id == identity.user_id do
+      CloudWorkbooks.write_workbook(identity, token, workbook, client_id)
+    else
+      with {:ok, %{} = owner_workbook} <-
+             CloudWorkbooks.read_workbook_as_owner(
+               socket.assigns.owner_id,
+               token,
+               socket.assigns.workbook_id
+             ),
+           {:ok, sanitized_workbook} <-
+             preserve_owner_managed_meta(workbook, owner_workbook),
+           {:ok, persisted_workbook} <-
+             CloudWorkbooks.write_workbook_as_owner(
+               socket.assigns.owner_id,
+               token,
+               sanitized_workbook,
+               client_id
+             ) do
+        {:ok, persisted_workbook}
+      else
+        {:ok, nil} -> {:error, :forbidden}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  defp preserve_owner_managed_meta(%{"meta" => next_meta} = workbook, %{"meta" => current_meta})
+       when is_map(next_meta) and is_map(current_meta) do
+    {:ok,
+     workbook
+     |> put_in(
+       ["meta", "sharingAccessRole"],
+       Map.get(current_meta, "sharingAccessRole", Map.get(next_meta, "sharingAccessRole"))
+     )
+     |> put_in(
+       ["meta", "sharingEnabled"],
+       Map.get(current_meta, "sharingEnabled", Map.get(next_meta, "sharingEnabled"))
+     )}
+  end
+
+  defp preserve_owner_managed_meta(_workbook, _current_workbook),
+    do: {:error, :invalid_workbook_payload}
 
   defp maybe_bootstrap_snapshot(workbook_id, workbook, identity) do
     with {:ok, snapshot} <- Collaboration.fetch_snapshot(workbook_id) do

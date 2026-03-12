@@ -5,7 +5,7 @@ defmodule PapyrusCollab.Application do
 
   use Application
 
-  alias PapyrusCollab.CloudWorkbooks.Store
+  alias PapyrusCollab.{CloudWorkbooks.Store, SharedWorkbooks}
 
   @impl true
   def start(_type, _args) do
@@ -18,6 +18,7 @@ defmodule PapyrusCollab.Application do
         {Registry, keys: :unique, name: PapyrusCollab.Collaboration.RoomRegistry},
         PapyrusCollab.CloudWorkbooks.LeaseStore,
         cloud_workbook_store_child(),
+        shared_workbook_store_child(),
         PapyrusCollab.Collaboration.BackupStore,
         PapyrusCollab.Collaboration.RoomSupervisor,
         PapyrusCollab.Firebase.PublicKeys,
@@ -44,6 +45,16 @@ defmodule PapyrusCollab.Application do
 
   defp cloud_workbook_store_child do
     adapter = Store.adapter()
+
+    if Code.ensure_loaded?(adapter) and function_exported?(adapter, :child_spec, 1) do
+      {adapter, []}
+    else
+      nil
+    end
+  end
+
+  defp shared_workbook_store_child do
+    adapter = SharedWorkbooks.Store.adapter()
 
     if Code.ensure_loaded?(adapter) and function_exported?(adapter, :child_spec, 1) do
       {adapter, []}

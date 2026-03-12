@@ -13,6 +13,9 @@ config :papyrus_collab, PapyrusCollab.Auth,
 config :papyrus_collab, PapyrusCollab.CloudWorkbooks.Store,
   adapter: PapyrusCollab.CloudWorkbooks.Store.InMemory
 
+config :papyrus_collab, PapyrusCollab.SharedWorkbooks.Store,
+  adapter: PapyrusCollab.SharedWorkbooks.Store.InMemory
+
 config :posthog,
   api_key: "test",
   enable: true,
