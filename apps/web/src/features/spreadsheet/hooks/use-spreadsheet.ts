@@ -1,9 +1,6 @@
 "use client";
 
-import type {
-  CollaborationAccessRole,
-  CollaboratorIdentity,
-} from "@papyrus/core/collaboration-types";
+import type { CollaborationAccessRole } from "@papyrus/core/collaboration-types";
 import type {
   CellFormat,
   CellTextTransform,
@@ -12,7 +9,6 @@ import type {
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { firebaseAuth } from "@/web/features/auth/lib/firebase-auth";
-import { buildCollaboratorIdentity } from "@/web/features/spreadsheet/lib/collaboration";
 import {
   getCellReferenceLabel as buildCellReferenceLabel,
   cellId,
@@ -123,7 +119,6 @@ interface SheetFooterSelectionSummary {
 interface UseSpreadsheetOptions {
   isSharedSession?: boolean;
   requestedAccessRole?: CollaborationAccessRole | null;
-  syncServerUrl?: string | null;
   workbookId?: string | null;
 }
 
@@ -428,7 +423,6 @@ const applySpreadsheetPatch = (
 export function useSpreadsheet({
   isSharedSession = false,
   requestedAccessRole = null,
-  syncServerUrl = null,
   workbookId = null,
 }: UseSpreadsheetOptions = {}) {
   const activeSheetCells = useSpreadsheetStore(
@@ -459,7 +453,6 @@ export function useSpreadsheet({
   const collaborationStatus = useSpreadsheetStore(
     (state) => state.collaborationStatus
   );
-  const connectRealtime = useSpreadsheetStore((state) => state.connectRealtime);
   const createSheet = useSpreadsheetStore((state) => state.createSheet);
   const createWorkbook = useSpreadsheetStore((state) => state.createWorkbook);
   const deleteColumns = useSpreadsheetStore((state) => state.deleteColumns);
@@ -535,15 +528,8 @@ export function useSpreadsheet({
     (state) => state.setWorkbookSharingEnabled
   );
   const sheets = useSpreadsheetStore((state) => state.sheets);
-  const stopRealtime = useSpreadsheetStore((state) => state.stopRealtime);
   const syncNow = useSpreadsheetStore((state) => state.syncNow);
   const undo = useSpreadsheetStore((state) => state.undo);
-  const updateRealtimePresence = useSpreadsheetStore(
-    (state) => state.updateRealtimePresence
-  );
-  const updateRealtimeTyping = useSpreadsheetStore(
-    (state) => state.updateRealtimeTyping
-  );
   const workbooks = useSpreadsheetStore((state) => state.workbooks);
   const workerResetKey = useSpreadsheetStore((state) => state.workerResetKey);
   const [activeCell, setActiveCell] = useState<CellPosition | null>(null);
@@ -561,8 +547,6 @@ export function useSpreadsheet({
   const [isSheetComputing, setIsSheetComputing] = useState(false);
   const [showSheetLoadingStatus, setShowSheetLoadingStatus] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [collaborationIdentity, setCollaborationIdentity] =
-    useState<CollaboratorIdentity | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const previousColumnNamesRef = useRef<string[]>([]);
   const activeColumnNames = useMemo(() => {
@@ -594,11 +578,6 @@ export function useSpreadsheet({
   const previousSheetIdRef = useRef<string | null>(null);
   const shouldSkipNextWorkerSyncRef = useRef(true);
   const visibleWorkerInitInFlightRef = useRef(false);
-  const stopRealtimeRef = useRef(stopRealtime);
-  stopRealtimeRef.current = stopRealtime;
-  const realtimeCleanupTimeoutRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
   const resolvedRequestedAccessRole = requestedAccessRole ?? "editor";
   const effectiveCollaborationAccessRole = isSharedSession
     ? collaborationAccessRole
@@ -607,15 +586,6 @@ export function useSpreadsheet({
     ? effectiveCollaborationAccessRole === "editor"
     : resolvedRequestedAccessRole === "editor";
   const canManageSharing = currentUser !== null && !isSharedSession && canEdit;
-  const remoteCollaborationPeers = useMemo(() => {
-    if (!collaborationIdentity) {
-      return collaborationPeers;
-    }
-
-    return collaborationPeers.filter(
-      (peer) => peer.identity.clientId !== collaborationIdentity.clientId
-    );
-  }, [collaborationIdentity, collaborationPeers]);
   const normalizedSelection = useMemo(
     () => normalizeSelectionRange(selection, columnCount, rowCount),
     [selection, columnCount, rowCount]
@@ -718,70 +688,12 @@ export function useSpreadsheet({
   }, [activeSheetCells, activeSheetId, totalRowCount]);
 
   useEffect(() => {
-    let isCancelled = false;
-
     const unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
       setCurrentUser(nextUser);
-      buildCollaboratorIdentity(nextUser)
-        .then((identity) => {
-          if (!isCancelled) {
-            setCollaborationIdentity(identity);
-          }
-        })
-        .catch(() => {
-          if (!isCancelled) {
-            setCollaborationIdentity(null);
-          }
-        });
     });
 
     return () => {
-      isCancelled = true;
       unsubscribe();
-    };
-  }, []);
-
-  // Connection-only effect: idempotently (re)connects when deps change.
-  // No cleanup — teardown is handled by the unmount-only effect below.
-  // This prevents StrictMode / dep-change cleanup from cycling the socket.
-  useEffect(() => {
-    if (!(workbookId && collaborationIdentity && syncServerUrl)) {
-      return;
-    }
-
-    connectRealtime(
-      resolvedRequestedAccessRole,
-      collaborationIdentity,
-      syncServerUrl,
-      isSharedSession,
-      workbookId
-    );
-  }, [
-    collaborationIdentity,
-    connectRealtime,
-    isSharedSession,
-    resolvedRequestedAccessRole,
-    syncServerUrl,
-    workbookId,
-  ]);
-
-  // Unmount-only cleanup: tears down the WebSocket only when the component
-  // truly unmounts (navigating away), not on every effect re-fire.
-  // Uses a deferred timeout so StrictMode's simulated unmount is cancelled
-  // by the immediate remount, preventing unnecessary socket teardown.
-  useEffect(() => {
-    // Cancel any pending cleanup from a previous StrictMode cycle
-    if (realtimeCleanupTimeoutRef.current !== null) {
-      clearTimeout(realtimeCleanupTimeoutRef.current);
-      realtimeCleanupTimeoutRef.current = null;
-    }
-
-    return () => {
-      const ref = stopRealtimeRef;
-      realtimeCleanupTimeoutRef.current = setTimeout(() => {
-        realtimeCleanupTimeoutRef.current = null;
-        ref.current();
-      }, 0);
     };
   }, []);
 
@@ -1894,39 +1806,6 @@ export function useSpreadsheet({
   );
 
   useEffect(() => {
-    updateRealtimePresence({
-      activeCell,
-      selection:
-        selection ??
-        (activeCell
-          ? {
-              end: activeCell,
-              mode: "cells",
-              start: activeCell,
-            }
-          : null),
-      sheetId: activeSheetId,
-    });
-  }, [activeCell, activeSheetId, selection, updateRealtimePresence]);
-
-  useEffect(() => {
-    if (!(editingCell && activeSheetId)) {
-      updateRealtimeTyping({
-        cell: null,
-        draft: null,
-        sheetId: null,
-      });
-      return;
-    }
-
-    updateRealtimeTyping({
-      cell: editingCell,
-      draft: editingDraft,
-      sheetId: activeSheetId,
-    });
-  }, [activeSheetId, editingCell, editingDraft, updateRealtimeTyping]);
-
-  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTextInputTarget(event.target)) {
         return;
@@ -2011,10 +1890,8 @@ export function useSpreadsheet({
     activeSelectionFormat,
     collaborationAccessRole: effectiveCollaborationAccessRole,
     collaborationErrorMessage,
-    collaborationIdentity,
-    collaborationPeers: remoteCollaborationPeers,
+    collaborationPeers,
     collaborationStatus,
-    currentUser,
     canRedo,
     canUndo,
     canEdit,

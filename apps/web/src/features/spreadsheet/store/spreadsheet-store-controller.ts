@@ -1,12 +1,5 @@
 "use client";
 
-import type {
-  CollaborationAccessRole,
-  CollaborationClientMessage,
-  CollaborationServerMessage,
-  CollaboratorIdentity,
-  CollaboratorPresence,
-} from "@papyrus/core/collaboration-types";
 import {
   createSheet,
   createSheetUndoManager,
@@ -68,7 +61,6 @@ interface ActiveWorkbookSession {
   doc: Doc;
   handleDocUpdate: (update: Uint8Array, origin: unknown) => void;
   handleUndoStackChange: () => void;
-  hasAppliedRealtimeSnapshot: boolean;
   isSharedSession: boolean;
   persistence: WorkbookPersistence | null;
   sessionId: number;
@@ -77,21 +69,11 @@ interface ActiveWorkbookSession {
 
 interface SpreadsheetStoreModuleState {
   activeWorkbookSession: ActiveWorkbookSession | null;
-  collaborationReconnectTimeout: ReturnType<typeof setTimeout> | null;
-  collaborationServerUrl: string | null;
-  collaborationSocket: WebSocket | null;
-  collaborationSocketWorkbookId: string | null;
-  collaborationWorkbookId: string | null;
-  connectingRealtimeTransport: boolean;
   currentAuthenticatedUser: User | null;
-  currentCollaborationIdentity: CollaboratorIdentity | null;
-  currentCollaborationIsSharedSession: boolean;
-  currentCollaborationRole: CollaborationAccessRole | null;
   hasInitializedAuthSync: boolean;
   hasResolvedInitialAuthState: boolean;
   nextWorkbookActivationId: number;
   nextWorkbookSessionId: number;
-  realtimeConnectionId: number;
   remoteSyncTimeout: ReturnType<typeof setTimeout> | null;
 }
 
@@ -117,34 +99,15 @@ export interface SpreadsheetStoreController {
   initializeAuthSync: () => void;
   isViewerAccess: () => boolean;
   persistActiveWorkbookMeta: () => Promise<void>;
-  sendRealtimeMessage: (message: CollaborationClientMessage) => void;
-  setRealtimeConnection: (
-    accessRole: CollaborationAccessRole,
-    identity: CollaboratorIdentity,
-    serverUrl: string,
-    isSharedSession: boolean,
-    workbookId: string
-  ) => void;
-  stopRealtime: () => void;
   syncActiveWorkbookShareAccess: () => Promise<void>;
   syncUndoManager: (doc: Doc) => void;
 }
 
 const moduleState: SpreadsheetStoreModuleState = {
   activeWorkbookSession: null,
-  collaborationReconnectTimeout: null,
-  collaborationServerUrl: null,
-  collaborationSocket: null,
-  collaborationSocketWorkbookId: null,
-  collaborationWorkbookId: null,
-  connectingRealtimeTransport: false,
   currentAuthenticatedUser: null,
-  currentCollaborationIdentity: null,
-  currentCollaborationIsSharedSession: false,
-  currentCollaborationRole: null,
   hasInitializedAuthSync: false,
   hasResolvedInitialAuthState: false,
-  realtimeConnectionId: 0,
   nextWorkbookActivationId: 0,
   nextWorkbookSessionId: 0,
   remoteSyncTimeout: null,
@@ -156,7 +119,6 @@ const FIRESTORE_SYNC_ORIGIN = "firestore-sync";
 const FIRESTORE_SYNC_CLIENT_ID = crypto.randomUUID();
 const IMPORT_EXPORT_MIN_COLUMN_COUNT = 100;
 const IMPORT_EXPORT_SHEET_FALLBACK_NAME = "Sheet1";
-const REALTIME_SYNC_ORIGIN = "realtime-sync";
 const syncLogger = createLogger({ scope: "spreadsheet-sync" });
 
 const clearRemoteSyncTimeout = (): void => {
@@ -166,36 +128,6 @@ const clearRemoteSyncTimeout = (): void => {
 
   clearTimeout(moduleState.remoteSyncTimeout);
   moduleState.remoteSyncTimeout = null;
-};
-
-const clearCollaborationReconnectTimeout = (): void => {
-  if (!moduleState.collaborationReconnectTimeout) {
-    return;
-  }
-
-  clearTimeout(moduleState.collaborationReconnectTimeout);
-  moduleState.collaborationReconnectTimeout = null;
-};
-
-const encodeUpdateToBase64 = (update: Uint8Array): string => {
-  let binary = "";
-
-  for (let index = 0; index < update.length; index += 0x80_00) {
-    binary += String.fromCharCode(...update.subarray(index, index + 0x80_00));
-  }
-
-  return btoa(binary);
-};
-
-const decodeBase64ToUpdate = (value: string): Uint8Array => {
-  const binary = atob(value);
-  const result = new Uint8Array(binary.length);
-
-  for (const [index, char] of Array.from(binary).entries()) {
-    result[index] = char.charCodeAt(0);
-  }
-
-  return result;
 };
 
 const getTimestampValue = (value: string): number => {
@@ -226,47 +158,12 @@ const buildPersistedWorkbookMeta = (
   };
 };
 
-const getWorkbookUpdatedAtFromEncodedUpdate = (
-  encodedUpdate: string
-): number => {
-  const doc = new Doc();
-
-  try {
-    applyUpdate(doc, decodeBase64ToUpdate(encodedUpdate), REALTIME_SYNC_ORIGIN);
-    return getTimestampValue(getWorkbookMeta(doc).updatedAt);
-  } finally {
-    doc.destroy();
-  }
-};
-
-const toWebSocketUrl = (serverUrl: string, workbookId: string): string => {
-  const url = new URL(`/collab/${workbookId}`, serverUrl);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
-};
-
 const isActiveSession = (session: ActiveWorkbookSession): boolean => {
   return moduleState.activeWorkbookSession?.sessionId === session.sessionId;
 };
 
 const isCurrentWorkbookActivation = (activationId: number): boolean => {
   return moduleState.nextWorkbookActivationId === activationId;
-};
-
-const isCurrentRealtimeConnection = (
-  realtimeConnectionId: number,
-  sessionId: number,
-  workbookId: string
-): boolean => {
-  return (
-    moduleState.realtimeConnectionId === realtimeConnectionId &&
-    moduleState.activeWorkbookSession?.sessionId === sessionId &&
-    getWorkbookMeta(moduleState.activeWorkbookSession.doc).id === workbookId &&
-    moduleState.collaborationWorkbookId === workbookId &&
-    moduleState.collaborationServerUrl !== null &&
-    moduleState.currentCollaborationIdentity !== null &&
-    moduleState.currentCollaborationRole !== null
-  );
 };
 
 const sortWorkbooks = (workbooks: WorkbookMeta[]): WorkbookMeta[] => {
@@ -395,34 +292,6 @@ export const createSpreadsheetStoreController = (
     set({ workbooks: sortWorkbooks(workbooks) });
   };
 
-  const syncEffectiveRealtimeAccessRole = (
-    peers: CollaboratorPresence[]
-  ): CollaborationAccessRole | null => {
-    const currentClientId = moduleState.currentCollaborationIdentity?.clientId;
-    if (!currentClientId) {
-      return null;
-    }
-
-    const selfPeer = peers.find(
-      (peer) => peer.identity.clientId === currentClientId
-    );
-
-    return selfPeer?.accessRole ?? null;
-  };
-
-  const stopRealtimeConnection = (): void => {
-    clearCollaborationReconnectTimeout();
-    moduleState.connectingRealtimeTransport = false;
-    moduleState.collaborationSocket?.close();
-    moduleState.collaborationSocket = null;
-    moduleState.collaborationSocketWorkbookId = null;
-    set({
-      collaborationErrorMessage: null,
-      collaborationPeers: [],
-      collaborationStatus: "disconnected",
-    });
-  };
-
   const syncActiveWorkbookShareAccess = async (): Promise<void> => {
     if (
       !(
@@ -456,9 +325,6 @@ export const createSpreadsheetStoreController = (
   };
 
   const destroyActiveWorkbookSession = async (): Promise<void> => {
-    moduleState.realtimeConnectionId += 1;
-    stopRealtimeConnection();
-
     if (!moduleState.activeWorkbookSession) {
       return;
     }
@@ -835,318 +701,6 @@ export const createSpreadsheetStoreController = (
     });
   };
 
-  const connectRealtimeTransport = async (): Promise<void> => {
-    if (
-      !(
-        moduleState.activeWorkbookSession &&
-        moduleState.collaborationWorkbookId &&
-        moduleState.collaborationServerUrl &&
-        moduleState.currentCollaborationIdentity &&
-        moduleState.currentCollaborationRole
-      )
-    ) {
-      return;
-    }
-
-    const activeWorkbookSession = moduleState.activeWorkbookSession;
-    const activeWorkbookId = getWorkbookMeta(activeWorkbookSession.doc).id;
-    if (
-      activeWorkbookId.length === 0 ||
-      activeWorkbookId !== moduleState.collaborationWorkbookId
-    ) {
-      return;
-    }
-
-    const sessionId = activeWorkbookSession.sessionId;
-    const realtimeConnectionId = moduleState.realtimeConnectionId;
-    clearCollaborationReconnectTimeout();
-
-    if (
-      moduleState.collaborationSocket &&
-      moduleState.collaborationSocketWorkbookId === activeWorkbookId &&
-      (moduleState.collaborationSocket.readyState === WebSocket.CONNECTING ||
-        moduleState.collaborationSocket.readyState === WebSocket.OPEN)
-    ) {
-      return;
-    }
-
-    if (moduleState.connectingRealtimeTransport) {
-      return;
-    }
-    moduleState.connectingRealtimeTransport = true;
-
-    moduleState.collaborationSocket?.close();
-    moduleState.collaborationSocketWorkbookId = null;
-
-    if (
-      !isCurrentRealtimeConnection(
-        realtimeConnectionId,
-        sessionId,
-        activeWorkbookId
-      )
-    ) {
-      moduleState.connectingRealtimeTransport = false;
-      return;
-    }
-
-    const isSharedSession = moduleState.currentCollaborationIsSharedSession;
-    const initialLocalSeedUpdate = encodeUpdateToBase64(
-      encodeStateAsUpdate(activeWorkbookSession.doc)
-    );
-
-    const authToken = moduleState.currentAuthenticatedUser
-      ? await moduleState.currentAuthenticatedUser
-          .getIdToken()
-          .catch(() => null)
-      : null;
-
-    if (
-      !isCurrentRealtimeConnection(
-        realtimeConnectionId,
-        sessionId,
-        activeWorkbookId
-      )
-    ) {
-      moduleState.connectingRealtimeTransport = false;
-      return;
-    }
-
-    const wsUrl = new URL(
-      toWebSocketUrl(moduleState.collaborationServerUrl, activeWorkbookId)
-    );
-    wsUrl.searchParams.set("accessRole", moduleState.currentCollaborationRole);
-    if (authToken) {
-      wsUrl.searchParams.set("authToken", authToken);
-    }
-    wsUrl.searchParams.set(
-      "clientId",
-      moduleState.currentCollaborationIdentity.clientId
-    );
-    wsUrl.searchParams.set(
-      "color",
-      moduleState.currentCollaborationIdentity.color
-    );
-    wsUrl.searchParams.set(
-      "icon",
-      moduleState.currentCollaborationIdentity.icon
-    );
-    wsUrl.searchParams.set(
-      "isAnonymous",
-      moduleState.currentCollaborationIdentity.isAnonymous ? "true" : "false"
-    );
-    wsUrl.searchParams.set(
-      "name",
-      moduleState.currentCollaborationIdentity.name
-    );
-    if (moduleState.currentCollaborationIdentity.photoURL) {
-      wsUrl.searchParams.set(
-        "photoURL",
-        moduleState.currentCollaborationIdentity.photoURL
-      );
-    }
-
-    set({
-      collaborationAccessRole: null,
-      collaborationErrorMessage: null,
-      collaborationPeers: [],
-      collaborationStatus: "connecting",
-    });
-
-    const socket = new WebSocket(wsUrl);
-    moduleState.collaborationSocket = socket;
-    moduleState.collaborationSocketWorkbookId = activeWorkbookId;
-    moduleState.connectingRealtimeTransport = false;
-
-    socket.addEventListener("open", () => {
-      if (
-        moduleState.collaborationSocket !== socket ||
-        !isCurrentRealtimeConnection(
-          realtimeConnectionId,
-          sessionId,
-          activeWorkbookId
-        )
-      ) {
-        return;
-      }
-
-      set({ collaborationStatus: "connected" });
-    });
-
-    socket.addEventListener("message", (event) => {
-      if (
-        moduleState.collaborationSocket !== socket ||
-        !moduleState.activeWorkbookSession ||
-        !isCurrentRealtimeConnection(
-          realtimeConnectionId,
-          sessionId,
-          activeWorkbookId
-        )
-      ) {
-        return;
-      }
-
-      const message = JSON.parse(
-        typeof event.data === "string" ? event.data : "{}"
-      ) as CollaborationServerMessage;
-
-      if (message.type === "presence") {
-        set({
-          collaborationAccessRole: syncEffectiveRealtimeAccessRole(
-            message.payload.peers
-          ),
-          collaborationErrorMessage: null,
-          collaborationPeers: message.payload.peers,
-        });
-        return;
-      }
-
-      if (message.type === "snapshot") {
-        const shouldSeedRoomFromLocalState =
-          !isSharedSession &&
-          moduleState.currentCollaborationRole === "editor" &&
-          getTimestampValue(
-            getWorkbookMeta(moduleState.activeWorkbookSession.doc).updatedAt
-          ) > getWorkbookUpdatedAtFromEncodedUpdate(message.payload.update);
-
-        if (
-          isSharedSession &&
-          !moduleState.activeWorkbookSession.hasAppliedRealtimeSnapshot
-        ) {
-          resetWorkbook(
-            moduleState.activeWorkbookSession.doc,
-            REALTIME_SYNC_ORIGIN
-          );
-        }
-
-        applyUpdate(
-          moduleState.activeWorkbookSession.doc,
-          decodeBase64ToUpdate(message.payload.update),
-          REALTIME_SYNC_ORIGIN
-        );
-        moduleState.activeWorkbookSession.hasAppliedRealtimeSnapshot = true;
-
-        if (isSharedSession) {
-          applySnapshot(moduleState.activeWorkbookSession.doc);
-        }
-
-        set({
-          collaborationAccessRole: syncEffectiveRealtimeAccessRole(
-            message.payload.peers
-          ),
-          collaborationErrorMessage: null,
-          collaborationPeers: message.payload.peers,
-        });
-
-        if (
-          (isSharedSession &&
-            moduleState.currentCollaborationRole === "editor" &&
-            message.payload.shouldInitializeFromClient) ||
-          shouldSeedRoomFromLocalState
-        ) {
-          socket.send(
-            JSON.stringify({
-              payload: {
-                update: initialLocalSeedUpdate,
-              },
-              type: "sync",
-            } satisfies CollaborationClientMessage)
-          );
-        }
-
-        return;
-      }
-
-      applyUpdate(
-        moduleState.activeWorkbookSession.doc,
-        decodeBase64ToUpdate(message.payload.update),
-        REALTIME_SYNC_ORIGIN
-      );
-
-      // Diagnostic: verify Yjs doc state after applying sync update
-      const postSyncSnapshot = getWorkbookSnapshot(
-        moduleState.activeWorkbookSession.doc
-      );
-      const postSyncCells = postSyncSnapshot.activeSheetCells;
-      const postSyncCellCount = Object.keys(postSyncCells).length;
-      console.warn("[sync-received] Yjs doc after applyUpdate:", {
-        cellCount: postSyncCellCount,
-        sampleCells: Object.entries(postSyncCells)
-          .slice(0, 5)
-          .map(([k, v]) => `${k}=${v.raw}`),
-        sheetId: postSyncSnapshot.activeSheetId,
-      });
-    });
-
-    socket.addEventListener("close", (event) => {
-      if (
-        moduleState.collaborationSocket !== socket ||
-        moduleState.realtimeConnectionId !== realtimeConnectionId
-      ) {
-        return;
-      }
-
-      const isAccessDenied = event.code === 4403;
-      const collaborationErrorMessage =
-        event.reason === "sharing-disabled"
-          ? "Sharing is currently turned off for this workbook."
-          : event.reason === "invalid-owner-token"
-            ? "Your owner session could not be verified."
-            : event.reason === "missing-share-config"
-              ? "This workbook is not configured for sharing yet."
-              : event.reason === "share-config-unavailable"
-                ? "Share access could not be verified right now."
-                : null;
-
-      set({
-        collaborationAccessRole: null,
-        collaborationErrorMessage,
-        collaborationPeers: [],
-        collaborationStatus: "disconnected",
-      });
-      moduleState.collaborationSocket = null;
-      moduleState.collaborationSocketWorkbookId = null;
-
-      if (
-        isAccessDenied ||
-        !(
-          moduleState.collaborationServerUrl &&
-          moduleState.currentCollaborationIdentity
-        )
-      ) {
-        return;
-      }
-
-      moduleState.collaborationReconnectTimeout = setTimeout(() => {
-        if (
-          !isCurrentRealtimeConnection(
-            realtimeConnectionId,
-            sessionId,
-            activeWorkbookId
-          )
-        ) {
-          return;
-        }
-
-        connectRealtimeTransport().catch(() => undefined);
-      }, 1500);
-    });
-
-    socket.addEventListener("error", () => {
-      if (
-        moduleState.collaborationSocket !== socket ||
-        moduleState.realtimeConnectionId !== realtimeConnectionId
-      ) {
-        return;
-      }
-
-      set({
-        collaborationAccessRole: null,
-        collaborationPeers: [],
-        collaborationStatus: "disconnected",
-      });
-    });
-  };
-
   const syncUndoManager = (doc: Doc): void => {
     if (!moduleState.activeWorkbookSession) {
       return;
@@ -1193,7 +747,6 @@ export const createSpreadsheetStoreController = (
     ) {
       syncUndoManager(moduleState.activeWorkbookSession.doc);
       applySnapshot(moduleState.activeWorkbookSession.doc);
-      connectRealtimeTransport().catch(() => undefined);
       return;
     }
 
@@ -1278,81 +831,19 @@ export const createSpreadsheetStoreController = (
       doc,
       handleDocUpdate: () => undefined,
       handleUndoStackChange: () => undefined,
-      hasAppliedRealtimeSnapshot: false,
       isSharedSession,
       persistence,
       sessionId: moduleState.nextWorkbookSessionId,
       undoManager: null,
     };
 
-    session.handleDocUpdate = (update: Uint8Array, origin: unknown) => {
-      const originLabel =
-        origin === REALTIME_SYNC_ORIGIN
-          ? "REALTIME"
-          : origin === FIRESTORE_SYNC_ORIGIN
-            ? "FIRESTORE"
-            : origin === null
-              ? "LOCAL"
-              : String(origin);
-
-      console.warn("[handleDocUpdate] fired", {
-        origin: originLabel,
-        isSharedSession: session.isSharedSession,
-        updateBytes: update.length,
-      });
-
+    session.handleDocUpdate = (_update: Uint8Array, origin: unknown) => {
       applySnapshot(doc);
 
-      if (
-        !(
-          session.isSharedSession ||
-          origin === FIRESTORE_SYNC_ORIGIN ||
-          origin === REALTIME_SYNC_ORIGIN
-        )
-      ) {
+      if (!(session.isSharedSession || origin === FIRESTORE_SYNC_ORIGIN)) {
         session.dirty = true;
         scheduleRemoteWorkbookSync(session);
       }
-
-      const socket = moduleState.collaborationSocket;
-      const socketState = socket
-        ? socket.readyState === WebSocket.OPEN
-          ? "OPEN"
-          : socket.readyState === WebSocket.CONNECTING
-            ? "CONNECTING"
-            : socket.readyState === WebSocket.CLOSING
-              ? "CLOSING"
-              : "CLOSED"
-        : "NULL";
-
-      if (
-        origin === REALTIME_SYNC_ORIGIN ||
-        origin === FIRESTORE_SYNC_ORIGIN ||
-        !socket ||
-        socket.readyState !== WebSocket.OPEN
-      ) {
-        console.warn("[handleDocUpdate] skipped WS send", {
-          origin: originLabel,
-          socketState,
-        });
-        return;
-      }
-
-      const encoded = encodeUpdateToBase64(update);
-      console.warn("[handleDocUpdate] sending sync over WS", {
-        origin: originLabel,
-        encodedLength: encoded.length,
-        socketState,
-      });
-
-      socket.send(
-        JSON.stringify({
-          payload: {
-            update: encoded,
-          },
-          type: "sync",
-        } satisfies CollaborationClientMessage)
-      );
     };
     session.handleUndoStackChange = () => {
       set(getUndoState(moduleState.activeWorkbookSession?.undoManager ?? null));
@@ -1377,7 +868,6 @@ export const createSpreadsheetStoreController = (
     }
 
     await syncActiveWorkbookShareAccess();
-    connectRealtimeTransport().catch(() => undefined);
     await persistActiveWorkbookMeta();
   };
 
@@ -1420,7 +910,6 @@ export const createSpreadsheetStoreController = (
           await syncActiveWorkbookShareAccess();
           if (moduleState.activeWorkbookSession) {
             scheduleRemoteWorkbookSync(moduleState.activeWorkbookSession);
-            connectRealtimeTransport().catch(() => undefined);
           }
         })
         .catch((error) => {
@@ -1600,48 +1089,6 @@ export const createSpreadsheetStoreController = (
     initializeAuthSync,
     isViewerAccess: () => get().collaborationAccessRole === "viewer",
     persistActiveWorkbookMeta,
-    sendRealtimeMessage: (message) => {
-      if (moduleState.collaborationSocket?.readyState !== WebSocket.OPEN) {
-        return;
-      }
-
-      moduleState.collaborationSocket.send(JSON.stringify(message));
-    },
-    setRealtimeConnection: (
-      accessRole,
-      identity,
-      serverUrl,
-      isSharedSession,
-      workbookId
-    ) => {
-      const hasLiveSocket =
-        moduleState.collaborationSocket &&
-        moduleState.collaborationSocketWorkbookId === workbookId &&
-        (moduleState.collaborationSocket.readyState === WebSocket.CONNECTING ||
-          moduleState.collaborationSocket.readyState === WebSocket.OPEN);
-
-      if (!hasLiveSocket) {
-        moduleState.realtimeConnectionId += 1;
-      }
-
-      moduleState.collaborationWorkbookId = workbookId;
-      moduleState.collaborationServerUrl = serverUrl;
-      moduleState.currentCollaborationIdentity = identity;
-      moduleState.currentCollaborationIsSharedSession = isSharedSession;
-      moduleState.currentCollaborationRole = accessRole;
-      set({ collaborationErrorMessage: null });
-      connectRealtimeTransport().catch(() => undefined);
-    },
-    stopRealtime: () => {
-      moduleState.realtimeConnectionId += 1;
-      moduleState.collaborationWorkbookId = null;
-      moduleState.collaborationServerUrl = null;
-      moduleState.currentCollaborationIdentity = null;
-      moduleState.currentCollaborationIsSharedSession = false;
-      moduleState.currentCollaborationRole = null;
-      set({ collaborationAccessRole: null, collaborationErrorMessage: null });
-      stopRealtimeConnection();
-    },
     syncActiveWorkbookShareAccess,
     syncUndoManager,
   };

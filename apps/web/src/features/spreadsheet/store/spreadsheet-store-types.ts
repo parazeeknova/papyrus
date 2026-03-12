@@ -2,7 +2,6 @@
 
 import type {
   CollaborationAccessRole,
-  CollaboratorIdentity,
   CollaboratorPresence,
 } from "@papyrus/core/collaboration-types";
 import type {
@@ -40,13 +39,6 @@ export interface SpreadsheetStoreState {
   collaborationErrorMessage: string | null;
   collaborationPeers: CollaboratorPresence[];
   collaborationStatus: "connected" | "connecting" | "disconnected";
-  connectRealtime: (
-    accessRole: CollaborationAccessRole,
-    identity: CollaboratorIdentity,
-    serverUrl: string,
-    isSharedSession: boolean,
-    workbookId: string
-  ) => void;
   createSheet: () => Promise<void>;
   createWorkbook: () => Promise<void>;
   deleteColumns: (startColumn: number, columnCount: number) => Promise<void>;
@@ -100,23 +92,8 @@ export interface SpreadsheetStoreState {
   ) => Promise<boolean>;
   setWorkbookSharingEnabled: (sharingEnabled: boolean) => Promise<boolean>;
   sheets: SheetMeta[];
-  stopRealtime: () => void;
   syncNow: () => Promise<boolean>;
   undo: () => Promise<void>;
-  updateRealtimePresence: (presence: {
-    activeCell: { col: number; row: number } | null;
-    selection: {
-      end: { col: number; row: number };
-      mode: "cells" | "columns" | "rows";
-      start: { col: number; row: number };
-    } | null;
-    sheetId: string | null;
-  }) => void;
-  updateRealtimeTyping: (typing: {
-    cell: { col: number; row: number } | null;
-    draft: string | null;
-    sheetId: string | null;
-  }) => void;
   workbooks: WorkbookMeta[];
   workerResetKey: string;
 }

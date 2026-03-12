@@ -1,8 +1,6 @@
 "use client";
 
-import type { CollaborationClientMessage } from "@papyrus/core/collaboration-types";
 import type { StateCreator } from "zustand";
-import type { SpreadsheetStoreController } from "../spreadsheet-store-controller";
 import type { SpreadsheetStoreState } from "../spreadsheet-store-types";
 
 type RealtimeSliceState = Pick<
@@ -11,49 +9,18 @@ type RealtimeSliceState = Pick<
   | "collaborationErrorMessage"
   | "collaborationPeers"
   | "collaborationStatus"
-  | "connectRealtime"
-  | "stopRealtime"
-  | "updateRealtimePresence"
-  | "updateRealtimeTyping"
 >;
 
-export const createRealtimeSlice = (
-  controller: SpreadsheetStoreController
-): StateCreator<SpreadsheetStoreState, [], [], RealtimeSliceState> => {
+export const createRealtimeSlice = (): StateCreator<
+  SpreadsheetStoreState,
+  [],
+  [],
+  RealtimeSliceState
+> => {
   return () => ({
     collaborationAccessRole: null,
     collaborationErrorMessage: null,
     collaborationPeers: [],
     collaborationStatus: "disconnected",
-    connectRealtime: (
-      accessRole,
-      identity,
-      serverUrl,
-      isSharedSession,
-      workbookId
-    ) => {
-      controller.setRealtimeConnection(
-        accessRole,
-        identity,
-        serverUrl,
-        isSharedSession,
-        workbookId
-      );
-    },
-    stopRealtime: () => {
-      controller.stopRealtime();
-    },
-    updateRealtimePresence: (presence) => {
-      controller.sendRealtimeMessage({
-        payload: presence,
-        type: "presence",
-      } satisfies CollaborationClientMessage);
-    },
-    updateRealtimeTyping: (typing) => {
-      controller.sendRealtimeMessage({
-        payload: typing,
-        type: "typing",
-      } satisfies CollaborationClientMessage);
-    },
   });
 };

@@ -5,7 +5,6 @@ import { createWorkbookId } from "@papyrus/core/workbook-doc";
 import type { SheetMeta } from "@papyrus/core/workbook-types";
 import { useRouter } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { env } from "@/web/env";
 import { FormulaBar } from "@/web/features/spreadsheet/components/core/formula-bar";
 import { SheetTabs } from "@/web/features/spreadsheet/components/core/sheet-tabs";
 import { SpreadsheetGrid } from "@/web/features/spreadsheet/components/core/spreadsheet-grid";
@@ -13,7 +12,6 @@ import { Toolbar } from "@/web/features/spreadsheet/components/core/toolbar";
 import { FindReplaceDialog } from "@/web/features/spreadsheet/components/dialogs/find-replace-dialog";
 import { SpreadsheetMenuBar } from "@/web/features/spreadsheet/components/menu-bar/menu-bar";
 import { useSpreadsheet } from "@/web/features/spreadsheet/hooks/use-spreadsheet";
-import { getDefaultSyncServerUrl } from "@/web/features/spreadsheet/lib/collaboration";
 import { colToLetter } from "@/web/features/spreadsheet/lib/spreadsheet-engine";
 
 const INITIAL_LOADING_SHEET: SheetMeta = {
@@ -43,17 +41,6 @@ function WorkbookPageContent({
   workbookId,
 }: WorkbookPageClientProps) {
   const router = useRouter();
-  const syncServerUrl = useMemo(() => {
-    if (env.NEXT_PUBLIC_SYNC_SERVER_URL) {
-      return env.NEXT_PUBLIC_SYNC_SERVER_URL;
-    }
-
-    if (typeof window === "undefined") {
-      return null;
-    }
-
-    return getDefaultSyncServerUrl(window.location.origin);
-  }, []);
 
   const {
     activeCell,
@@ -150,7 +137,6 @@ function WorkbookPageContent({
   } = useSpreadsheet({
     isSharedSession,
     requestedAccessRole,
-    syncServerUrl,
     workbookId,
   });
 
@@ -492,7 +478,7 @@ function WorkbookPageContent({
         showFormulaBar={showFormulaBar}
         showGridlines={showGridlines}
         strikethroughActive={activeSelectionFormat?.strikethrough ?? false}
-        syncServerUrl={syncServerUrl}
+        syncServerUrl={null}
         textTransform={activeSelectionFormat?.textTransform ?? null}
         transientStatusDetail={transientStatusDetail}
         transientStatusLabel={transientStatusLabel}

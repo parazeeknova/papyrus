@@ -12,7 +12,7 @@ export const useSpreadsheetStore = create<SpreadsheetStoreState>()(
     const controller = createSpreadsheetStoreController(set, get);
 
     return {
-      ...createRealtimeSlice(controller)(set, get, api),
+      ...createRealtimeSlice()(set, get, api),
       ...createWorkbookSlice(controller)(set, get, api),
       ...createEditingSlice(controller)(set, get, api),
     };
