@@ -4,23 +4,15 @@ interface WorkbookPageProps {
   params: Promise<{
     workbookId: string;
   }>;
-  searchParams: Promise<{
-    access?: string;
-    shared?: string;
-  }>;
 }
 
-export default async function WorkbookPage({
-  params,
-  searchParams,
-}: WorkbookPageProps) {
+export default async function WorkbookPage({ params }: WorkbookPageProps) {
   const { workbookId } = await params;
-  const { access, shared } = await searchParams;
 
   return (
     <WorkbookPageShell
-      isSharedSession={shared === "1"}
-      requestedAccessRole={access === "viewer" ? "viewer" : "editor"}
+      // Shared-session routing stays off until Phoenix owns share authorization.
+      isSharedSession={false}
       workbookId={workbookId}
     />
   );

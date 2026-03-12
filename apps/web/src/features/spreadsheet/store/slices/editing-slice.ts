@@ -200,7 +200,6 @@ const updateSharingState = async (
   updater();
 
   try {
-    await controller.syncActiveWorkbookShareAccess();
     await controller.persistActiveWorkbookMeta();
     return true;
   } catch (error) {

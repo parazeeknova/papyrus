@@ -77,7 +77,6 @@ export const createWorkbookSlice = (
             currentAuthenticatedUser.uid,
             workbookId
           );
-          await cloudWorkbookStore.deleteSharingAccess(workbookId);
         }
 
         await controller.closeActiveWorkbookSession();

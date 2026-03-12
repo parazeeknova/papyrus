@@ -99,7 +99,6 @@ export interface SpreadsheetStoreController {
   initializeAuthSync: () => void;
   isViewerAccess: () => boolean;
   persistActiveWorkbookMeta: () => Promise<void>;
-  syncActiveWorkbookShareAccess: () => Promise<void>;
   syncUndoManager: (doc: Doc) => void;
 }
 
@@ -290,24 +289,6 @@ export const createSpreadsheetStoreController = (
   const refreshWorkbookRegistry = async (): Promise<void> => {
     const workbooks = await listWorkbookRegistryEntries();
     set({ workbooks: sortWorkbooks(workbooks) });
-  };
-
-  const syncActiveWorkbookShareAccess = async (): Promise<void> => {
-    if (
-      !(
-        moduleState.currentAuthenticatedUser &&
-        moduleState.activeWorkbookSession
-      ) ||
-      moduleState.activeWorkbookSession.isSharedSession
-    ) {
-      return;
-    }
-
-    const workbook = getWorkbookMeta(moduleState.activeWorkbookSession.doc);
-    await cloudWorkbookStore.upsertSharingAccess(
-      moduleState.currentAuthenticatedUser.uid,
-      workbook
-    );
   };
 
   const persistActiveWorkbookMeta = async (): Promise<void> => {
@@ -677,7 +658,6 @@ export const createSpreadsheetStoreController = (
   const finalizeImportedWorkbookChange = async (doc: Doc): Promise<void> => {
     syncUndoManager(doc);
     applySnapshot(doc, { forceWorkerReset: true });
-    await syncActiveWorkbookShareAccess();
     await persistActiveWorkbookMeta();
   };
 
@@ -864,7 +844,6 @@ export const createSpreadsheetStoreController = (
       set({ hydrationState: "loading" });
     }
 
-    await syncActiveWorkbookShareAccess();
     await persistActiveWorkbookMeta();
   };
 
@@ -903,8 +882,7 @@ export const createSpreadsheetStoreController = (
       );
 
       reconcileRemoteWorkbooks(user)
-        .then(async () => {
-          await syncActiveWorkbookShareAccess();
+        .then(() => {
           if (moduleState.activeWorkbookSession) {
             scheduleRemoteWorkbookSync(moduleState.activeWorkbookSession);
           }
@@ -1086,7 +1064,6 @@ export const createSpreadsheetStoreController = (
     initializeAuthSync,
     isViewerAccess: () => get().collaborationAccessRole === "viewer",
     persistActiveWorkbookMeta,
-    syncActiveWorkbookShareAccess,
     syncUndoManager,
   };
 };

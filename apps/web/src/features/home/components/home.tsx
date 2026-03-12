@@ -19,7 +19,6 @@ import {
   TableIcon,
   TrashIcon,
   UserCircleIcon,
-  UsersThreeIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -51,7 +50,6 @@ import {
   deleteRemoteWorkbook,
   listRemoteWorkbooks,
 } from "@/web/features/spreadsheet/lib/firestore-workbook-sync";
-import { deleteSharedWorkbookAccess } from "@/web/features/spreadsheet/lib/share-registry";
 import { useSpreadsheetStore } from "@/web/features/spreadsheet/store/spreadsheet-store";
 import { cn } from "@/web/lib/utils";
 
@@ -410,7 +408,6 @@ export function HomeDashboard() {
     try {
       if (currentUser) {
         await deleteRemoteWorkbook(currentUser.uid, pendingDeleteDocument.id);
-        await deleteSharedWorkbookAccess(pendingDeleteDocument.id);
       }
 
       await deleteWorkbookPersistence(pendingDeleteDocument.id, new Doc());
@@ -648,12 +645,6 @@ export function HomeDashboard() {
                               <Badge variant={sourceBadge.variant}>
                                 {sourceBadge.label}
                               </Badge>
-                              {document.sharingEnabled ? (
-                                <Badge className="gap-1.5" variant="outline">
-                                  <UsersThreeIcon weight="duotone" />
-                                  Shared
-                                </Badge>
-                              ) : null}
                               <span className="inline-flex items-center gap-1.5 break-all text-muted-foreground text-xs">
                                 <CloudIcon
                                   className="size-3.5"

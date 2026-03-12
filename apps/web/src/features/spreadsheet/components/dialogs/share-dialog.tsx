@@ -5,15 +5,13 @@ import type {
   CollaboratorPresence,
 } from "@papyrus/core/collaboration-types";
 import {
-  CheckIcon,
-  CopyIcon,
   EyeIcon,
   PencilSimpleIcon,
   ShareNetworkIcon,
   WarningCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/web/components/ui/badge";
 import { Button } from "@/web/components/ui/button";
 import {
@@ -23,7 +21,7 @@ import {
 } from "@/web/components/ui/dropdown-menu";
 import { Input } from "@/web/components/ui/input";
 import { CollaboratorAvatar } from "@/web/features/spreadsheet/components/collaboration/collaborator-avatar";
-import { buildWorkbookShareLink } from "@/web/features/spreadsheet/lib/collaboration";
+import { SHARING_BACKEND_READY } from "@/web/features/spreadsheet/lib/collaboration";
 
 interface ShareDialogProps {
   accessRole: CollaborationAccessRole;
@@ -61,58 +59,18 @@ export function ShareDialog({
   sharingAccessRole,
   sharingEnabled,
   syncServerUrl,
-  workbookId,
   workbookName,
 }: ShareDialogProps) {
   const [open, setOpen] = useState(false);
-  const [origin, setOrigin] = useState("");
-  const [didCopyLink, setDidCopyLink] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    setOrigin(window.location.origin);
-  }, []);
-
-  useEffect(() => {
-    if (!didCopyLink) {
-      return;
-    }
-
-    const timeout = window.setTimeout(() => {
-      setDidCopyLink(false);
-    }, 1500);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [didCopyLink]);
-
-  const shareLink = useMemo(() => {
-    if (!(origin && workbookId)) {
-      return "";
-    }
-
-    return buildWorkbookShareLink(origin, workbookId);
-  }, [origin, workbookId]);
 
   const visibleCollaborators = useMemo(() => {
     return [...collaborators].sort(
       (left, right) => right.updatedAt - left.updatedAt
     );
   }, [collaborators]);
-  const canConfigureSharing = canManageSharing && syncServerUrl !== null;
-
-  const copyLink = async (): Promise<void> => {
-    if (!(canConfigureSharing && sharingEnabled && shareLink.length > 0)) {
-      return;
-    }
-
-    await navigator.clipboard.writeText(shareLink);
-    setDidCopyLink(true);
-  };
+  const isRealtimeBackendReady =
+    syncServerUrl !== null && SHARING_BACKEND_READY;
+  const canConfigureSharing = canManageSharing && isRealtimeBackendReady;
 
   return (
     <DropdownMenu onOpenChange={setOpen} open={open}>
@@ -162,13 +120,13 @@ export function ShareDialog({
                 {realtimeErrorMessage
                   ? realtimeErrorMessage
                   : canManageSharing
-                    ? syncServerUrl
+                    ? isRealtimeBackendReady
                       ? realtimeStatus === "connected"
                         ? "Connected to the sync server."
                         : realtimeStatus === "connecting"
                           ? "Connecting to the sync server."
                           : "Sync server unreachable right now."
-                      : "Sharing will come back once the new collaboration backend is connected."
+                      : "Sharing is disabled while the Phoenix collaboration backend is rebuilt."
                     : "Sign in with Google to unlock cloud sync and sharing."}
               </p>
             </div>
@@ -185,9 +143,9 @@ export function ShareDialog({
                 <p className="font-medium text-xs">Share access</p>
                 <p className="text-muted-foreground text-xs">
                   {canManageSharing
-                    ? syncServerUrl
+                    ? isRealtimeBackendReady
                       ? "Turn sharing on before sending a link."
-                      : "Sharing controls are paused until the new backend is ready."
+                      : "Sharing controls stay off until the Phoenix backend owns link access."
                     : "Sign in with Google to unlock sharing controls."}
                 </p>
               </div>
@@ -199,11 +157,11 @@ export function ShareDialog({
                 size="sm"
                 variant={sharingEnabled ? "default" : "outline"}
               >
-                {syncServerUrl
+                {isRealtimeBackendReady
                   ? sharingEnabled
                     ? "Sharing on"
                     : "Enable sharing"
-                  : "Backend pending"}
+                  : "Sharing off"}
               </Button>
             </div>
             <div className="flex gap-2">
@@ -243,31 +201,14 @@ export function ShareDialog({
                   canConfigureSharing
                     ? "Enable sharing to generate a link"
                     : canManageSharing
-                      ? "Sharing returns with the new collaboration backend"
+                      ? "Share links stay disabled until the Phoenix backend is ready"
                       : "Sign in with Google to unlock sharing"
                 }
                 readOnly
-                value={canConfigureSharing && sharingEnabled ? shareLink : ""}
+                value=""
               />
-              <Button
-                disabled={
-                  !(
-                    canConfigureSharing &&
-                    sharingEnabled &&
-                    shareLink.length > 0
-                  )
-                }
-                onClick={() => {
-                  copyLink().catch(() => undefined);
-                }}
-                variant="outline"
-              >
-                {didCopyLink ? (
-                  <CheckIcon weight="bold" />
-                ) : (
-                  <CopyIcon weight="bold" />
-                )}
-                Copy
+              <Button disabled variant="outline">
+                Unavailable
               </Button>
             </div>
           </div>

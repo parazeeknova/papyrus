@@ -9,6 +9,7 @@ import type {
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { firebaseAuth } from "@/web/features/auth/lib/firebase-auth";
+import { SHARING_BACKEND_READY } from "@/web/features/spreadsheet/lib/collaboration";
 import {
   getCellReferenceLabel as buildCellReferenceLabel,
   cellId,
@@ -586,6 +587,7 @@ export function useSpreadsheet({
     ? effectiveCollaborationAccessRole === "editor"
     : resolvedRequestedAccessRole === "editor";
   const canManageSharing = currentUser !== null && !isSharedSession && canEdit;
+  const canConfigureSharing = canManageSharing && SHARING_BACKEND_READY;
   const normalizedSelection = useMemo(
     () => normalizeSelectionRange(selection, columnCount, rowCount),
     [selection, columnCount, rowCount]
@@ -2018,7 +2020,8 @@ export function useSpreadsheet({
     saveState,
     sheetLoadStatusLabel: showSheetLoadingStatus ? "Loading sheet" : null,
     sharingAccessRole: activeWorkbook?.sharingAccessRole ?? "viewer",
-    sharingEnabled: activeWorkbook?.sharingEnabled ?? false,
+    sharingEnabled:
+      SHARING_BACKEND_READY && (activeWorkbook?.sharingEnabled ?? false),
     sheets,
     sortSelectionByActiveColumn,
     sortSheetByColumn,
@@ -2044,14 +2047,14 @@ export function useSpreadsheet({
       await setWorkbookFavorite(isFavorite);
     },
     setWorkbookSharingAccessRole: (accessRole: CollaborationAccessRole) => {
-      if (!canManageSharing) {
+      if (!canConfigureSharing) {
         return Promise.resolve(false);
       }
 
       return setWorkbookSharingAccessRole(accessRole);
     },
     setWorkbookSharingEnabled: (sharingEnabled: boolean) => {
-      if (!canManageSharing) {
+      if (!canConfigureSharing) {
         return Promise.resolve(false);
       }
 

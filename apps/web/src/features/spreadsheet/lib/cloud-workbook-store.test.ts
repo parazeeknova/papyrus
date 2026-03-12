@@ -24,17 +24,8 @@ const firestoreSyncMocks = {
   >(() => Promise.resolve(undefined)),
 };
 
-const shareRegistryMocks = {
-  deleteSharedWorkbookAccess: mock(() => Promise.resolve(undefined)),
-  upsertSharedWorkbookAccess: mock(() => Promise.resolve(undefined)),
-};
-
 mock.module("@/web/features/spreadsheet/lib/firestore-workbook-sync", () => {
   return firestoreSyncMocks;
-});
-
-mock.module("@/web/features/spreadsheet/lib/share-registry", () => {
-  return shareRegistryMocks;
 });
 
 const { cloudWorkbookStore } = await import("./cloud-workbook-store");
@@ -42,10 +33,6 @@ const { cloudWorkbookStore } = await import("./cloud-workbook-store");
 describe("cloudWorkbookStore", () => {
   beforeEach(() => {
     for (const mockFn of Object.values(firestoreSyncMocks)) {
-      mockFn.mockClear();
-    }
-
-    for (const mockFn of Object.values(shareRegistryMocks)) {
       mockFn.mockClear();
     }
   });
@@ -105,32 +92,6 @@ describe("cloudWorkbookStore", () => {
       "user-1",
       workbook,
       "client-1"
-    );
-  });
-
-  test("delegates sharing updates to the share registry adapter", async () => {
-    const workbook = {
-      id: "workbook-1",
-      sharingAccessRole: "editor" as const,
-      sharingEnabled: true,
-    };
-
-    shareRegistryMocks.upsertSharedWorkbookAccess.mockResolvedValue(undefined);
-    shareRegistryMocks.deleteSharedWorkbookAccess.mockResolvedValue(undefined);
-
-    await expect(
-      cloudWorkbookStore.upsertSharingAccess("user-1", workbook)
-    ).resolves.toBeUndefined();
-    await expect(
-      cloudWorkbookStore.deleteSharingAccess("workbook-1")
-    ).resolves.toBeUndefined();
-
-    expect(shareRegistryMocks.upsertSharedWorkbookAccess).toHaveBeenCalledWith(
-      "user-1",
-      workbook
-    );
-    expect(shareRegistryMocks.deleteSharedWorkbookAccess).toHaveBeenCalledWith(
-      "workbook-1"
     );
   });
 
