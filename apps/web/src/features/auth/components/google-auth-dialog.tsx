@@ -9,33 +9,34 @@ import {
   WarningCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { FirebaseError } from "firebase/app";
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-  type User,
-} from "firebase/auth";
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { Badge } from "@/web/components/ui/badge";
-import { Button } from "@/web/components/ui/button";
+import {
+  getAccountEmail,
+  getAccountInitials,
+  getAccountName,
+  getAuthErrorMessage,
+} from "@/web/features/auth/lib/auth-presentation";
+import {
+  type AuthenticatedUser,
+  onAuthStateChange,
+  signInWithGoogle,
+  signOutUser,
+} from "@/web/platform/auth/auth-client";
+import { cn } from "@/web/shared/lib/utils";
+import { Badge } from "@/web/shared/ui/badge";
+import { Button } from "@/web/shared/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from "@/web/components/ui/dropdown-menu";
-import {
-  firebaseAuth,
-  googleAuthProvider,
-} from "@/web/features/auth/lib/firebase-auth";
-import { cn } from "@/web/lib/utils";
+} from "@/web/shared/ui/dropdown-menu";
 
 type PendingAction = "idle" | "signing-in" | "signing-out";
 
 interface AvatarProps {
   className?: string;
-  user: User | null;
+  user: AuthenticatedUser | null;
   variant: "dialog" | "trigger";
 }
 
@@ -43,39 +44,6 @@ const AVATAR_DIMENSIONS = {
   dialog: 48,
   trigger: 32,
 } as const;
-const WHITESPACE_PATTERN = /\s+/;
-
-function getAccountName(user: User | null): string {
-  return user?.displayName ?? user?.email ?? "Google account";
-}
-
-function getAccountEmail(user: User | null): string {
-  return user?.email ?? "Email unavailable";
-}
-
-function getAccountInitials(user: User | null): string {
-  const source = getAccountName(user).trim();
-  const [first = "G", second = ""] = source.split(WHITESPACE_PATTERN);
-
-  return `${first[0] ?? "G"}${second[0] ?? ""}`.toUpperCase();
-}
-
-function getAuthErrorMessage(error: unknown): string | null {
-  if (error instanceof FirebaseError) {
-    switch (error.code) {
-      case "auth/popup-blocked":
-        return "Allow pop-ups in this browser to continue with Google.";
-      case "auth/popup-closed-by-user":
-        return null;
-      case "auth/unauthorized-domain":
-        return "Add this origin to Firebase Authentication authorized domains.";
-      default:
-        return "Google sign-in failed. Verify your Firebase Auth setup.";
-    }
-  }
-
-  return "Google sign-in failed. Please try again.";
-}
 
 function AccountAvatar({ className, user, variant }: AvatarProps) {
   const dimension = AVATAR_DIMENSIONS[variant];
@@ -119,13 +87,15 @@ function AccountAvatar({ className, user, variant }: AvatarProps) {
 
 export function GoogleAuthDialog() {
   const [open, setOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(
+    null
+  );
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
+    const unsubscribe = onAuthStateChange((nextUser) => {
       setCurrentUser(nextUser);
       setIsAuthReady(true);
     });
@@ -138,7 +108,7 @@ export function GoogleAuthDialog() {
     setErrorMessage(null);
 
     try {
-      await signInWithPopup(firebaseAuth, googleAuthProvider);
+      await signInWithGoogle();
     } catch (error) {
       setErrorMessage(getAuthErrorMessage(error));
     } finally {
@@ -151,7 +121,7 @@ export function GoogleAuthDialog() {
     setErrorMessage(null);
 
     try {
-      await signOut(firebaseAuth);
+      await signOutUser();
     } catch {
       setErrorMessage("Sign-out failed. Please try again.");
     } finally {

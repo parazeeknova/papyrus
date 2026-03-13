@@ -1,0 +1,15 @@
+{
+  "name": "@papyrus/collab",
+  "version": "0.1.8",
+  "private": true,
+  "scripts": {
+    "build": "mix compile",
+    "check": "mix check",
+    "update": "mix deps.update --all",
+    "install": "mix deps.get",
+    "check-types": "mix compile --warnings-as-errors",
+    "dev": "./scripts/with-env.sh mix phx.server",
+    "format": "mix format",
+    "test": "mix test"
+  }
+}

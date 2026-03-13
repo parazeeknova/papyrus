@@ -1,13 +1,11 @@
-import { WorkbookPageShell } from "./workbook-page-shell";
+import { parseWorkbookRouteAccess } from "@/web/features/workbook/collaboration/lib/collaboration";
+import { WorkbookPageShell } from "@/web/features/workbook/routes/components/workbook-page-shell";
 
 interface WorkbookPageProps {
   params: Promise<{
     workbookId: string;
   }>;
-  searchParams: Promise<{
-    access?: string;
-    shared?: string;
-  }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export default async function WorkbookPage({
@@ -15,12 +13,16 @@ export default async function WorkbookPage({
   searchParams,
 }: WorkbookPageProps) {
   const { workbookId } = await params;
-  const { access, shared } = await searchParams;
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const { isSharedSession, requestedAccessRole } =
+    parseWorkbookRouteAccess(resolvedSearchParams);
+  const sessionKey = `${workbookId}:${isSharedSession ? (requestedAccessRole ?? "shared") : "owned"}`;
 
   return (
     <WorkbookPageShell
-      isSharedSession={shared === "1"}
-      requestedAccessRole={access === "viewer" ? "viewer" : "editor"}
+      isSharedSession={isSharedSession}
+      key={sessionKey}
+      requestedAccessRole={requestedAccessRole}
       workbookId={workbookId}
     />
   );

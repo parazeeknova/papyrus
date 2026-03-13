@@ -3,19 +3,32 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
     "dev": "turbo run dev",
+    "format": "turbo run format",
+    "test": "bun test ./scripts/autobump-workspaces.test.ts && turbo run test",
+    "test:e2e": "cd apps/web && bun run test:e2e",
     "check-types": "turbo run check-types",
+    "autobump:staged": "bun run ./scripts/autobump-workspaces.ts",
     "check": "ultracite fix",
+    "verify:pr": "bun x ultracite check && turbo run check && turbo run check-types && bun test ./scripts/autobump-workspaces.test.ts && turbo run test && bun run test:e2e",
     "prepare": "lefthook install"
   },
   "devDependencies": {
-    "@types/node": "^25.3.5",
+    "@happy-dom/global-registrator": "^20.8.4",
     "@biomejs/biome": "^2.4.6",
+    "@changesets/cli": "^2.30.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/bun": "^1.3.10",
+    "@types/node": "^25.5.0",
     "bun-types": "^1.3.10",
-    "lefthook": "^2.1.2",
-    "turbo": "^2.8.14",
+    "fake-indexeddb": "^6.2.5",
+    "lefthook": "^2.1.4",
+    "turbo": "^2.8.16",
     "typescript": "^6.0.1-rc",
-    "ultracite": "^7.2.5"
+    "ultracite": "^7.3.0"
   },
   "packageManager": "bun@1.3.10",
   "workspaces": [

@@ -1,14 +1,19 @@
 {
   "name": "@papyrus/core",
-  "version": "0.0.1",
+  "version": "0.0.5",
   "private": true,
   "type": "module",
   "scripts": {
-    "check-types": "tsc --noEmit --pretty"
+    "check-types": "tsc --noEmit --pretty",
+    "test": "bun test ./src"
   },
   "dependencies": {
     "y-indexeddb": "^9.0.12",
     "yjs": "^13.6.29"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.8.4",
+    "fake-indexeddb": "^6.2.5"
   },
   "exports": {
     "./collaboration-types": "./src/collaboration-types.ts",

@@ -2,27 +2,8 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-
-      match /workbooks/{workbookId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-
-        match /chunks/{chunkId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
-        }
-      }
-    }
-
-    match /sharedWorkbooks/{workbookId} {
-      allow read: if true;
-      allow create: if request.auth != null
-        && request.resource.data.ownerId == request.auth.uid;
-      allow update: if request.auth != null
-        && resource.data.ownerId == request.auth.uid
-        && request.resource.data.ownerId == resource.data.ownerId;
-      allow delete: if request.auth != null
-        && resource.data.ownerId == request.auth.uid;
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

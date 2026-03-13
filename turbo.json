@@ -15,6 +15,17 @@
       "dependsOn": ["^check-types"],
       "cache": true
     },
+    "test": {
+      "dependsOn": ["^test"],
+      "cache": true
+    },
+    "test:e2e": {
+      "cache": false
+    },
+    "format": {
+      "dependsOn": ["^format"],
+      "cache": false
+    },
     "dev": {
       "cache": false,
       "persistent": true
