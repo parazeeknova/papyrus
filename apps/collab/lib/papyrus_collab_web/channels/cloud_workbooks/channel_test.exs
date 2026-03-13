@@ -136,6 +136,13 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannelTest do
     assert_reply read_ref, :ok, %{workbook: nil}
   end
 
+  test "rejects guest sockets from the cloud workbook channel" do
+    assert {:ok, socket} = connect(UserSocket, guest_socket_params("device-guest"))
+
+    assert {:error, %{reason: "authentication_required"}} =
+             subscribe_and_join(socket, CloudWorkbookChannel, "cloud_workbooks")
+  end
+
   test "normalizes direct error replies and unsupported events" do
     previous_store_config = Application.get_env(:papyrus_collab, Store)
 

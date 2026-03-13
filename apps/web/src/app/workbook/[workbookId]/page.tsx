@@ -16,10 +16,12 @@ export default async function WorkbookPage({
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const { isSharedSession, requestedAccessRole } =
     parseWorkbookRouteAccess(resolvedSearchParams);
+  const sessionKey = `${workbookId}:${isSharedSession ? (requestedAccessRole ?? "shared") : "owned"}`;
 
   return (
     <WorkbookPageShell
       isSharedSession={isSharedSession}
+      key={sessionKey}
       requestedAccessRole={requestedAccessRole}
       workbookId={workbookId}
     />

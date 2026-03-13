@@ -18,6 +18,19 @@ interface FakeChannel {
   pushResponses: Map<string, FakePushResponse>;
 }
 
+interface MockPhoenixSocketConnection {
+  deviceId: string;
+  isGuest: boolean;
+  socket: {
+    channel: (
+      _topic: string,
+      _params?: unknown
+    ) => ReturnType<typeof createFakeChannel>;
+  };
+  token: string | null;
+  uid: string | null;
+}
+
 function createBase64(bytes: number[]): string {
   return btoa(String.fromCharCode(...bytes));
 }
@@ -101,16 +114,26 @@ function createFakeChannel(): FakeChannel & {
   };
 }
 
-const ensurePhoenixSocketConnection = mock(() =>
-  Promise.resolve({
+function createMockSocketConnection(
+  options?: Partial<MockPhoenixSocketConnection>
+): MockPhoenixSocketConnection {
+  return {
     deviceId: "device-local",
+    isGuest: false,
     socket: {
-      channel: () => fakeChannel,
+      channel: (_topic: string, _params?: unknown) => fakeChannel,
     },
     token: "firebase-token",
     uid: "user-1",
-  })
+    ...options,
+  };
+}
+
+const ensurePhoenixSocketConnection = mock(() =>
+  Promise.resolve(createMockSocketConnection())
 );
+
+const channelJoinCalls: Array<{ params: unknown; topic: string }> = [];
 
 mock.module("@/web/platform/phoenix/socket-client", () => {
   return {
@@ -130,15 +153,19 @@ describe("connectWorkbookRealtimeChannel", () => {
     fakeChannel = createFakeChannel();
     ensurePhoenixSocketConnection.mockClear();
     ensurePhoenixSocketConnection.mockImplementation(() =>
-      Promise.resolve({
-        deviceId: "device-local",
-        socket: {
-          channel: () => fakeChannel,
-        },
-        token: "firebase-token",
-        uid: "user-1",
-      })
+      Promise.resolve(
+        createMockSocketConnection({
+          socket: {
+            channel: (topic: string, params?: unknown) => {
+              channelJoinCalls.push({ params, topic });
+              return fakeChannel;
+            },
+          },
+        })
+      )
     );
+    channelJoinCalls.length = 0;
+    window.history.replaceState({}, "", "/");
   });
 
   test("joins the workbook channel, filters the local peer, and decodes realtime updates", async () => {
@@ -224,6 +251,12 @@ describe("connectWorkbookRealtimeChannel", () => {
     );
 
     expect(ensurePhoenixSocketConnection).toHaveBeenCalledWith("user-1");
+    expect(channelJoinCalls).toEqual([
+      {
+        params: { requestedAccessRole: null },
+        topic: "workbook:workbook-1",
+      },
+    ]);
     expect(statuses).toEqual(["connecting", "connected"]);
     expect(client.accessRole).toBe("editor");
     expect(client.deviceId).toBe("device-local");
@@ -373,6 +406,31 @@ describe("connectWorkbookRealtimeChannel", () => {
     ]);
     expect(errors).toEqual([
       'Realtime request "channel_error" failed: forbidden.',
+    ]);
+  });
+
+  test("uses the requested access role passed by the route session", async () => {
+    window.history.replaceState({}, "", "/workbook/workbook-7");
+    fakeChannel.joinResponse = {
+      payload: {
+        accessRole: "editor",
+        peers: [],
+        pendingUpdates: [],
+        shouldInitializeFromClient: false,
+        update: null,
+        version: 0,
+        workbookId: "workbook-7",
+      },
+      status: "ok",
+    };
+
+    await connectWorkbookRealtimeChannel("user-1", "workbook-7", "viewer");
+
+    expect(channelJoinCalls).toEqual([
+      {
+        params: { requestedAccessRole: "viewer" },
+        topic: "workbook:workbook-7",
+      },
     ]);
   });
 
@@ -767,6 +825,54 @@ describe("connectWorkbookRealtimeChannel", () => {
     ]);
 
     expect(onPresence).toHaveBeenCalledTimes(2);
+    client.disconnect();
+  });
+
+  test("uses a guest socket connection for anonymous shared workbook joins", async () => {
+    fakeChannel.joinResponse = {
+      payload: {
+        accessRole: "editor",
+        peers: [],
+        pendingUpdates: [],
+        shouldInitializeFromClient: false,
+        update: null,
+        version: 2,
+        workbookId: "workbook-guest",
+      },
+      status: "ok",
+    };
+    ensurePhoenixSocketConnection.mockImplementation(() =>
+      Promise.resolve(
+        createMockSocketConnection({
+          deviceId: "device-guest",
+          isGuest: true,
+          socket: {
+            channel: (topic: string, params?: unknown) => {
+              channelJoinCalls.push({ params, topic });
+              return fakeChannel;
+            },
+          },
+          token: null,
+          uid: null,
+        })
+      )
+    );
+
+    const client = await connectWorkbookRealtimeChannel(
+      null,
+      "workbook-guest",
+      "editor"
+    );
+
+    expect(ensurePhoenixSocketConnection).toHaveBeenCalledWith(null);
+    expect(channelJoinCalls).toEqual([
+      {
+        params: { requestedAccessRole: "editor" },
+        topic: "workbook:workbook-guest",
+      },
+    ]);
+    expect(client.accessRole).toBe("editor");
+
     client.disconnect();
   });
 

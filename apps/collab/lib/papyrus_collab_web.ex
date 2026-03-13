@@ -31,7 +31,7 @@ defmodule PapyrusCollabWeb do
 
   def channel do
     quote do
-      use Phoenix.Channel
+      use Phoenix.Channel, log_handle_in: false
     end
   end
 

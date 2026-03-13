@@ -12,6 +12,7 @@ describe("WorkbookPage", () => {
     expect(element.props.isSharedSession).toBe(false);
     expect(element.props.workbookId).toBe("workbook-1");
     expect(element.props.requestedAccessRole).toBe(null);
+    expect(element.key).toBe("workbook-1:owned");
   });
 
   test("enables shared workbook mode when the route requests viewer access", async () => {
@@ -27,5 +28,6 @@ describe("WorkbookPage", () => {
 
     expect(element.props.isSharedSession).toBe(true);
     expect(element.props.requestedAccessRole).toBe("viewer");
+    expect(element.key).toBe("workbook-1:viewer");
   });
 });

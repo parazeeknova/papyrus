@@ -32,6 +32,14 @@ defmodule PapyrusCollabWeb.ChannelCase do
     }
   end
 
+  @spec guest_socket_params(String.t()) :: map()
+  def guest_socket_params(device_id) do
+    %{
+      "device_id" => device_id,
+      "guest" => true
+    }
+  end
+
   @spec unique_workbook_id() :: String.t()
   def unique_workbook_id do
     "workbook-" <> Integer.to_string(System.unique_integer([:positive]))

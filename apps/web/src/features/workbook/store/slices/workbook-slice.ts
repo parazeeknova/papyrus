@@ -16,6 +16,7 @@ const MANUAL_SYNC_COOLDOWN_MS = 5000;
 type WorkbookSliceState = Pick<
   WorkbookStoreState,
   | "activeWorkbook"
+  | "closeWorkbookRouteSession"
   | "createWorkbook"
   | "deleteWorkbook"
   | "exportActiveSheetToCsv"
@@ -52,6 +53,19 @@ export const createWorkbookSlice = (
 
   return (_set, get) => ({
     activeWorkbook: null,
+    closeWorkbookRouteSession: async (
+      workbookId,
+      isSharedSession,
+      requestedAccessRole,
+      expectedSessionId
+    ) => {
+      await controller.closeWorkbookRouteSession(
+        workbookId,
+        isSharedSession,
+        requestedAccessRole,
+        expectedSessionId
+      );
+    },
     createWorkbook: async () => {
       const { createWorkbookId } = await import("@papyrus/core/workbook-doc");
       const nextWorkbookId = createWorkbookId();
@@ -188,7 +202,7 @@ export const createWorkbookSlice = (
       isSharedSession,
       requestedAccessRole
     ) => {
-      await controller.activateWorkbook(
+      return await controller.activateWorkbook(
         workbookId,
         name,
         isSharedSession,

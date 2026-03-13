@@ -124,7 +124,6 @@ interface SheetFooterSelectionSummary {
 interface UseWorkbookEditorOptions {
   isSharedSession?: boolean;
   requestedAccessRole?: CollaborationAccessRole | null;
-  workbookId?: string | null;
 }
 
 function normalizeSelectionRange(
@@ -428,7 +427,6 @@ const applySpreadsheetPatch = (
 export function useWorkbookEditor({
   isSharedSession = false,
   requestedAccessRole = null,
-  workbookId = null,
 }: UseWorkbookEditorOptions = {}) {
   const activeSheetCells = useWorkbookStore((state) => state.activeSheetCells);
   const activeSheetColumns = useWorkbookStore(
@@ -492,10 +490,6 @@ export function useWorkbookEditor({
   const manualSyncCooldownUntil = useWorkbookStore(
     (state) => state.manualSyncCooldownUntil
   );
-  const hydrateWorkbookList = useWorkbookStore(
-    (state) => state.hydrateWorkbookList
-  );
-  const openWorkbook = useWorkbookStore((state) => state.openWorkbook);
   const publishCollaborationPresence = useWorkbookStore(
     (state) => state.publishCollaborationPresence
   );
@@ -586,8 +580,8 @@ export function useWorkbookEditor({
   const shouldSkipNextWorkerSyncRef = useRef(true);
   const visibleWorkerInitInFlightRef = useRef(false);
   const fallbackAccessRole = isSharedSession
-    ? "viewer"
-    : (requestedAccessRole ?? "editor");
+    ? (requestedAccessRole ?? "viewer")
+    : "editor";
   const effectiveCollaborationAccessRole =
     collaborationAccessRole ?? fallbackAccessRole;
   const canEdit = isSharedSession
@@ -661,28 +655,6 @@ export function useWorkbookEditor({
       workerRef.current?.terminate();
     };
   }, []);
-
-  useEffect(() => {
-    if (workbookId) {
-      // Route-only changes such as `?shared=1&access=viewer` must still
-      // re-activate the session for the same workbook id.
-      openWorkbook(
-        workbookId,
-        undefined,
-        isSharedSession,
-        requestedAccessRole
-      ).catch(() => undefined);
-      return;
-    }
-
-    hydrateWorkbookList().catch(() => undefined);
-  }, [
-    hydrateWorkbookList,
-    isSharedSession,
-    openWorkbook,
-    requestedAccessRole,
-    workbookId,
-  ]);
 
   useEffect(() => {
     const minimumVisibleRowCount = Math.min(
@@ -2007,7 +1979,6 @@ export function useWorkbookEditor({
       ? pendingSelectionOperationLabel
       : null,
     findNext,
-    openWorkbook,
     pasteSelection,
     redo,
     renameColumn: (columnIndex: number, columnName: string) => {

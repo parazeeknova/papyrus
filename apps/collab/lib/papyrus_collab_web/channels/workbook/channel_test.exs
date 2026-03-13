@@ -93,6 +93,37 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
     assert snapshot.version == 0
   end
 
+  test "guest sockets can join shared workbook rooms" do
+    workbook_id = unique_workbook_id()
+    guest_user_id = Identity.guest_user_id("device-guest")
+
+    allow_realtime_access(
+      guest_user_id,
+      workbook_id,
+      "editor",
+      workbook_payload(workbook_id),
+      "owner-1"
+    )
+
+    assert {:ok, socket} = connect(UserSocket, guest_socket_params("device-guest"))
+
+    assert {:ok, response, _joined_socket} =
+             subscribe_and_join(socket, WorkbookChannel, "workbook:" <> workbook_id, %{
+               "requestedAccessRole" => "editor"
+             })
+
+    assert response.accessRole == "editor"
+
+    assert [
+             %{
+               accessRole: "editor",
+               deviceId: "device-guest",
+               email: nil,
+               userId: ^guest_user_id
+             }
+           ] = response.peers
+  end
+
   test "sync pushes broadcast incremental updates and snapshot pushes persist the durable state" do
     workbook_id = unique_workbook_id()
     owner_identity = identity("user-a", "device-a", "user-a@example.com")

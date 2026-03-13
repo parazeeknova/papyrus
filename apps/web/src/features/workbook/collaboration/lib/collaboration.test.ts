@@ -6,6 +6,8 @@ import {
   getCollaboratorInitials,
   isCollaborationAccessRole,
   parseWorkbookRouteAccess,
+  resolveCurrentWorkbookRouteAccess,
+  resolveWorkbookRouteAccess,
 } from "./collaboration";
 
 describe("collaboration route helpers", () => {
@@ -40,6 +42,61 @@ describe("collaboration route helpers", () => {
     ).toEqual({
       isSharedSession: true,
       requestedAccessRole: null,
+    });
+  });
+
+  test("falls back to server provided shared route state when client query values are unavailable", () => {
+    expect(
+      resolveWorkbookRouteAccess({
+        fallbackIsSharedSession: true,
+        fallbackRequestedAccessRole: "editor",
+        searchParams: {},
+      })
+    ).toEqual({
+      isSharedSession: true,
+      requestedAccessRole: "editor",
+    });
+
+    expect(
+      resolveWorkbookRouteAccess({
+        fallbackIsSharedSession: true,
+        fallbackRequestedAccessRole: "viewer",
+        searchParams: {
+          access: "editor",
+          shared: "1",
+        },
+      })
+    ).toEqual({
+      isSharedSession: true,
+      requestedAccessRole: "editor",
+    });
+  });
+
+  test("uses the live workbook route when the browser location targets the active workbook", () => {
+    expect(
+      resolveCurrentWorkbookRouteAccess({
+        fallbackIsSharedSession: false,
+        fallbackRequestedAccessRole: null,
+        pathname: "/workbook/workbook-123",
+        search: "?access=editor&shared=1",
+        workbookId: "workbook-123",
+      })
+    ).toEqual({
+      isSharedSession: true,
+      requestedAccessRole: "editor",
+    });
+
+    expect(
+      resolveCurrentWorkbookRouteAccess({
+        fallbackIsSharedSession: true,
+        fallbackRequestedAccessRole: "viewer",
+        pathname: "/",
+        search: "?access=editor&shared=1",
+        workbookId: "workbook-123",
+      })
+    ).toEqual({
+      isSharedSession: true,
+      requestedAccessRole: "viewer",
     });
   });
 

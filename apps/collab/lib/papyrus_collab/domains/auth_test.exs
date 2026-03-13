@@ -43,6 +43,26 @@ defmodule PapyrusCollab.AuthTest do
     assert :error = Auth.authenticate_socket(%{"device_id" => "device-1"})
   end
 
+  test "authenticates explicit guest socket params without a firebase token" do
+    assert {:ok,
+            %Identity{
+              authenticated: false,
+              device_id: "device-guest",
+              email: nil,
+              user_id: "guest:device-guest"
+            }} =
+             Auth.authenticate_socket(%{
+               "device_id" => "device-guest",
+               "guest" => true
+             })
+
+    assert :error =
+             Auth.authenticate_socket(%{
+               "device_id" => "device-guest",
+               "guest" => false
+             })
+  end
+
   test "raises when the configured verifier cannot sign test socket tokens" do
     Application.put_env(
       :papyrus_collab,

@@ -100,9 +100,15 @@ export interface WorkbookStoreController {
     fallbackName?: string,
     isSharedSession?: boolean,
     requestedAccessRole?: CollaborationAccessRole | null
-  ) => Promise<void>;
+  ) => Promise<number | null>;
   buildColumnNames: (columns: { name: string }[]) => string[];
   closeActiveWorkbookSession: () => Promise<void>;
+  closeWorkbookRouteSession: (
+    workbookId: string,
+    isSharedSession?: boolean,
+    requestedAccessRole?: CollaborationAccessRole | null,
+    expectedSessionId?: number | null
+  ) => Promise<void>;
   exportActiveSheetToCsv: () => Promise<void>;
   exportWorkbookToExcel: () => Promise<void>;
   fillColumnNames: (columnNames: string[], targetLength: number) => string[];
@@ -410,6 +416,41 @@ export const createWorkbookStoreController = (
     doc.destroy();
     moduleState.activeWorkbookSession = null;
     resetCollaborationState();
+  };
+
+  const closeWorkbookRouteSession = async (
+    workbookId: string,
+    isSharedSession = false,
+    requestedAccessRole: CollaborationAccessRole | null = null,
+    expectedSessionId: number | null = null
+  ): Promise<void> => {
+    const activeWorkbookSession = moduleState.activeWorkbookSession;
+    if (!activeWorkbookSession) {
+      return;
+    }
+
+    if (
+      expectedSessionId !== null &&
+      activeWorkbookSession.sessionId !== expectedSessionId
+    ) {
+      return;
+    }
+
+    if (
+      !(
+        activeWorkbookSession.workbookId === workbookId &&
+        activeWorkbookSession.isSharedSession === isSharedSession &&
+        activeWorkbookSession.requestedAccessRole === requestedAccessRole
+      )
+    ) {
+      return;
+    }
+
+    if (moduleState.currentAuthenticatedUser && activeWorkbookSession.dirty) {
+      await flushRemoteWorkbookSync(activeWorkbookSession);
+    }
+
+    await destroyActiveWorkbookSession();
   };
 
   const scheduleRemoteWorkbookSync = (
@@ -766,7 +807,7 @@ export const createWorkbookStoreController = (
     session: ActiveWorkbookSession
   ): Promise<void> => {
     const currentUser = moduleState.currentAuthenticatedUser;
-    if (!currentUser) {
+    if (!(currentUser || session.isSharedSession)) {
       disconnectRealtimeSession(session);
       resetCollaborationState();
       return;
@@ -803,7 +844,7 @@ export const createWorkbookStoreController = (
       }
 
       const realtimeConnection = await connectWorkbookRealtimeChannel(
-        currentUser.uid,
+        currentUser?.uid ?? null,
         workbookId,
         session.requestedAccessRole,
         {
@@ -986,18 +1027,41 @@ export const createWorkbookStoreController = (
     fallbackName?: string,
     isSharedSession = false,
     requestedAccessRole: CollaborationAccessRole | null = null
-  ): Promise<void> => {
+  ): Promise<number | null> => {
+    const nextIsSharedSession = isSharedSession;
+    const nextRequestedAccessRole = isSharedSession
+      ? requestedAccessRole
+      : null;
+
+    syncLogger.debug("Activating workbook session.", {
+      existingRequestedAccessRole:
+        moduleState.activeWorkbookSession?.requestedAccessRole ?? null,
+      existingSharedSession:
+        moduleState.activeWorkbookSession?.isSharedSession ?? null,
+      existingWorkbookId: moduleState.activeWorkbookSession?.workbookId ?? null,
+      isSharedSession: nextIsSharedSession,
+      requestedAccessRole: nextRequestedAccessRole,
+      workbookId,
+    });
+
     if (
       moduleState.activeWorkbookSession &&
-      moduleState.activeWorkbookSession.isSharedSession === isSharedSession &&
+      moduleState.activeWorkbookSession.isSharedSession ===
+        nextIsSharedSession &&
       moduleState.activeWorkbookSession.requestedAccessRole ===
-        requestedAccessRole &&
+        nextRequestedAccessRole &&
       moduleState.activeWorkbookSession.workbookId === workbookId
     ) {
+      syncLogger.debug("Reusing the active workbook session.", {
+        isSharedSession: nextIsSharedSession,
+        requestedAccessRole: nextRequestedAccessRole,
+        workbookId,
+      });
       syncUndoManager(moduleState.activeWorkbookSession.doc);
       applySnapshot(moduleState.activeWorkbookSession.doc);
       if (
-        moduleState.currentAuthenticatedUser &&
+        (moduleState.currentAuthenticatedUser ||
+          moduleState.activeWorkbookSession.isSharedSession) &&
         !moduleState.activeWorkbookSession.realtimeConnection
       ) {
         connectRealtimeSession(moduleState.activeWorkbookSession).catch(
@@ -1009,12 +1073,18 @@ export const createWorkbookStoreController = (
           }
         );
       }
-      return;
+      return moduleState.activeWorkbookSession.sessionId;
     }
 
     moduleState.nextWorkbookActivationId += 1;
     const activationId = moduleState.nextWorkbookActivationId;
     set({ hydrationState: "loading", saveState: "saving" });
+    syncLogger.debug("Opening a new workbook session.", {
+      activationId,
+      isSharedSession: nextIsSharedSession,
+      requestedAccessRole: nextRequestedAccessRole,
+      workbookId,
+    });
 
     clearRemoteSyncTimeout();
     if (
@@ -1027,17 +1097,17 @@ export const createWorkbookStoreController = (
     }
 
     if (!isCurrentWorkbookActivation(activationId)) {
-      return;
+      return null;
     }
 
     await destroyActiveWorkbookSession();
 
     if (!isCurrentWorkbookActivation(activationId)) {
-      return;
+      return null;
     }
 
     const doc = new Doc();
-    const persistence = isSharedSession
+    const persistence = nextIsSharedSession
       ? null
       : attachWorkbookPersistence(workbookId, doc);
     moduleState.nextWorkbookSessionId += 1;
@@ -1058,19 +1128,19 @@ export const createWorkbookStoreController = (
     if (!isCurrentWorkbookActivation(activationId)) {
       await persistence?.destroy();
       doc.destroy();
-      return;
+      return null;
     }
 
     const shouldSeedLocalWorkbook = await shouldSeedBlankWorkbook(
       doc,
       workbookId,
-      isSharedSession
+      nextIsSharedSession
     );
 
     if (!isCurrentWorkbookActivation(activationId)) {
       await persistence?.destroy();
       doc.destroy();
-      return;
+      return null;
     }
 
     if (shouldSeedLocalWorkbook) {
@@ -1089,12 +1159,12 @@ export const createWorkbookStoreController = (
       doc,
       handleDocUpdate: () => undefined,
       handleUndoStackChange: () => undefined,
-      isSharedSession,
+      isSharedSession: nextIsSharedSession,
       persistence,
       realtimeAccessRole: null,
       realtimeConnectPromise: null,
       realtimeConnection: null,
-      requestedAccessRole,
+      requestedAccessRole: nextRequestedAccessRole,
       realtimeVersion: 0,
       sessionId: moduleState.nextWorkbookSessionId,
       undoManager: null,
@@ -1156,7 +1226,7 @@ export const createWorkbookStoreController = (
       doc.off("update", session.handleDocUpdate);
       await persistence?.destroy();
       doc.destroy();
-      return;
+      return null;
     }
 
     moduleState.activeWorkbookSession = session;
@@ -1171,15 +1241,7 @@ export const createWorkbookStoreController = (
       set({ hydrationState: "loading" });
     }
 
-    if (isSharedSession && !moduleState.currentAuthenticatedUser) {
-      set({
-        collaborationErrorMessage:
-          "Sign in with Google to open shared workbooks.",
-        collaborationStatus: "disconnected",
-      });
-    }
-
-    if (moduleState.currentAuthenticatedUser) {
+    if (moduleState.currentAuthenticatedUser || nextIsSharedSession) {
       connectRealtimeSession(session).catch((error) => {
         syncLogger.error(
           "Failed to connect the workbook realtime channel.",
@@ -1188,7 +1250,7 @@ export const createWorkbookStoreController = (
       });
     }
 
-    if (!isSharedSession && hasWorkbookDocumentState(doc)) {
+    if (!nextIsSharedSession && hasWorkbookDocumentState(doc)) {
       persistActiveWorkbookMeta().catch((error) => {
         syncLogger.warn(
           "Failed to persist the active workbook metadata after activation.",
@@ -1196,6 +1258,8 @@ export const createWorkbookStoreController = (
         );
       });
     }
+
+    return session.sessionId;
   };
 
   const initializeAuthSync = (): void => {
@@ -1215,8 +1279,21 @@ export const createWorkbookStoreController = (
       if (!user) {
         if (moduleState.activeWorkbookSession) {
           disconnectRealtimeSession(moduleState.activeWorkbookSession);
+          if (moduleState.activeWorkbookSession.isSharedSession) {
+            connectRealtimeSession(moduleState.activeWorkbookSession).catch(
+              (error) => {
+                syncLogger.error(
+                  "Failed to reconnect the shared workbook realtime channel as a guest.",
+                  error
+                );
+              }
+            );
+          } else {
+            resetCollaborationState();
+          }
+        } else {
+          resetCollaborationState();
         }
-        resetCollaborationState();
         set({
           lastSyncErrorMessage: null,
           lastSyncedAt: null,
@@ -1235,13 +1312,30 @@ export const createWorkbookStoreController = (
         `Signed in as ${user.uid}; starting workbook reconciliation.`
       );
 
+      const activeWorkbookSession = moduleState.activeWorkbookSession;
+      if (activeWorkbookSession?.isSharedSession) {
+        connectRealtimeSession(activeWorkbookSession).catch((error) => {
+          syncLogger.error(
+            "Failed to connect the shared workbook realtime channel after login.",
+            error
+          );
+        });
+      }
+
       reconcileRemoteWorkbooks(user)
         .then(() => {
-          if (moduleState.activeWorkbookSession) {
-            return connectRealtimeSession(moduleState.activeWorkbookSession);
+          if (!moduleState.activeWorkbookSession) {
+            return undefined;
           }
 
-          return undefined;
+          if (
+            moduleState.activeWorkbookSession.isSharedSession &&
+            moduleState.activeWorkbookSession.realtimeConnection
+          ) {
+            return undefined;
+          }
+
+          return connectRealtimeSession(moduleState.activeWorkbookSession);
         })
         .catch((error) => {
           syncLogger.error(
@@ -1321,6 +1415,7 @@ export const createWorkbookStoreController = (
     activateWorkbook,
     buildColumnNames,
     closeActiveWorkbookSession: destroyActiveWorkbookSession,
+    closeWorkbookRouteSession,
     exportActiveSheetToCsv: () => {
       const activeWorkbookSession = moduleState.activeWorkbookSession;
       const activeSheetId = get().activeSheetId;

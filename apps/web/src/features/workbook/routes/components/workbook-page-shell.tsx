@@ -24,12 +24,9 @@ export function WorkbookPageShell({
   requestedAccessRole = null,
   workbookId,
 }: WorkbookPageShellProps) {
-  const sessionKey = `${workbookId}:${isSharedSession ? (requestedAccessRole ?? "shared") : "owned"}`;
-
   return (
     <WorkbookPageClient
       isSharedSession={isSharedSession}
-      key={sessionKey}
       requestedAccessRole={requestedAccessRole}
       workbookId={workbookId}
     />

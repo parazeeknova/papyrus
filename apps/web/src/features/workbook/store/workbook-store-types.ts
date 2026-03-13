@@ -36,6 +36,12 @@ export interface WorkbookStoreState {
   activeWorkbook: WorkbookMeta | null;
   canRedo: boolean;
   canUndo: boolean;
+  closeWorkbookRouteSession: (
+    workbookId: string,
+    isSharedSession?: boolean,
+    requestedAccessRole?: CollaborationAccessRole | null,
+    expectedSessionId?: number | null
+  ) => Promise<void>;
   collaborationAccessRole: CollaborationAccessRole | null;
   collaborationErrorMessage: string | null;
   collaborationPeers: CollaboratorPresence[];
@@ -66,7 +72,7 @@ export interface WorkbookStoreState {
     name?: string,
     isSharedSession?: boolean,
     requestedAccessRole?: CollaborationAccessRole | null
-  ) => Promise<void>;
+  ) => Promise<number | null>;
   publishCollaborationPresence: (payload: {
     activeCell: { col: number; row: number } | null;
     selection: CollaboratorSelectionRange | null;

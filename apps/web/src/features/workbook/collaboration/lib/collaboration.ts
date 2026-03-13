@@ -5,6 +5,7 @@ import type {
 
 const WHITESPACE_PATTERN = /\s+/;
 const DISPLAY_NAME_SPLIT_PATTERN = /[._-]+/;
+const TRAILING_SLASH_PATTERN = /\/+$/;
 const COLLABORATOR_COLORS = [
   "#2563eb",
   "#0f766e",
@@ -53,6 +54,81 @@ export function parseWorkbookRouteAccess(
     isSharedSession: shared === "1" || shared === "true",
     requestedAccessRole: isCollaborationAccessRole(access) ? access : null,
   };
+}
+
+export function resolveWorkbookRouteAccess(options: {
+  fallbackIsSharedSession?: boolean;
+  fallbackRequestedAccessRole?: CollaborationAccessRole | null;
+  searchParams?: WorkbookRouteSearchParams;
+}): {
+  isSharedSession: boolean;
+  requestedAccessRole: CollaborationAccessRole | null;
+} {
+  const routeAccess = parseWorkbookRouteAccess(options.searchParams);
+  const isSharedSession =
+    routeAccess.isSharedSession || options.fallbackIsSharedSession === true;
+
+  return {
+    isSharedSession,
+    requestedAccessRole: isSharedSession
+      ? (routeAccess.requestedAccessRole ??
+        options.fallbackRequestedAccessRole ??
+        null)
+      : null,
+  };
+}
+
+function parseWorkbookPathname(pathname: string): string | null {
+  const normalizedPathname = pathname.replace(TRAILING_SLASH_PATTERN, "");
+  const segments = normalizedPathname.split("/");
+  const workbookId = segments.at(-1);
+  const workbookSegment = segments.at(-2);
+
+  if (!(workbookSegment === "workbook" && workbookId)) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(workbookId);
+  } catch {
+    return workbookId;
+  }
+}
+
+export function resolveCurrentWorkbookRouteAccess(options: {
+  fallbackIsSharedSession?: boolean;
+  fallbackRequestedAccessRole?: CollaborationAccessRole | null;
+  pathname?: string;
+  search?: string;
+  workbookId: string;
+}): {
+  isSharedSession: boolean;
+  requestedAccessRole: CollaborationAccessRole | null;
+} {
+  const currentWorkbookId = options.pathname
+    ? parseWorkbookPathname(options.pathname)
+    : null;
+
+  if (currentWorkbookId !== options.workbookId) {
+    return {
+      isSharedSession: options.fallbackIsSharedSession === true,
+      requestedAccessRole:
+        options.fallbackIsSharedSession === true
+          ? (options.fallbackRequestedAccessRole ?? null)
+          : null,
+    };
+  }
+
+  const searchParams = new URLSearchParams(options.search ?? "");
+
+  return resolveWorkbookRouteAccess({
+    fallbackIsSharedSession: options.fallbackIsSharedSession,
+    fallbackRequestedAccessRole: options.fallbackRequestedAccessRole,
+    searchParams: {
+      access: searchParams.get("access") ?? undefined,
+      shared: searchParams.get("shared") ?? undefined,
+    },
+  });
 }
 
 export function buildWorkbookSharePath(

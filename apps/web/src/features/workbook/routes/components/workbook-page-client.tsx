@@ -5,7 +5,7 @@ import { createWorkbookId } from "@papyrus/core/workbook-doc";
 import type { SheetMeta } from "@papyrus/core/workbook-types";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { parseWorkbookRouteAccess } from "@/web/features/workbook/collaboration/lib/collaboration";
+import { resolveWorkbookRouteAccess } from "@/web/features/workbook/collaboration/lib/collaboration";
 import { FormulaBar } from "@/web/features/workbook/editor/components/core/formula-bar";
 import { SheetTabs } from "@/web/features/workbook/editor/components/core/sheet-tabs";
 import { SpreadsheetGrid } from "@/web/features/workbook/editor/components/core/spreadsheet-grid";
@@ -14,6 +14,7 @@ import { FindReplaceDialog } from "@/web/features/workbook/editor/components/dia
 import { SpreadsheetMenuBar } from "@/web/features/workbook/editor/components/menu-bar/menu-bar";
 import { useWorkbookEditor } from "@/web/features/workbook/editor/hooks/use-workbook-editor";
 import { colToLetter } from "@/web/features/workbook/editor/lib/spreadsheet-engine";
+import { useWorkbookRouteSession } from "@/web/features/workbook/routes/hooks/use-workbook-route-session";
 import { getCollabWebSocketUrl } from "@/web/platform/phoenix/socket-client";
 
 const INITIAL_LOADING_SHEET: SheetMeta = {
@@ -37,20 +38,38 @@ interface WorkbookPageClientProps {
   workbookId: string;
 }
 
+function readLiveRouteSearchParams(
+  searchParams: ReturnType<typeof useSearchParams>
+): {
+  access?: string;
+  shared?: string;
+} {
+  const access = searchParams.get("access") ?? undefined;
+  const shared = searchParams.get("shared") ?? undefined;
+
+  if (
+    typeof window === "undefined" ||
+    access !== undefined ||
+    shared !== undefined
+  ) {
+    return { access, shared };
+  }
+
+  const browserSearchParams = new URLSearchParams(window.location.search);
+  return {
+    access: browserSearchParams.get("access") ?? undefined,
+    shared: browserSearchParams.get("shared") ?? undefined,
+  };
+}
+
 function WorkbookPageContent({
+  isSharedSession = false,
   requestedAccessRole = null,
-  workbookId,
-}: WorkbookPageClientProps) {
+}: Omit<WorkbookPageClientProps, "workbookId">) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const syncServerUrl = getCollabWebSocketUrl();
-  const routeAccess = parseWorkbookRouteAccess({
-    access: searchParams.get("access") ?? undefined,
-    shared: searchParams.get("shared") ?? undefined,
-  });
-  const effectiveIsSharedSession = routeAccess.isSharedSession;
-  const effectiveRequestedAccessRole =
-    routeAccess.requestedAccessRole ?? requestedAccessRole;
+  const effectiveIsSharedSession = isSharedSession;
+  const effectiveRequestedAccessRole = requestedAccessRole;
 
   const {
     activeCell,
@@ -148,7 +167,6 @@ function WorkbookPageContent({
   } = useWorkbookEditor({
     isSharedSession: effectiveIsSharedSession,
     requestedAccessRole: effectiveRequestedAccessRole,
-    workbookId,
   });
 
   const activeCellData = activeCell
@@ -740,12 +758,38 @@ export function WorkbookPageClient(props: WorkbookPageClientProps) {
 
 function WorkbookPageContentWithRouteKey(props: WorkbookPageClientProps) {
   const searchParams = useSearchParams();
-  const routeQueryKey = searchParams.toString();
+  const liveRouteSearchParams = readLiveRouteSearchParams(searchParams);
+  const routeQueryKey = new URLSearchParams({
+    ...(liveRouteSearchParams.access
+      ? { access: liveRouteSearchParams.access }
+      : {}),
+    ...(liveRouteSearchParams.shared
+      ? { shared: liveRouteSearchParams.shared }
+      : {}),
+  }).toString();
+  const routeAccess = resolveWorkbookRouteAccess({
+    fallbackIsSharedSession: props.isSharedSession,
+    fallbackRequestedAccessRole: props.requestedAccessRole ?? null,
+    searchParams: {
+      access: liveRouteSearchParams.access,
+      shared: liveRouteSearchParams.shared,
+    },
+  });
+  const sessionRouteKey = routeAccess.isSharedSession
+    ? (routeAccess.requestedAccessRole ?? "shared")
+    : "owned";
+
+  useWorkbookRouteSession({
+    isSharedSession: routeAccess.isSharedSession,
+    requestedAccessRole: routeAccess.requestedAccessRole,
+    workbookId: props.workbookId,
+  });
 
   return (
     <WorkbookPageContent
-      key={`${props.workbookId}:${routeQueryKey}`}
-      {...props}
+      isSharedSession={routeAccess.isSharedSession}
+      key={`${props.workbookId}:${sessionRouteKey}:${routeQueryKey}`}
+      requestedAccessRole={routeAccess.requestedAccessRole}
     />
   );
 }

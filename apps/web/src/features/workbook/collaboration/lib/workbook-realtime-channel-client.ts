@@ -413,7 +413,7 @@ function pushRealtimeEvent<TResponse>(
 }
 
 export async function connectWorkbookRealtimeChannel(
-  uid: string,
+  uid: string | null,
   workbookId: string,
   requestedAccessRole: CollaborationAccessRole | null = null,
   callbacks?: WorkbookRealtimeCallbacks
@@ -421,6 +421,7 @@ export async function connectWorkbookRealtimeChannel(
   const socketConnection = await ensurePhoenixSocketConnection(uid);
   const { deviceId, socket } = socketConnection;
   realtimeLogger.debug("Joining the workbook realtime channel.", {
+    isGuest: uid === null,
     requestedAccessRole,
     uid,
     workbookId,
@@ -513,6 +514,7 @@ export async function connectWorkbookRealtimeChannel(
 
   realtimeLogger.debug("Joined the workbook realtime channel.", {
     grantedAccessRole: initialState.accessRole,
+    isGuest: uid === null,
     requestedAccessRole,
     uid,
     workbookId,

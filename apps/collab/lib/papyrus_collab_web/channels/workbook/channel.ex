@@ -3,6 +3,8 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
 
   use PapyrusCollabWeb, :channel
 
+  require Logger
+
   alias PapyrusCollab.CloudWorkbooks
   alias PapyrusCollab.Collaboration
   alias PapyrusCollab.Collaboration.Snapshot
@@ -36,6 +38,10 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
          {:ok, snapshot} <-
            maybe_bootstrap_snapshot(workbook_id, workbook, identity),
          {:ok, peers} <- Collaboration.join_peer(workbook_id, identity, access_role) do
+      Logger.info(fn ->
+        "Workbook join workbook=#{workbook_id} requested_access_role=#{inspect(requested_access_role)} granted_access_role=#{access_role} owner_session=#{owner_id == identity.user_id}"
+      end)
+
       {:ok,
        %{
          accessRole: access_role,
@@ -113,34 +119,7 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
     if socket.assigns.access_role != "editor" do
       {:reply, {:error, %{reason: "forbidden"}}, socket}
     else
-      identity = socket.assigns.identity
-
-      with {:ok, normalized_workbook} <-
-             normalize_snapshot_workbook(workbook, socket.assigns.workbook_id),
-           {:ok, snapshot} <-
-             Collaboration.replace_base_update(
-               socket.assigns.workbook_id,
-               normalized_workbook["updateBase64"],
-               normalized_workbook["collaborationVersion"],
-               identity
-             ),
-           {:ok, persisted_workbook} <-
-             persist_snapshot_workbook(socket, normalized_workbook, client_id) do
-        broadcast_from!(socket, "snapshot", %{
-          update: normalized_workbook["updateBase64"],
-          version: snapshot.version
-        })
-
-        {:reply,
-         {:ok,
-          %{
-            lastSyncedAt: persisted_workbook.lastSyncedAt,
-            version: persisted_workbook.version
-          }}, socket}
-      else
-        {:error, reason} ->
-          {:reply, {:error, %{reason: reason_to_string(reason)}}, socket}
-      end
+      push_snapshot(socket, client_id, workbook)
     end
   end
 
@@ -158,6 +137,10 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
              normalized_update,
              socket.assigns.identity
            ) do
+      Logger.debug(fn ->
+        "Workbook sync push workbook=#{socket.assigns.workbook_id} update_size=#{byte_size(normalized_update)} version=#{snapshot.version}"
+      end)
+
       broadcast_from!(socket, "sync", %{
         update: normalized_update,
         version: snapshot.version
@@ -214,6 +197,41 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
     end
 
     :ok
+  end
+
+  defp push_snapshot(socket, client_id, workbook) do
+    identity = socket.assigns.identity
+
+    with {:ok, normalized_workbook} <-
+           normalize_snapshot_workbook(workbook, socket.assigns.workbook_id),
+         {:ok, snapshot} <-
+           Collaboration.replace_base_update(
+             socket.assigns.workbook_id,
+             normalized_workbook["updateBase64"],
+             normalized_workbook["collaborationVersion"],
+             identity
+           ),
+         {:ok, persisted_workbook} <-
+           persist_snapshot_workbook(socket, normalized_workbook, client_id) do
+      Logger.debug(fn ->
+        "Workbook snapshot push workbook=#{socket.assigns.workbook_id} client=#{client_id} collab_version=#{normalized_workbook["collaborationVersion"]} update_size=#{byte_size(normalized_workbook["updateBase64"])} version=#{snapshot.version}"
+      end)
+
+      broadcast_from!(socket, "snapshot", %{
+        update: normalized_workbook["updateBase64"],
+        version: snapshot.version
+      })
+
+      {:reply,
+       {:ok,
+        %{
+          lastSyncedAt: persisted_workbook.lastSyncedAt,
+          version: persisted_workbook.version
+        }}, socket}
+    else
+      {:error, reason} ->
+        {:reply, {:error, %{reason: reason_to_string(reason)}}, socket}
+    end
   end
 
   # Shared editors are allowed to mutate workbook content, but owner-only

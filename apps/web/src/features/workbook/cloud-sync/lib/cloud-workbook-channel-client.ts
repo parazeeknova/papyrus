@@ -137,6 +137,10 @@ async function ensureCloudWorkbookChannel(uid: string): Promise<Channel> {
   const socketConnection = await ensurePhoenixSocketConnection(uid);
   const { socket, token } = socketConnection;
 
+  if (!token) {
+    throw new Error("Google sign-in is required for cloud sync.");
+  }
+
   if (
     activeConnection &&
     activeConnection.uid === uid &&

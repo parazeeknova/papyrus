@@ -5,11 +5,16 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
 
   require Logger
 
+  alias PapyrusCollab.Auth.Identity
   alias PapyrusCollab.CloudWorkbooks
 
   @impl true
   def join("cloud_workbooks", _params, socket) do
-    {:ok, socket}
+    if Identity.authenticated?(socket.assigns.identity) do
+      {:ok, socket}
+    else
+      {:error, %{reason: "authentication_required"}}
+    end
   end
 
   @impl true

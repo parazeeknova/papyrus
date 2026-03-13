@@ -18,4 +18,15 @@ defmodule PapyrusCollabWeb.UserSocketTest do
     assert identity.email == "user-1@example.com"
     assert identity.user_id == "user-1"
   end
+
+  test "assigns a guest identity for explicit guest socket connections" do
+    assert {:ok, socket} = connect(UserSocket, guest_socket_params("device-guest"))
+
+    identity = socket.assigns.identity
+
+    refute identity.authenticated
+    assert identity.device_id == "device-guest"
+    assert identity.email == nil
+    assert identity.user_id == "guest:device-guest"
+  end
 end
