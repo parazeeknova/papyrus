@@ -1,6 +1,6 @@
 {
   "name": "@papyrus/web",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "private": true,
   "scripts": {
     "dev": "bun --bun next dev -p 3000",

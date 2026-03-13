@@ -3,8 +3,9 @@
 import type { CollaborationAccessRole } from "@papyrus/core/collaboration-types";
 import { createWorkbookId } from "@papyrus/core/workbook-doc";
 import type { SheetMeta } from "@papyrus/core/workbook-types";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { parseWorkbookRouteAccess } from "@/web/features/workbook/collaboration/lib/collaboration";
 import { FormulaBar } from "@/web/features/workbook/editor/components/core/formula-bar";
 import { SheetTabs } from "@/web/features/workbook/editor/components/core/sheet-tabs";
 import { SpreadsheetGrid } from "@/web/features/workbook/editor/components/core/spreadsheet-grid";
@@ -37,12 +38,21 @@ interface WorkbookPageClientProps {
 }
 
 function WorkbookPageContent({
-  isSharedSession,
   requestedAccessRole = null,
   workbookId,
 }: WorkbookPageClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const syncServerUrl = getCollabWebSocketUrl();
+  const routeAccess = useMemo(() => {
+    return parseWorkbookRouteAccess({
+      access: searchParams.get("access") ?? undefined,
+      shared: searchParams.get("shared") ?? undefined,
+    });
+  }, [searchParams]);
+  const effectiveIsSharedSession = routeAccess.isSharedSession;
+  const effectiveRequestedAccessRole =
+    routeAccess.requestedAccessRole ?? requestedAccessRole;
 
   const {
     activeCell,
@@ -138,8 +148,8 @@ function WorkbookPageContent({
     navigateFromActive,
     workbooks,
   } = useWorkbookEditor({
-    isSharedSession,
-    requestedAccessRole,
+    isSharedSession: effectiveIsSharedSession,
+    requestedAccessRole: effectiveRequestedAccessRole,
     workbookId,
   });
 
@@ -341,7 +351,7 @@ function WorkbookPageContent({
         isAuthenticated={isAuthenticated}
         isFavorite={activeWorkbook?.isFavorite ?? false}
         isGalleryOpen={isGalleryOpen}
-        isSharedSession={isSharedSession}
+        isSharedSession={effectiveIsSharedSession}
         italicActive={activeSelectionFormat?.italic ?? false}
         lastSyncErrorMessage={lastSyncErrorMessage}
         lastSyncedLabel={lastSyncedLabel}
