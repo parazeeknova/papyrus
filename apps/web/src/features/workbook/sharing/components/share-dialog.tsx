@@ -91,7 +91,12 @@ export function ShareDialog({
   return (
     <DropdownMenu onOpenChange={setOpen} open={open}>
       <DropdownMenuTrigger asChild>
-        <Button className="gap-1 text-xs" size="sm" variant="ghost">
+        <Button
+          className="gap-1 text-xs"
+          data-testid="share-workbook-trigger"
+          size="sm"
+          variant="ghost"
+        >
           <ShareNetworkIcon className="size-3.5" weight="bold" />
           <span className="hidden sm:inline">Share</span>
         </Button>
@@ -213,6 +218,7 @@ export function ShareDialog({
             </div>
             <div className="flex gap-2">
               <Input
+                data-testid="share-link-input"
                 placeholder={
                   canConfigureSharing
                     ? "Enable sharing to generate a link"

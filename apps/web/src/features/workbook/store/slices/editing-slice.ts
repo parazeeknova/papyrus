@@ -23,6 +23,7 @@ import {
   touchWorkbook,
 } from "@papyrus/core/workbook-doc";
 import { DEFAULT_SHEET_COLUMN_WIDTH } from "@papyrus/core/workbook-types";
+import { createLogger } from "@papyrus/logs";
 import type { StateCreator } from "zustand";
 import {
   cellId,
@@ -70,6 +71,8 @@ type EditingSliceState = Pick<
   | "undo"
   | "workerResetKey"
 >;
+
+const editingLogger = createLogger({ scope: "workbook-editing" });
 
 function moveIndex(index: number, fromIndex: number, toIndex: number): number {
   if (fromIndex === toIndex) {
@@ -201,6 +204,7 @@ const updateSharingState = async (
 
   try {
     await controller.persistActiveWorkbookMeta();
+    await controller.flushActiveRemoteWorkbookSync();
     return true;
   } catch (error) {
     rollback();
@@ -1012,23 +1016,30 @@ export const createEditingSlice = (
     },
     setCellValue: async (row, col, raw) => {
       if (controller.isViewerAccess()) {
-        console.warn("[setCellValue] blocked: viewer access");
+        editingLogger.debug(
+          "Blocked cell edit because the workbook is read-only.",
+          {
+            cellKey: cellId(row, col),
+          }
+        );
         return;
       }
 
       const activeWorkbookSession = controller.getActiveWorkbookSession();
       const activeSheetId = get().activeSheetId;
       if (!(activeWorkbookSession && activeSheetId)) {
-        console.warn("[setCellValue] blocked: no session or sheetId", {
-          hasSession: !!activeWorkbookSession,
-          activeSheetId,
-        });
+        editingLogger.warn(
+          "Blocked cell edit because the workbook session is incomplete.",
+          {
+            hasSession: !!activeWorkbookSession,
+            activeSheetId,
+          }
+        );
         return;
       }
 
-      console.warn("[setCellValue] persisting", {
+      editingLogger.debug("Persisting a single-cell edit.", {
         cellKey: cellId(row, col),
-        raw,
         sheetId: activeSheetId,
         isSharedSession: activeWorkbookSession.isSharedSession,
       });

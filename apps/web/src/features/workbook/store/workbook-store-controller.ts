@@ -35,7 +35,6 @@ import {
 } from "@papyrus/core/workbook-registry";
 import type { SheetColumn, WorkbookMeta } from "@papyrus/core/workbook-types";
 import { createLogger } from "@papyrus/logs";
-import { onAuthStateChanged, type User } from "firebase/auth";
 import { applyUpdate, Doc, encodeStateAsUpdate, type UndoManager } from "yjs";
 import {
   shouldHydrateLocalWorkbook,
@@ -57,7 +56,10 @@ import {
   parseCsvImport,
   parseExcelImport,
 } from "@/web/features/workbook/import-export/lib/workbook-file-format";
-import { firebaseAuth } from "@/web/platform/firebase/client";
+import {
+  type AuthenticatedUser,
+  onAuthStateChange,
+} from "@/web/platform/auth/auth-client";
 import type {
   WorkbookStoreGetState,
   WorkbookStoreSetState,
@@ -74,14 +76,17 @@ interface ActiveWorkbookSession {
   persistence: WorkbookPersistence | null;
   realtimeAccessRole: CollaborationAccessRole | null;
   realtimeConnection: WorkbookRealtimeChannelConnection | null;
+  realtimeConnectPromise: Promise<void> | null;
   realtimeVersion: number;
+  requestedAccessRole: CollaborationAccessRole | null;
   sessionId: number;
   undoManager: UndoManager | null;
+  workbookId: string;
 }
 
 interface WorkbookStoreModuleState {
   activeWorkbookSession: ActiveWorkbookSession | null;
-  currentAuthenticatedUser: User | null;
+  currentAuthenticatedUser: AuthenticatedUser | null;
   hasInitializedAuthSync: boolean;
   hasResolvedInitialAuthState: boolean;
   nextWorkbookActivationId: number;
@@ -93,7 +98,8 @@ export interface WorkbookStoreController {
   activateWorkbook: (
     workbookId: string,
     fallbackName?: string,
-    isSharedSession?: boolean
+    isSharedSession?: boolean,
+    requestedAccessRole?: CollaborationAccessRole | null
   ) => Promise<void>;
   buildColumnNames: (columns: { name: string }[]) => string[];
   closeActiveWorkbookSession: () => Promise<void>;
@@ -105,7 +111,7 @@ export interface WorkbookStoreController {
     scheduleRetryOnLeaseFailure?: boolean;
   }) => Promise<boolean>;
   getActiveWorkbookSession: () => ActiveWorkbookSession | null;
-  getCurrentAuthenticatedUser: () => User | null;
+  getCurrentAuthenticatedUser: () => AuthenticatedUser | null;
   importActiveSheetFromCsv: (file: File) => Promise<void>;
   importWorkbookFromExcel: (file: File) => Promise<void>;
   initializeAuthSync: () => void;
@@ -257,7 +263,15 @@ const loadLocalWorkbookState = async (
   const persistence = attachWorkbookPersistence(workbookId, doc);
 
   try {
-    await waitForWorkbookPersistence(persistence);
+    const hasSyncedPersistence = await waitForWorkbookPersistence(persistence);
+    if (!hasSyncedPersistence) {
+      syncLogger.warn(
+        "Workbook persistence did not finish syncing before timeout while loading a local workbook snapshot.",
+        {
+          workbookId,
+        }
+      );
+    }
     ensureWorkbookInitialized(doc, {
       name: fallbackName,
       workbookId,
@@ -283,7 +297,15 @@ const persistRemoteWorkbookLocally = async (
   const persistence = attachWorkbookPersistence(workbook.meta.id, doc);
 
   try {
-    await waitForWorkbookPersistence(persistence);
+    const hasSyncedPersistence = await waitForWorkbookPersistence(persistence);
+    if (!hasSyncedPersistence) {
+      syncLogger.warn(
+        "Workbook persistence did not finish syncing before timeout while storing a cloud workbook locally.",
+        {
+          workbookId: workbook.meta.id,
+        }
+      );
+    }
     applyUpdate(doc, workbook.update, CLOUD_SYNC_ORIGIN);
     await upsertWorkbookRegistryEntry(
       buildPersistedWorkbookMeta(
@@ -319,33 +341,18 @@ export const createWorkbookStoreController = (
     set({ workbooks: sortWorkbooks(workbooks) });
   };
 
-  const shouldSeedBlankWorkbook = async (
+  const shouldSeedBlankWorkbook = (
     doc: Doc,
-    workbookId: string,
+    _workbookId: string,
     isSharedSession: boolean
-  ): Promise<boolean> => {
+  ): boolean => {
     if (hasWorkbookDocumentState(doc) || isSharedSession) {
       return false;
     }
 
-    const currentUser = moduleState.currentAuthenticatedUser;
-    if (!currentUser) {
-      return true;
-    }
-
-    try {
-      const remoteWorkbook = await cloudWorkbookStore.readWorkbook(
-        currentUser.uid,
-        workbookId
-      );
-      return remoteWorkbook === null;
-    } catch (error) {
-      syncLogger.warn(
-        "Failed to probe the cloud workbook before the realtime join.",
-        error
-      );
-      return false;
-    }
+    // Seed a usable local workbook immediately and let the authenticated
+    // realtime channel reconcile any cloud state after navigation.
+    return true;
   };
 
   const persistActiveWorkbookMeta = async (): Promise<void> => {
@@ -372,6 +379,7 @@ export const createWorkbookStoreController = (
   };
 
   const disconnectRealtimeSession = (session: ActiveWorkbookSession): void => {
+    session.realtimeConnectPromise = null;
     session.realtimeConnection?.disconnect();
     session.realtimeAccessRole = null;
     session.realtimeConnection = null;
@@ -512,7 +520,9 @@ export const createWorkbookStoreController = (
     return true;
   };
 
-  const reconcileRemoteWorkbooks = async (user: User): Promise<void> => {
+  const reconcileRemoteWorkbooks = async (
+    user: AuthenticatedUser
+  ): Promise<void> => {
     const localWorkbooks = sortWorkbooks(await listWorkbookRegistryEntries());
     const remoteWorkbooks = sortWorkbooks(
       await cloudWorkbookStore.listWorkbooks(user.uid)
@@ -637,7 +647,7 @@ export const createWorkbookStoreController = (
     const sampleCells = Object.entries(snapshot.activeSheetCells)
       .slice(0, 8)
       .map(([k, v]) => `${k}="${v.raw}"`);
-    console.warn("[applySnapshot]", {
+    syncLogger.debug("Applied a workbook snapshot to local state.", {
       cellCount,
       sampleCells,
       sheetId: snapshot.activeSheetId,
@@ -762,105 +772,136 @@ export const createWorkbookStoreController = (
       return;
     }
 
-    if (!(isActiveSession(session) && !session.realtimeConnection)) {
-      return;
-    }
-
-    const workbookId = getWorkbookMeta(session.doc).id;
-    set({
-      collaborationAccessRole: null,
-      collaborationErrorMessage: null,
-      collaborationPeers: [],
-      collaborationStatus: "connecting",
-    });
-
-    await ensureRealtimeWorkbookRecord(session);
     if (!isActiveSession(session)) {
       return;
     }
 
-    const realtimeConnection = await connectWorkbookRealtimeChannel(
-      currentUser.uid,
-      workbookId,
-      {
-        onError: (error) => {
-          syncLogger.error("Workbook realtime channel error.", error);
-          if (isActiveSession(session)) {
-            set({
-              collaborationErrorMessage: error.message,
-              collaborationStatus: "disconnected",
-            });
-          }
-        },
-        onPresence: (peers: CollaboratorPresence[]) => {
-          if (isActiveSession(session)) {
-            set({ collaborationPeers: peers });
-          }
-        },
-        onSnapshot: ({ update, version }) => {
-          if (!isActiveSession(session)) {
-            return;
-          }
+    if (session.realtimeConnection) {
+      return;
+    }
 
-          session.realtimeVersion = Math.max(session.realtimeVersion, version);
-          applyUpdate(session.doc, update, REALTIME_SYNC_ORIGIN);
-        },
-        onStatusChange: (status) => {
-          if (isActiveSession(session)) {
-            set({ collaborationStatus: status });
-          }
-        },
-        onSync: ({ update, version }) => {
-          if (!isActiveSession(session)) {
-            return;
-          }
+    if (session.realtimeConnectPromise) {
+      // Shared sessions can trigger auth reconciliation and route activation at
+      // the same time; reuse the in-flight join so we do not race duplicate
+      // Phoenix channel connections for the same workbook.
+      await session.realtimeConnectPromise;
+      return;
+    }
 
-          session.realtimeVersion = Math.max(session.realtimeVersion, version);
-          applyUpdate(session.doc, update, REALTIME_SYNC_ORIGIN);
-        },
+    const connectPromise = (async (): Promise<void> => {
+      const { workbookId } = session;
+      set({
+        collaborationAccessRole: null,
+        collaborationErrorMessage: null,
+        collaborationPeers: [],
+        collaborationStatus: "connecting",
+      });
+
+      await ensureRealtimeWorkbookRecord(session);
+      if (!isActiveSession(session)) {
+        return;
       }
-    );
 
-    if (!isActiveSession(session)) {
-      realtimeConnection.disconnect();
-      return;
-    }
+      const realtimeConnection = await connectWorkbookRealtimeChannel(
+        currentUser.uid,
+        workbookId,
+        session.requestedAccessRole,
+        {
+          onError: (error) => {
+            syncLogger.error("Workbook realtime channel error.", error);
+            if (isActiveSession(session)) {
+              set({
+                collaborationErrorMessage: error.message,
+                collaborationStatus: "disconnected",
+              });
+            }
+          },
+          onPresence: (peers: CollaboratorPresence[]) => {
+            if (isActiveSession(session)) {
+              set({ collaborationPeers: peers });
+            }
+          },
+          onSnapshot: ({ update, version }) => {
+            if (!isActiveSession(session)) {
+              return;
+            }
 
-    session.realtimeAccessRole = realtimeConnection.accessRole;
-    session.realtimeConnection = realtimeConnection;
-    session.realtimeVersion = realtimeConnection.initialState.version;
+            session.realtimeVersion = Math.max(
+              session.realtimeVersion,
+              version
+            );
+            applyUpdate(session.doc, update, REALTIME_SYNC_ORIGIN);
+          },
+          onStatusChange: (status) => {
+            if (isActiveSession(session)) {
+              set({ collaborationStatus: status });
+            }
+          },
+          onSync: ({ update, version }) => {
+            if (!isActiveSession(session)) {
+              return;
+            }
 
-    if (realtimeConnection.initialState.update) {
-      applyUpdate(
-        session.doc,
-        realtimeConnection.initialState.update,
-        REALTIME_SYNC_ORIGIN
+            session.realtimeVersion = Math.max(
+              session.realtimeVersion,
+              version
+            );
+            applyUpdate(session.doc, update, REALTIME_SYNC_ORIGIN);
+          },
+        }
       );
-    }
 
-    for (const pendingUpdate of realtimeConnection.initialState
-      .pendingUpdates) {
-      applyUpdate(session.doc, pendingUpdate, REALTIME_SYNC_ORIGIN);
-    }
+      if (!isActiveSession(session)) {
+        realtimeConnection.disconnect();
+        return;
+      }
 
-    applySnapshot(session.doc, { forceWorkerReset: true });
-    if (!session.isSharedSession) {
-      await persistActiveWorkbookMeta();
-    }
-    set({
-      collaborationAccessRole: realtimeConnection.accessRole,
-      collaborationErrorMessage: null,
-      collaborationPeers: realtimeConnection.initialState.peers,
-      collaborationStatus: "connected",
-    });
+      session.realtimeAccessRole = realtimeConnection.accessRole;
+      session.realtimeConnection = realtimeConnection;
+      session.realtimeVersion = realtimeConnection.initialState.version;
 
-    if (
-      realtimeConnection.accessRole === "editor" &&
-      (realtimeConnection.initialState.shouldInitializeFromClient ||
-        shouldScheduleInitialSnapshotSync(workbookId))
-    ) {
-      session.dirty = true;
-      scheduleRemoteWorkbookSync(session, { delayMs: 0 });
+      if (realtimeConnection.initialState.update) {
+        applyUpdate(
+          session.doc,
+          realtimeConnection.initialState.update,
+          REALTIME_SYNC_ORIGIN
+        );
+      }
+
+      for (const pendingUpdate of realtimeConnection.initialState
+        .pendingUpdates) {
+        applyUpdate(session.doc, pendingUpdate, REALTIME_SYNC_ORIGIN);
+      }
+
+      applySnapshot(session.doc, { forceWorkerReset: true });
+      if (!session.isSharedSession) {
+        await persistActiveWorkbookMeta();
+      }
+      set({
+        collaborationAccessRole: realtimeConnection.accessRole,
+        collaborationErrorMessage: null,
+        collaborationPeers: realtimeConnection.initialState.peers,
+        collaborationStatus: "connected",
+      });
+
+      if (
+        realtimeConnection.accessRole === "editor" &&
+        (realtimeConnection.initialState.shouldInitializeFromClient ||
+          shouldScheduleInitialSnapshotSync(workbookId))
+      ) {
+        session.dirty = true;
+        scheduleRemoteWorkbookSync(session, { delayMs: 0 });
+      }
+    })();
+
+    session.realtimeConnectPromise = connectPromise;
+
+    try {
+      await connectPromise;
+    } finally {
+      if (session.realtimeConnectPromise === connectPromise) {
+        session.realtimeConnectPromise = null;
+      }
     }
   };
 
@@ -943,12 +984,15 @@ export const createWorkbookStoreController = (
   const activateWorkbook = async (
     workbookId: string,
     fallbackName?: string,
-    isSharedSession = false
+    isSharedSession = false,
+    requestedAccessRole: CollaborationAccessRole | null = null
   ): Promise<void> => {
     if (
       moduleState.activeWorkbookSession &&
       moduleState.activeWorkbookSession.isSharedSession === isSharedSession &&
-      getWorkbookMeta(moduleState.activeWorkbookSession.doc).id === workbookId
+      moduleState.activeWorkbookSession.requestedAccessRole ===
+        requestedAccessRole &&
+      moduleState.activeWorkbookSession.workbookId === workbookId
     ) {
       syncUndoManager(moduleState.activeWorkbookSession.doc);
       applySnapshot(moduleState.activeWorkbookSession.doc);
@@ -999,7 +1043,16 @@ export const createWorkbookStoreController = (
     moduleState.nextWorkbookSessionId += 1;
 
     if (persistence) {
-      await waitForWorkbookPersistence(persistence);
+      const hasSyncedPersistence =
+        await waitForWorkbookPersistence(persistence);
+      if (!hasSyncedPersistence) {
+        syncLogger.warn(
+          "Workbook persistence did not finish syncing before timeout; continuing with in-memory state.",
+          {
+            workbookId,
+          }
+        );
+      }
     }
 
     if (!isCurrentWorkbookActivation(activationId)) {
@@ -1039,10 +1092,13 @@ export const createWorkbookStoreController = (
       isSharedSession,
       persistence,
       realtimeAccessRole: null,
+      realtimeConnectPromise: null,
       realtimeConnection: null,
+      requestedAccessRole,
       realtimeVersion: 0,
       sessionId: moduleState.nextWorkbookSessionId,
       undoManager: null,
+      workbookId,
     };
 
     session.handleDocUpdate = (update: Uint8Array, origin: unknown) => {
@@ -1133,7 +1189,12 @@ export const createWorkbookStoreController = (
     }
 
     if (!isSharedSession && hasWorkbookDocumentState(doc)) {
-      await persistActiveWorkbookMeta();
+      persistActiveWorkbookMeta().catch((error) => {
+        syncLogger.warn(
+          "Failed to persist the active workbook metadata after activation.",
+          error
+        );
+      });
     }
   };
 
@@ -1143,7 +1204,7 @@ export const createWorkbookStoreController = (
     }
 
     moduleState.hasInitializedAuthSync = true;
-    onAuthStateChanged(firebaseAuth, (user) => {
+    onAuthStateChange((user) => {
       moduleState.currentAuthenticatedUser = user;
       clearRemoteSyncTimeout();
       set({

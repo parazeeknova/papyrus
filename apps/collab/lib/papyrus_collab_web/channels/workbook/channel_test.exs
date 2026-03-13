@@ -72,7 +72,6 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
     assert {:ok, %{version: 1}} =
              CloudWorkbooks.write_workbook(
                owner_identity,
-               "firebase-token",
                workbook_payload(workbook_id),
                "seed-client"
              )
@@ -136,7 +135,7 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
     assert flushed_snapshot.version == 1
 
     assert {:ok, persisted_workbook} =
-             CloudWorkbooks.read_workbook(owner_identity, "firebase-token", workbook_id)
+             CloudWorkbooks.read_workbook(owner_identity, workbook_id)
 
     assert persisted_workbook["updateBase64"] == "AQIDBAUG"
     assert persisted_workbook["version"] == 2
@@ -150,7 +149,6 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
     assert {:ok, %{version: 1}} =
              CloudWorkbooks.write_workbook(
                owner_identity,
-               "firebase-token",
                shared_workbook_payload(workbook_id, "editor"),
                "seed-client"
              )
@@ -184,6 +182,9 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
             "AQIDBAUG",
             1
           )
+          |> put_in(["meta", "isFavorite"], true)
+          |> put_in(["meta", "lastOpenedAt"], "2026-03-14T00:00:00.000Z")
+          |> put_in(["meta", "name"], "Edited Budget")
           |> put_in(["meta", "sharingEnabled"], false)
           |> Map.put("collaborationVersion", 1)
       })
@@ -191,16 +192,19 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
     assert_reply snapshot_ref, :ok, %{version: 2}
 
     assert {:ok, owner_workbook} =
-             CloudWorkbooks.read_workbook(owner_identity, "firebase-token", workbook_id)
+             CloudWorkbooks.read_workbook(owner_identity, workbook_id)
 
     assert owner_workbook["updateBase64"] == "AQIDBAUG"
+    assert owner_workbook["meta"]["name"] == "Budget"
+    assert owner_workbook["meta"]["isFavorite"] == false
+    assert owner_workbook["meta"]["lastOpenedAt"] == "2026-03-13T00:00:00.000Z"
     assert owner_workbook["meta"]["sharingAccessRole"] == "editor"
     assert owner_workbook["meta"]["sharingEnabled"] == true
 
     shared_identity = identity("editor-1", "device-editor", "editor@example.com")
 
     assert {:ok, nil} =
-             CloudWorkbooks.read_workbook(shared_identity, "firebase-token", workbook_id)
+             CloudWorkbooks.read_workbook(shared_identity, workbook_id)
   end
 
   test "viewers can publish presence but cannot push typing, sync, or snapshots" do
@@ -258,6 +262,62 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
       })
 
     assert_reply snapshot_ref, :error, %{reason: "forbidden"}
+  end
+
+  test "shared editor links can be downscoped to viewer access at join time" do
+    workbook_id = unique_workbook_id()
+
+    allow_realtime_access(
+      "viewer-1",
+      workbook_id,
+      "editor",
+      shared_workbook_payload(workbook_id, "editor"),
+      "owner-1"
+    )
+
+    assert {:ok, socket} =
+             connect(UserSocket, socket_params("viewer-1", "device-v", "viewer@example.com"))
+
+    assert {:ok, response, socket} =
+             subscribe_and_join(
+               socket,
+               WorkbookChannel,
+               "workbook:" <> workbook_id,
+               %{"requestedAccessRole" => "viewer"}
+             )
+
+    assert response.accessRole == "viewer"
+
+    sync_ref = push(socket, "sync:push", %{"update" => "BAUG"})
+    assert_reply sync_ref, :error, %{reason: "forbidden"}
+  end
+
+  test "shared editor links accept snake case requested access params at join time" do
+    workbook_id = unique_workbook_id()
+
+    allow_realtime_access(
+      "viewer-2",
+      workbook_id,
+      "editor",
+      shared_workbook_payload(workbook_id, "editor"),
+      "owner-2"
+    )
+
+    assert {:ok, socket} =
+             connect(UserSocket, socket_params("viewer-2", "device-v2", "viewer2@example.com"))
+
+    assert {:ok, response, socket} =
+             subscribe_and_join(
+               socket,
+               WorkbookChannel,
+               "workbook:" <> workbook_id,
+               %{"requested_access_role" => "viewer"}
+             )
+
+    assert response.accessRole == "viewer"
+
+    sync_ref = push(socket, "sync:push", %{"update" => "BAUG"})
+    assert_reply sync_ref, :error, %{reason: "forbidden"}
   end
 
   test "joining rejects unauthorized users" do

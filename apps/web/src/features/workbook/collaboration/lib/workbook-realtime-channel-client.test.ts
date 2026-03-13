@@ -212,6 +212,7 @@ describe("connectWorkbookRealtimeChannel", () => {
     const client = await connectWorkbookRealtimeChannel(
       "user-1",
       "workbook-1",
+      null,
       {
         onStatusChange: (status) => {
           statuses.push(status);
@@ -352,7 +353,7 @@ describe("connectWorkbookRealtimeChannel", () => {
 
     const errors: string[] = [];
     const statuses: string[] = [];
-    await connectWorkbookRealtimeChannel("user-1", "workbook-2", {
+    await connectWorkbookRealtimeChannel("user-1", "workbook-2", null, {
       onError: (error) => {
         errors.push(error.message);
       },

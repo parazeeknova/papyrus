@@ -182,8 +182,18 @@ export const createWorkbookSlice = (
     lastSyncErrorMessage: null,
     lastSyncedAt: null,
     manualSyncCooldownUntil: 0,
-    openWorkbook: async (workbookId, name, isSharedSession) => {
-      await controller.activateWorkbook(workbookId, name, isSharedSession);
+    openWorkbook: async (
+      workbookId,
+      name,
+      isSharedSession,
+      requestedAccessRole
+    ) => {
+      await controller.activateWorkbook(
+        workbookId,
+        name,
+        isSharedSession,
+        requestedAccessRole
+      );
     },
     remoteSyncStatus: "disabled",
     remoteVersion: null,

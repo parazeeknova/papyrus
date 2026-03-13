@@ -415,11 +415,19 @@ function pushRealtimeEvent<TResponse>(
 export async function connectWorkbookRealtimeChannel(
   uid: string,
   workbookId: string,
+  requestedAccessRole: CollaborationAccessRole | null = null,
   callbacks?: WorkbookRealtimeCallbacks
 ): Promise<WorkbookRealtimeChannelConnection> {
   const socketConnection = await ensurePhoenixSocketConnection(uid);
   const { deviceId, socket } = socketConnection;
-  const channel = socket.channel(`workbook:${workbookId}`, {});
+  realtimeLogger.debug("Joining the workbook realtime channel.", {
+    requestedAccessRole,
+    uid,
+    workbookId,
+  });
+  const channel = socket.channel(`workbook:${workbookId}`, {
+    requestedAccessRole,
+  });
   let isClosedByClient = false;
 
   channel.on("presence", (payload: unknown) => {
@@ -501,6 +509,13 @@ export async function connectWorkbookRealtimeChannel(
     isClosedByClient = true;
     channel.leave();
     throw error;
+  });
+
+  realtimeLogger.debug("Joined the workbook realtime channel.", {
+    grantedAccessRole: initialState.accessRole,
+    requestedAccessRole,
+    uid,
+    workbookId,
   });
 
   notifyStatus(callbacks, "connected");

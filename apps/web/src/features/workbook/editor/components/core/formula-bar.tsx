@@ -50,6 +50,7 @@ export function FormulaBar({
 
       <Input
         className="h-6 flex-1 border-none bg-transparent text-xs shadow-none focus-visible:ring-0"
+        data-testid="formula-input"
         disabled={disabled}
         onChange={(e) => {
           onValueChange(e.target.value);

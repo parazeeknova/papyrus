@@ -8,14 +8,31 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
   alias PapyrusCollab.Collaboration.Snapshot
   alias PapyrusCollabWeb.Endpoint
 
+  @owner_managed_meta_fields [
+    "createdAt",
+    "id",
+    "isFavorite",
+    "lastOpenedAt",
+    "name",
+    "sharingAccessRole",
+    "sharingEnabled"
+  ]
+
   @impl true
-  def join("workbook:" <> workbook_id, _params, socket)
+  def join("workbook:" <> workbook_id, params, socket)
       when byte_size(workbook_id) > 0 do
     identity = socket.assigns.identity
-    token = socket.assigns.firebase_token
+    requested_access_role = parse_requested_access_role(params)
 
-    with {:ok, %{access_role: access_role, owner_id: owner_id, workbook: workbook}} <-
-           Collaboration.authorize_realtime_workbook(identity, token, workbook_id),
+    with {:ok, %{access_role: granted_access_role, owner_id: owner_id, workbook: workbook}} <-
+           Collaboration.authorize_realtime_workbook(identity, workbook_id),
+         access_role <-
+           resolve_access_role(
+             granted_access_role,
+             requested_access_role,
+             owner_id,
+             identity.user_id
+           ),
          {:ok, snapshot} <-
            maybe_bootstrap_snapshot(workbook_id, workbook, identity),
          {:ok, peers} <- Collaboration.join_peer(workbook_id, identity, access_role) do
@@ -45,6 +62,35 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
     {:error, %{reason: "invalid_workbook_id"}}
   end
 
+  defp parse_requested_access_role(params) when is_map(params) do
+    case Map.get(params, "requestedAccessRole") ||
+           Map.get(params, "requested_access_role") ||
+           Map.get(params, :requestedAccessRole) ||
+           Map.get(params, :requested_access_role) do
+      access_role when access_role in ["editor", "viewer"] ->
+        access_role
+
+      _access_role ->
+        nil
+    end
+  end
+
+  defp parse_requested_access_role(_params), do: nil
+
+  defp resolve_access_role(granted_access_role, _requested_access_role, owner_id, owner_id) do
+    granted_access_role
+  end
+
+  defp resolve_access_role("editor", "viewer", _owner_id, _current_user_id), do: "viewer"
+
+  defp resolve_access_role(
+         granted_access_role,
+         _requested_access_role,
+         _owner_id,
+         _current_user_id
+       ),
+       do: granted_access_role
+
   @impl true
   def handle_in("presence:push", payload, socket) do
     with {:ok, normalized_payload} <- normalize_presence_payload(payload),
@@ -67,7 +113,6 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
     if socket.assigns.access_role != "editor" do
       {:reply, {:error, %{reason: "forbidden"}}, socket}
     else
-      token = socket.assigns.firebase_token
       identity = socket.assigns.identity
 
       with {:ok, normalized_workbook} <-
@@ -80,7 +125,7 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
                identity
              ),
            {:ok, persisted_workbook} <-
-             persist_snapshot_workbook(socket, token, normalized_workbook, client_id) do
+             persist_snapshot_workbook(socket, normalized_workbook, client_id) do
         broadcast_from!(socket, "snapshot", %{
           update: normalized_workbook["updateBase64"],
           version: snapshot.version
@@ -173,16 +218,15 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
 
   # Shared editors are allowed to mutate workbook content, but owner-only
   # sharing metadata stays server-authoritative even when they flush snapshots.
-  defp persist_snapshot_workbook(socket, token, workbook, client_id) do
+  defp persist_snapshot_workbook(socket, workbook, client_id) do
     identity = socket.assigns.identity
 
     if socket.assigns.owner_id == identity.user_id do
-      CloudWorkbooks.write_workbook(identity, token, workbook, client_id)
+      CloudWorkbooks.write_workbook(identity, workbook, client_id)
     else
       with {:ok, %{} = owner_workbook} <-
              CloudWorkbooks.read_workbook_as_owner(
                socket.assigns.owner_id,
-               token,
                socket.assigns.workbook_id
              ),
            {:ok, sanitized_workbook} <-
@@ -190,7 +234,6 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
            {:ok, persisted_workbook} <-
              CloudWorkbooks.write_workbook_as_owner(
                socket.assigns.owner_id,
-               token,
                sanitized_workbook,
                client_id
              ) do
@@ -204,16 +247,16 @@ defmodule PapyrusCollabWeb.WorkbookChannel do
 
   defp preserve_owner_managed_meta(%{"meta" => next_meta} = workbook, %{"meta" => current_meta})
        when is_map(next_meta) and is_map(current_meta) do
-    {:ok,
-     workbook
-     |> put_in(
-       ["meta", "sharingAccessRole"],
-       Map.get(current_meta, "sharingAccessRole", Map.get(next_meta, "sharingAccessRole"))
-     )
-     |> put_in(
-       ["meta", "sharingEnabled"],
-       Map.get(current_meta, "sharingEnabled", Map.get(next_meta, "sharingEnabled"))
-     )}
+    sanitized_workbook =
+      Enum.reduce(@owner_managed_meta_fields, workbook, fn field, current_workbook ->
+        put_in(
+          current_workbook,
+          ["meta", field],
+          Map.get(current_meta, field, Map.get(next_meta, field))
+        )
+      end)
+
+    {:ok, sanitized_workbook}
   end
 
   defp preserve_owner_managed_meta(_workbook, _current_workbook),

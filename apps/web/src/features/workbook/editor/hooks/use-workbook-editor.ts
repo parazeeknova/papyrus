@@ -6,7 +6,7 @@ import type {
   CellTextTransform,
   PersistedCellRecord,
 } from "@papyrus/core/workbook-types";
-import { onAuthStateChanged, type User } from "firebase/auth";
+import { createLogger } from "@papyrus/logs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SHARING_BACKEND_READY } from "@/web/features/workbook/collaboration/lib/collaboration";
 import {
@@ -24,7 +24,10 @@ import type {
   SpreadsheetWorkerResponse,
 } from "@/web/features/workbook/editor/lib/spreadsheet-types";
 import { useWorkbookStore } from "@/web/features/workbook/store/workbook-store";
-import { firebaseAuth } from "@/web/platform/firebase/client";
+import {
+  type AuthenticatedUser,
+  onAuthStateChange,
+} from "@/web/platform/auth/auth-client";
 
 // biome-ignore lint/performance/noBarrelFile: skip re-exporting from index for better path clarity
 export { cellId } from "@/web/features/workbook/editor/lib/spreadsheet-engine";
@@ -54,6 +57,7 @@ const SORT_VALUE_COLLATOR = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: "base",
 });
+const workbookEditorLogger = createLogger({ scope: "workbook-editor" });
 
 type CellFormatFlag = "bold" | "italic" | "strikethrough" | "underline";
 
@@ -548,7 +552,9 @@ export function useWorkbookEditor({
   const [isSheetComputing, setIsSheetComputing] = useState(false);
   const [showSheetLoadingStatus, setShowSheetLoadingStatus] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(
+    null
+  );
   const previousColumnNamesRef = useRef<string[]>([]);
   const activeColumnNames = useMemo(() => {
     const next = activeSheetColumns.map((column) => column.name);
@@ -607,10 +613,13 @@ export function useWorkbookEditor({
     ) => {
       if (e.data.type === "READY") {
         if (e.data.payload.requestId !== activeWorkerRequestIdRef.current) {
-          console.warn("[worker-READY] Stale requestId, ignoring:", {
-            received: e.data.payload.requestId,
-            expected: activeWorkerRequestIdRef.current,
-          });
+          workbookEditorLogger.debug(
+            "Ignored a stale workbook worker initialization response.",
+            {
+              received: e.data.payload.requestId,
+              expected: activeWorkerRequestIdRef.current,
+            }
+          );
           return;
         }
 
@@ -619,12 +628,15 @@ export function useWorkbookEditor({
         const sampleCells = Object.entries(nextCells)
           .slice(0, 5)
           .map(([k, v]) => `${k}=${v.computed}`);
-        console.warn("[worker-READY] Setting computedCells:", {
-          cellCount,
-          sampleCells,
-          deletions: e.data.payload.patch.deletions.length,
-          updates: Object.keys(e.data.payload.patch.updates).length,
-        });
+        workbookEditorLogger.debug(
+          "Applied workbook worker initialization patch.",
+          {
+            cellCount,
+            sampleCells,
+            deletions: e.data.payload.patch.deletions.length,
+            updates: Object.keys(e.data.payload.patch.updates).length,
+          }
+        );
 
         setComputedCells(nextCells);
         setIsSheetComputing(false);
@@ -656,9 +668,12 @@ export function useWorkbookEditor({
         return;
       }
 
-      openWorkbook(workbookId, undefined, isSharedSession).catch(
-        () => undefined
-      );
+      openWorkbook(
+        workbookId,
+        undefined,
+        isSharedSession,
+        requestedAccessRole
+      ).catch(() => undefined);
       return;
     }
 
@@ -668,6 +683,7 @@ export function useWorkbookEditor({
     hydrateWorkbookList,
     isSharedSession,
     openWorkbook,
+    requestedAccessRole,
     workbookId,
   ]);
 
@@ -691,7 +707,7 @@ export function useWorkbookEditor({
   }, [activeSheetCells, activeSheetId, totalRowCount]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
+    const unsubscribe = onAuthStateChange((nextUser) => {
       setCurrentUser(nextUser);
     });
 
@@ -718,7 +734,7 @@ export function useWorkbookEditor({
       const sampleCells = Object.entries(activeSheetCells)
         .slice(0, 5)
         .map(([k, v]) => `${k}=${v.raw}`);
-      console.warn("[activeSheetCells-changed] Store updated:", {
+      workbookEditorLogger.debug("Workbook sheet cells changed.", {
         cellCount,
         sampleCells,
       });
@@ -1793,11 +1809,9 @@ export function useWorkbookEditor({
       const nextDraft = editingDraft;
       const previousValue = editingOriginalValue;
 
-      console.warn("[commitEditing]", {
+      workbookEditorLogger.debug("Committing workbook cell edit.", {
         hasCell: !!currentEditingCell,
         canEdit,
-        nextDraft,
-        previousValue,
         changed: nextDraft !== previousValue,
       });
 

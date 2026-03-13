@@ -64,7 +64,8 @@ export interface WorkbookStoreState {
   openWorkbook: (
     workbookId: string,
     name?: string,
-    isSharedSession?: boolean
+    isSharedSession?: boolean,
+    requestedAccessRole?: CollaborationAccessRole | null
   ) => Promise<void>;
   publishCollaborationPresence: (payload: {
     activeCell: { col: number; row: number } | null;
