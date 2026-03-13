@@ -15,6 +15,9 @@ config :papyrus_collab, :app_env, config_env()
 config :papyrus_collab, PapyrusCollab.Auth,
   id_token_verifier: PapyrusCollab.Firebase.IdTokenVerifier
 
+config :papyrus_collab, PapyrusCollab.Platform.Google.AccessTokenProvider,
+  adapter: PapyrusCollab.Platform.Google.ServiceAccountTokenProvider
+
 config :papyrus_collab, PapyrusCollab.CloudWorkbooks.Store,
   adapter: PapyrusCollab.CloudWorkbooks.Store.Firestore
 

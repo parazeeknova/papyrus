@@ -3,24 +3,28 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
 
   @behaviour PapyrusCollab.CloudWorkbooks.Store
 
+  alias PapyrusCollab.Platform.Google.AccessTokenProvider
+
   @chunk_size 600_000
   @page_size 1000
 
   @impl true
-  @spec delete_workbook(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
-  def delete_workbook(user_id, token, workbook_id)
-      when is_binary(user_id) and is_binary(token) and is_binary(workbook_id) do
-    with {:ok, chunk_documents} <-
-           list_documents(token, chunk_collection_path(user_id, workbook_id)),
-         :ok <- delete_documents(token, chunk_documents) do
-      delete_document(token, workbook_document_path(user_id, workbook_id))
+  @spec delete_workbook(String.t(), String.t()) :: :ok | {:error, term()}
+  def delete_workbook(user_id, workbook_id)
+      when is_binary(user_id) and is_binary(workbook_id) do
+    with {:ok, access_token} <- fetch_access_token(),
+         {:ok, chunk_documents} <-
+           list_documents(access_token, chunk_collection_path(user_id, workbook_id)),
+         :ok <- delete_documents(access_token, chunk_documents) do
+      delete_document(access_token, workbook_document_path(user_id, workbook_id))
     end
   end
 
   @impl true
-  @spec list_workbooks(String.t(), String.t()) :: {:ok, [map()]} | {:error, term()}
-  def list_workbooks(user_id, token) when is_binary(user_id) and is_binary(token) do
-    with {:ok, documents} <- list_documents(token, workbook_collection_path(user_id)) do
+  @spec list_workbooks(String.t()) :: {:ok, [map()]} | {:error, term()}
+  def list_workbooks(user_id) when is_binary(user_id) do
+    with {:ok, access_token} <- fetch_access_token(),
+         {:ok, documents} <- list_documents(access_token, workbook_collection_path(user_id)) do
       {:ok,
        documents
        |> Enum.flat_map(fn document ->
@@ -33,38 +37,26 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
   end
 
   @impl true
-  @spec read_workbook(String.t(), String.t(), String.t()) :: {:ok, map() | nil} | {:error, term()}
-  def read_workbook(user_id, token, workbook_id)
-      when is_binary(user_id) and is_binary(token) and is_binary(workbook_id) do
-    case get_document(token, workbook_document_path(user_id, workbook_id)) do
-      {:ok, nil} ->
-        {:ok, nil}
-
-      {:ok, document} ->
-        case list_documents(token, chunk_collection_path(user_id, workbook_id)) do
-          {:ok, chunk_documents} ->
-            parse_remote_workbook(document, chunk_documents)
-
-          {:error, reason} ->
-            {:error, reason}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+  @spec read_workbook(String.t(), String.t()) :: {:ok, map() | nil} | {:error, term()}
+  def read_workbook(user_id, workbook_id)
+      when is_binary(user_id) and is_binary(workbook_id) do
+    with {:ok, access_token} <- fetch_access_token() do
+      load_remote_workbook(access_token, user_id, workbook_id)
     end
   end
 
   @impl true
-  @spec write_workbook(String.t(), String.t(), map(), String.t()) ::
+  @spec write_workbook(String.t(), map(), String.t()) ::
           {:ok, map()} | {:error, term()}
-  def write_workbook(user_id, token, workbook, _client_id)
-      when is_binary(user_id) and is_binary(token) and is_map(workbook) do
-    with {:ok, normalized_workbook} <- normalize_workbook_payload(workbook),
+  def write_workbook(user_id, workbook, _client_id)
+      when is_binary(user_id) and is_map(workbook) do
+    with {:ok, access_token} <- fetch_access_token(),
+         {:ok, normalized_workbook} <- normalize_workbook_payload(workbook),
          workbook_id <- get_in(normalized_workbook, ["meta", "id"]),
          {:ok, existing_workbook} <-
-           get_document(token, workbook_document_path(user_id, workbook_id)),
+           get_document(access_token, workbook_document_path(user_id, workbook_id)),
          {:ok, existing_chunk_documents} <-
-           list_documents(token, chunk_collection_path(user_id, workbook_id)) do
+           list_documents(access_token, chunk_collection_path(user_id, workbook_id)) do
       existing_version = extract_document_version(existing_workbook)
       next_version = max(existing_version, normalized_workbook["version"]) + 1
       last_synced_at = DateTime.utc_now() |> DateTime.to_iso8601()
@@ -81,7 +73,7 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
       # readers continue to see a coherent snapshot during the transition.
       with :ok <-
              write_chunk_documents(
-               token,
+               access_token,
                user_id,
                workbook_id,
                chunk_values,
@@ -89,7 +81,7 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
              ),
            :ok <-
              patch_document(
-               token,
+               access_token,
                workbook_document_path(user_id, workbook_id),
                build_workbook_document(
                  normalized_workbook,
@@ -99,7 +91,12 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
                  length(chunk_values)
                )
              ),
-           :ok <- delete_stale_chunk_documents(token, existing_chunk_documents, next_chunk_ids) do
+           :ok <-
+             delete_stale_chunk_documents(
+               access_token,
+               existing_chunk_documents,
+               next_chunk_ids
+             ) do
         {:ok, %{lastSyncedAt: last_synced_at, version: next_version}}
       end
     end
@@ -111,6 +108,23 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
 
   defp build_field_value(value) when is_integer(value),
     do: %{"integerValue" => Integer.to_string(value)}
+
+  defp fetch_access_token do
+    AccessTokenProvider.fetch_token()
+  end
+
+  defp load_remote_workbook(access_token, user_id, workbook_id) do
+    with {:ok, document} <-
+           get_document(access_token, workbook_document_path(user_id, workbook_id)),
+         false <- is_nil(document),
+         {:ok, chunk_documents} <-
+           list_documents(access_token, chunk_collection_path(user_id, workbook_id)) do
+      parse_remote_workbook(document, chunk_documents)
+    else
+      true -> {:ok, nil}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   defp build_workbook_document(workbook, last_synced_at, version, snapshot_id, chunk_count) do
     meta = workbook["meta"]

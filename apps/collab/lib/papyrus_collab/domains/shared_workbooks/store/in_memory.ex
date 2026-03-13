@@ -19,14 +19,14 @@ defmodule PapyrusCollab.SharedWorkbooks.Store.InMemory do
   end
 
   @impl true
-  @spec delete_workbook(String.t(), String.t()) :: :ok
-  def delete_workbook(_token, workbook_id) when is_binary(workbook_id) do
+  @spec delete_workbook(String.t()) :: :ok
+  def delete_workbook(workbook_id) when is_binary(workbook_id) do
     Agent.update(__MODULE__, &Map.delete(&1, workbook_id))
   end
 
   @impl true
-  @spec read_workbook(String.t(), String.t()) :: {:ok, map() | nil}
-  def read_workbook(_token, workbook_id) when is_binary(workbook_id) do
+  @spec read_workbook(String.t()) :: {:ok, map() | nil}
+  def read_workbook(workbook_id) when is_binary(workbook_id) do
     shared_workbook =
       Agent.get(__MODULE__, fn records ->
         records
@@ -44,8 +44,8 @@ defmodule PapyrusCollab.SharedWorkbooks.Store.InMemory do
   end
 
   @impl true
-  @spec sync_workbook(String.t(), String.t(), map()) :: :ok | {:error, term()}
-  def sync_workbook(owner_id, _token, workbook)
+  @spec sync_workbook(String.t(), map()) :: :ok | {:error, term()}
+  def sync_workbook(owner_id, workbook)
       when is_binary(owner_id) and is_map(workbook) do
     with {:ok, shared_workbook} <- normalize_workbook(owner_id, workbook) do
       if shared_workbook["sharingEnabled"] do

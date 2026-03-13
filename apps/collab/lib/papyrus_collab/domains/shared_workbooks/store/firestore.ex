@@ -3,25 +3,29 @@ defmodule PapyrusCollab.SharedWorkbooks.Store.Firestore do
 
   @behaviour PapyrusCollab.SharedWorkbooks.Store
 
+  alias PapyrusCollab.Platform.Google.AccessTokenProvider
+
   @impl true
-  @spec delete_workbook(String.t(), String.t()) :: :ok | {:error, term()}
-  def delete_workbook(token, workbook_id)
-      when is_binary(token) and is_binary(workbook_id) do
-    case request(token, :delete, shared_workbook_document_path(workbook_id)) do
-      :not_found -> :ok
-      {:ok, _body} -> :ok
-      {:error, reason} -> {:error, reason}
+  @spec delete_workbook(String.t()) :: :ok | {:error, term()}
+  def delete_workbook(workbook_id) when is_binary(workbook_id) do
+    with {:ok, access_token} <- fetch_access_token() do
+      case request(access_token, :delete, shared_workbook_document_path(workbook_id)) do
+        :not_found -> :ok
+        {:ok, _body} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
   @impl true
-  @spec read_workbook(String.t(), String.t()) :: {:ok, map() | nil} | {:error, term()}
-  def read_workbook(token, workbook_id)
-      when is_binary(token) and is_binary(workbook_id) do
-    case request(token, :get, shared_workbook_document_path(workbook_id)) do
-      {:ok, %{"name" => _name} = body} -> parse_shared_workbook(body)
-      :not_found -> {:ok, nil}
-      {:error, reason} -> {:error, reason}
+  @spec read_workbook(String.t()) :: {:ok, map() | nil} | {:error, term()}
+  def read_workbook(workbook_id) when is_binary(workbook_id) do
+    with {:ok, access_token} <- fetch_access_token() do
+      case request(access_token, :get, shared_workbook_document_path(workbook_id)) do
+        {:ok, %{"name" => _name} = body} -> parse_shared_workbook(body)
+        :not_found -> {:ok, nil}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -32,19 +36,11 @@ defmodule PapyrusCollab.SharedWorkbooks.Store.Firestore do
   end
 
   @impl true
-  @spec sync_workbook(String.t(), String.t(), map()) :: :ok | {:error, term()}
-  def sync_workbook(owner_id, token, workbook)
-      when is_binary(owner_id) and is_binary(token) and is_map(workbook) do
+  @spec sync_workbook(String.t(), map()) :: :ok | {:error, term()}
+  def sync_workbook(owner_id, workbook)
+      when is_binary(owner_id) and is_map(workbook) do
     with {:ok, shared_workbook} <- normalize_workbook(owner_id, workbook) do
-      if shared_workbook["sharingEnabled"] do
-        patch_document(
-          token,
-          shared_workbook_document_path(shared_workbook["workbookId"]),
-          build_shared_workbook_document(shared_workbook)
-        )
-      else
-        delete_workbook(token, shared_workbook["workbookId"])
-      end
+      sync_normalized_workbook(shared_workbook)
     end
   end
 
@@ -123,6 +119,24 @@ defmodule PapyrusCollab.SharedWorkbooks.Store.Firestore do
       {:ok, _body} -> :ok
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp fetch_access_token do
+    AccessTokenProvider.fetch_token()
+  end
+
+  defp sync_normalized_workbook(%{"sharingEnabled" => true} = shared_workbook) do
+    with {:ok, access_token} <- fetch_access_token() do
+      patch_document(
+        access_token,
+        shared_workbook_document_path(shared_workbook["workbookId"]),
+        build_shared_workbook_document(shared_workbook)
+      )
+    end
+  end
+
+  defp sync_normalized_workbook(%{"workbookId" => workbook_id}) do
+    delete_workbook(workbook_id)
   end
 
   defp request(token, method, path, options \\ [])

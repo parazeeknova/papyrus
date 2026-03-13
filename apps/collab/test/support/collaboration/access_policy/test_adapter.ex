@@ -6,10 +6,10 @@ defmodule PapyrusCollab.Collaboration.AccessPolicy.TestAdapter do
   alias PapyrusCollab.Auth.Identity
 
   @impl true
-  @spec authorize_workbook(Identity.t(), String.t(), String.t()) ::
+  @spec authorize_workbook(Identity.t(), String.t()) ::
           {:ok, %{access_role: String.t(), owner_id: String.t(), workbook: map()}}
           | {:error, :forbidden}
-  def authorize_workbook(%Identity{user_id: user_id}, _token, workbook_id)
+  def authorize_workbook(%Identity{user_id: user_id}, workbook_id)
       when is_binary(workbook_id) and byte_size(workbook_id) > 0 do
     responses =
       Application.get_env(:papyrus_collab, __MODULE__, [])

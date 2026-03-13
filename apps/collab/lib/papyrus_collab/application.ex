@@ -5,7 +5,12 @@ defmodule PapyrusCollab.Application do
 
   use Application
 
-  alias PapyrusCollab.{CloudWorkbooks.Store, Platform.RuntimeEnv, SharedWorkbooks}
+  alias PapyrusCollab.{
+    CloudWorkbooks.Store,
+    Platform.Google.AccessTokenProvider,
+    Platform.RuntimeEnv,
+    SharedWorkbooks
+  }
 
   @impl true
   def start(_type, _args) do
@@ -19,6 +24,7 @@ defmodule PapyrusCollab.Application do
         PapyrusCollabWeb.Presence,
         {Registry, keys: :unique, name: PapyrusCollab.Collaboration.RoomRegistry},
         PapyrusCollab.CloudWorkbooks.LeaseStore,
+        optional_child(AccessTokenProvider.adapter()),
         cloud_workbook_store_child(),
         shared_workbook_store_child(),
         PapyrusCollab.Collaboration.BackupStore,
@@ -46,18 +52,14 @@ defmodule PapyrusCollab.Application do
   end
 
   defp cloud_workbook_store_child do
-    adapter = Store.adapter()
-
-    if Code.ensure_loaded?(adapter) and function_exported?(adapter, :child_spec, 1) do
-      {adapter, []}
-    else
-      nil
-    end
+    optional_child(Store.adapter())
   end
 
   defp shared_workbook_store_child do
-    adapter = SharedWorkbooks.Store.adapter()
+    optional_child(SharedWorkbooks.Store.adapter())
+  end
 
+  defp optional_child(adapter) do
     if Code.ensure_loaded?(adapter) and function_exported?(adapter, :child_spec, 1) do
       {adapter, []}
     else

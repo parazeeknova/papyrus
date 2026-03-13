@@ -22,11 +22,7 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
   end
 
   def handle_in("delete", %{"workbookId" => workbook_id}, socket) do
-    case CloudWorkbooks.delete_workbook(
-           socket.assigns.identity,
-           socket.assigns.firebase_token,
-           workbook_id
-         ) do
+    case CloudWorkbooks.delete_workbook(socket.assigns.identity, workbook_id) do
       :ok ->
         {:reply, {:ok, %{deleted: true}}, socket}
 
@@ -36,7 +32,7 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
   end
 
   def handle_in("list", _payload, socket) do
-    case CloudWorkbooks.list_workbooks(socket.assigns.identity, socket.assigns.firebase_token) do
+    case CloudWorkbooks.list_workbooks(socket.assigns.identity) do
       {:ok, workbooks} ->
         {:reply, {:ok, %{workbooks: workbooks}}, socket}
 
@@ -46,11 +42,7 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
   end
 
   def handle_in("read", %{"workbookId" => workbook_id}, socket) do
-    case CloudWorkbooks.read_workbook(
-           socket.assigns.identity,
-           socket.assigns.firebase_token,
-           workbook_id
-         ) do
+    case CloudWorkbooks.read_workbook(socket.assigns.identity, workbook_id) do
       {:ok, workbook} ->
         {:reply, {:ok, %{workbook: workbook}}, socket}
 
@@ -60,12 +52,7 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
   end
 
   def handle_in("write", %{"clientId" => client_id, "workbook" => workbook}, socket) do
-    case CloudWorkbooks.write_workbook(
-           socket.assigns.identity,
-           socket.assigns.firebase_token,
-           workbook,
-           client_id
-         ) do
+    case CloudWorkbooks.write_workbook(socket.assigns.identity, workbook, client_id) do
       {:ok, result} ->
         {:reply, {:ok, result}, socket}
 

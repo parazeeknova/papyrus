@@ -20,11 +20,17 @@ if System.get_env("PHX_SERVER") do
   config :papyrus_collab, PapyrusCollabWeb.Endpoint, server: true
 end
 
+config :papyrus_collab, :e2e_auth_enabled, System.get_env("E2E_AUTH_ENABLED") == "true"
+
 config :papyrus_collab, PapyrusCollabWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
 config :papyrus_collab, PapyrusCollab.Firebase.IdTokenVerifier,
   project_id: System.get_env("FIREBASE_PROJECT_ID")
+
+config :papyrus_collab, PapyrusCollab.Platform.Google.ServiceAccountTokenProvider,
+  service_account_json: System.get_env("GOOGLE_SERVICE_ACCOUNT_JSON"),
+  service_account_path: System.get_env("GOOGLE_APPLICATION_CREDENTIALS")
 
 config :papyrus_collab, PapyrusCollab.Collaboration.BackupStore.Dets,
   path:

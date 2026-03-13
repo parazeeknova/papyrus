@@ -2,64 +2,8 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function sharedWorkbook(workbookId) {
-      return get(/databases/$(database)/documents/sharedWorkbooks/$(workbookId));
-    }
-
-    function hasSharedReadAccess(userId, workbookId) {
-      let share = sharedWorkbook(workbookId);
-      return isSignedIn()
-        && share.data.ownerId == userId
-        && share.data.sharingEnabled == true;
-    }
-
-    function hasSharedWriteAccess(userId, workbookId) {
-      let share = sharedWorkbook(workbookId);
-      return hasSharedReadAccess(userId, workbookId)
-        && share.data.accessRole == "editor";
-    }
-
-    function isValidSharedAccessRole(accessRole) {
-      return accessRole in ["editor", "viewer"];
-    }
-
-    function isValidSharedWorkbook(data, workbookId) {
-      return data.ownerId == request.auth.uid
-        && data.sharingEnabled is bool
-        && isValidSharedAccessRole(data.accessRole)
-        && data.workbookId == workbookId;
-    }
-
-    match /users/{userId} {
-      allow read, write: if isOwner(userId);
-
-      match /workbooks/{workbookId} {
-        allow read: if isOwner(userId) || hasSharedReadAccess(userId, workbookId);
-        allow write: if isOwner(userId) || hasSharedWriteAccess(userId, workbookId);
-
-        match /chunks/{chunkId} {
-          allow read: if isOwner(userId) || hasSharedReadAccess(userId, workbookId);
-          allow write: if isOwner(userId) || hasSharedWriteAccess(userId, workbookId);
-        }
-      }
-    }
-
-    match /sharedWorkbooks/{workbookId} {
-      allow get: if isSignedIn();
-      allow list: if false;
-      allow create: if isSignedIn() && isValidSharedWorkbook(request.resource.data, workbookId);
-      allow update: if isSignedIn()
-        && resource.data.ownerId == request.auth.uid
-        && isValidSharedWorkbook(request.resource.data, workbookId);
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

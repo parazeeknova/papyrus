@@ -17,17 +17,12 @@ defmodule PapyrusCollab.Collaboration.AccessPolicy.CloudWorkbooksTest do
     assert {:ok, _write_result} =
              CloudWorkbooks.write_workbook(
                owner_identity,
-               "firebase-token",
                workbook_payload(workbook_id, "viewer", false),
                "seed-client"
              )
 
     assert {:ok, %{access_role: "editor", owner_id: "owner-1", workbook: workbook}} =
-             CloudWorkbookAccessPolicy.authorize_workbook(
-               owner_identity,
-               "firebase-token",
-               workbook_id
-             )
+             CloudWorkbookAccessPolicy.authorize_workbook(owner_identity, workbook_id)
 
     assert workbook["meta"]["id"] == workbook_id
   end
@@ -40,17 +35,12 @@ defmodule PapyrusCollab.Collaboration.AccessPolicy.CloudWorkbooksTest do
     assert {:ok, _write_result} =
              CloudWorkbooks.write_workbook(
                owner_identity,
-               "firebase-token",
                workbook_payload(workbook_id, "editor", true),
                "seed-client"
              )
 
     assert {:ok, %{access_role: "editor", owner_id: "owner-2", workbook: workbook}} =
-             CloudWorkbookAccessPolicy.authorize_workbook(
-               shared_identity,
-               "firebase-token",
-               workbook_id
-             )
+             CloudWorkbookAccessPolicy.authorize_workbook(shared_identity, workbook_id)
 
     assert workbook["meta"]["id"] == workbook_id
   end
@@ -63,7 +53,6 @@ defmodule PapyrusCollab.Collaboration.AccessPolicy.CloudWorkbooksTest do
     assert {:ok, _write_result} =
              CloudWorkbooks.write_workbook(
                owner_identity,
-               "firebase-token",
                workbook_payload(workbook_id, "viewer", true),
                "seed-client"
              )
@@ -71,17 +60,12 @@ defmodule PapyrusCollab.Collaboration.AccessPolicy.CloudWorkbooksTest do
     assert {:ok, _write_result} =
              CloudWorkbooks.write_workbook(
                owner_identity,
-               "firebase-token",
                workbook_payload(workbook_id, "viewer", false),
                "seed-client"
              )
 
     assert {:error, :forbidden} =
-             CloudWorkbookAccessPolicy.authorize_workbook(
-               shared_identity,
-               "firebase-token",
-               workbook_id
-             )
+             CloudWorkbookAccessPolicy.authorize_workbook(shared_identity, workbook_id)
   end
 
   defp identity(user_id, device_id, email) do

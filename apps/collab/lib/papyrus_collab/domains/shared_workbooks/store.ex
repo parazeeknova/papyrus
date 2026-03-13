@@ -1,21 +1,19 @@
 defmodule PapyrusCollab.SharedWorkbooks.Store do
   @moduledoc false
 
-  @callback delete_workbook(String.t(), String.t()) :: :ok | {:error, term()}
-  @callback read_workbook(String.t(), String.t()) :: {:ok, map() | nil} | {:error, term()}
+  @callback delete_workbook(String.t()) :: :ok | {:error, term()}
+  @callback read_workbook(String.t()) :: {:ok, map() | nil} | {:error, term()}
   @callback reset() :: :ok
-  @callback sync_workbook(String.t(), String.t(), map()) :: :ok | {:error, term()}
+  @callback sync_workbook(String.t(), map()) :: :ok | {:error, term()}
 
-  @spec delete_workbook(String.t(), String.t()) :: :ok | {:error, term()}
-  def delete_workbook(token, workbook_id)
-      when is_binary(token) and is_binary(workbook_id) do
-    adapter().delete_workbook(token, workbook_id)
+  @spec delete_workbook(String.t()) :: :ok | {:error, term()}
+  def delete_workbook(workbook_id) when is_binary(workbook_id) do
+    adapter().delete_workbook(workbook_id)
   end
 
-  @spec read_workbook(String.t(), String.t()) :: {:ok, map() | nil} | {:error, term()}
-  def read_workbook(token, workbook_id)
-      when is_binary(token) and is_binary(workbook_id) do
-    adapter().read_workbook(token, workbook_id)
+  @spec read_workbook(String.t()) :: {:ok, map() | nil} | {:error, term()}
+  def read_workbook(workbook_id) when is_binary(workbook_id) do
+    adapter().read_workbook(workbook_id)
   end
 
   @spec reset() :: :ok
@@ -29,10 +27,10 @@ defmodule PapyrusCollab.SharedWorkbooks.Store do
     end
   end
 
-  @spec sync_workbook(String.t(), String.t(), map()) :: :ok | {:error, term()}
-  def sync_workbook(owner_id, token, workbook)
-      when is_binary(owner_id) and is_binary(token) and is_map(workbook) do
-    adapter().sync_workbook(owner_id, token, workbook)
+  @spec sync_workbook(String.t(), map()) :: :ok | {:error, term()}
+  def sync_workbook(owner_id, workbook)
+      when is_binary(owner_id) and is_map(workbook) do
+    adapter().sync_workbook(owner_id, workbook)
   end
 
   @spec adapter() :: module()

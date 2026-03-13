@@ -7,15 +7,14 @@ defmodule PapyrusCollab.Collaboration.AccessPolicy.CloudWorkbooks do
   alias PapyrusCollab.{CloudWorkbooks, SharedWorkbooks}
 
   @impl true
-  @spec authorize_workbook(Identity.t(), String.t(), String.t()) ::
+  @spec authorize_workbook(Identity.t(), String.t()) ::
           {:ok, %{access_role: String.t(), owner_id: String.t(), workbook: map()}}
           | {:error, :forbidden | term()}
-  def authorize_workbook(%Identity{} = identity, token, workbook_id)
-      when is_binary(token) and byte_size(token) > 0 and is_binary(workbook_id) and
-             byte_size(workbook_id) > 0 do
-    case CloudWorkbooks.read_workbook(identity, token, workbook_id) do
+  def authorize_workbook(%Identity{} = identity, workbook_id)
+      when is_binary(workbook_id) and byte_size(workbook_id) > 0 do
+    case CloudWorkbooks.read_workbook(identity, workbook_id) do
       {:ok, nil} ->
-        authorize_shared_workbook(identity, token, workbook_id)
+        authorize_shared_workbook(identity, workbook_id)
 
       {:ok, workbook} ->
         {:ok, %{access_role: "editor", owner_id: identity.user_id, workbook: workbook}}
@@ -25,12 +24,12 @@ defmodule PapyrusCollab.Collaboration.AccessPolicy.CloudWorkbooks do
     end
   end
 
-  defp authorize_shared_workbook(%Identity{} = identity, token, workbook_id) do
+  defp authorize_shared_workbook(%Identity{} = identity, workbook_id) do
     with {:ok, %{ownerId: owner_id, accessRole: access_role, sharingEnabled: true}} <-
-           SharedWorkbooks.read_workbook(token, workbook_id),
+           SharedWorkbooks.read_workbook(workbook_id),
          false <- owner_id == identity.user_id,
          {:ok, %{} = workbook} <-
-           CloudWorkbooks.read_workbook_as_owner(owner_id, token, workbook_id) do
+           CloudWorkbooks.read_workbook_as_owner(owner_id, workbook_id) do
       {:ok, %{access_role: access_role, owner_id: owner_id, workbook: workbook}}
     else
       {:ok, nil} -> {:error, :forbidden}

@@ -19,15 +19,15 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.InMemory do
   end
 
   @impl true
-  @spec delete_workbook(String.t(), String.t(), String.t()) :: :ok
-  def delete_workbook(user_id, _token, workbook_id)
+  @spec delete_workbook(String.t(), String.t()) :: :ok
+  def delete_workbook(user_id, workbook_id)
       when is_binary(user_id) and is_binary(workbook_id) do
     Agent.update(__MODULE__, &Map.delete(&1, {user_id, workbook_id}))
   end
 
   @impl true
-  @spec list_workbooks(String.t(), String.t()) :: {:ok, [map()]}
-  def list_workbooks(user_id, _token) when is_binary(user_id) do
+  @spec list_workbooks(String.t()) :: {:ok, [map()]}
+  def list_workbooks(user_id) when is_binary(user_id) do
     workbooks =
       __MODULE__
       |> Agent.get(fn records ->
@@ -42,8 +42,8 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.InMemory do
   end
 
   @impl true
-  @spec read_workbook(String.t(), String.t(), String.t()) :: {:ok, map() | nil}
-  def read_workbook(user_id, _token, workbook_id)
+  @spec read_workbook(String.t(), String.t()) :: {:ok, map() | nil}
+  def read_workbook(user_id, workbook_id)
       when is_binary(user_id) and is_binary(workbook_id) do
     {:ok, Agent.get(__MODULE__, &Map.get(&1, {user_id, workbook_id}))}
   end
@@ -54,9 +54,9 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.InMemory do
   end
 
   @impl true
-  @spec write_workbook(String.t(), String.t(), map(), String.t()) ::
+  @spec write_workbook(String.t(), map(), String.t()) ::
           {:ok, map()} | {:error, term()}
-  def write_workbook(user_id, _token, workbook, _client_id)
+  def write_workbook(user_id, workbook, _client_id)
       when is_binary(user_id) and is_map(workbook) do
     with {:ok, normalized_workbook} <- normalize_workbook_payload(workbook) do
       now = DateTime.utc_now() |> DateTime.to_iso8601()
