@@ -44,12 +44,10 @@ function WorkbookPageContent({
   const router = useRouter();
   const searchParams = useSearchParams();
   const syncServerUrl = getCollabWebSocketUrl();
-  const routeAccess = useMemo(() => {
-    return parseWorkbookRouteAccess({
-      access: searchParams.get("access") ?? undefined,
-      shared: searchParams.get("shared") ?? undefined,
-    });
-  }, [searchParams]);
+  const routeAccess = parseWorkbookRouteAccess({
+    access: searchParams.get("access") ?? undefined,
+    shared: searchParams.get("shared") ?? undefined,
+  });
   const effectiveIsSharedSession = routeAccess.isSharedSession;
   const effectiveRequestedAccessRole =
     routeAccess.requestedAccessRole ?? requestedAccessRole;
@@ -735,7 +733,19 @@ function WorkbookPageContent({
 export function WorkbookPageClient(props: WorkbookPageClientProps) {
   return (
     <Suspense fallback={null}>
-      <WorkbookPageContent {...props} />
+      <WorkbookPageContentWithRouteKey {...props} />
     </Suspense>
+  );
+}
+
+function WorkbookPageContentWithRouteKey(props: WorkbookPageClientProps) {
+  const searchParams = useSearchParams();
+  const routeQueryKey = searchParams.toString();
+
+  return (
+    <WorkbookPageContent
+      key={`${props.workbookId}:${routeQueryKey}`}
+      {...props}
+    />
   );
 }
