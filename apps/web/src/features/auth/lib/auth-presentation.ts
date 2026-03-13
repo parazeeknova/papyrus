@@ -1,17 +1,17 @@
 import { FirebaseError } from "firebase/app";
-import type { User } from "firebase/auth";
+import type { AuthenticatedUser } from "@/web/platform/auth/auth-client";
 
 const WHITESPACE_PATTERN = /\s+/;
 
-export function getAccountName(user: User | null): string {
+export function getAccountName(user: AuthenticatedUser | null): string {
   return user?.displayName ?? user?.email ?? "Google account";
 }
 
-export function getAccountEmail(user: User | null): string {
+export function getAccountEmail(user: AuthenticatedUser | null): string {
   return user?.email ?? "Email unavailable";
 }
 
-export function getAccountInitials(user: User | null): string {
+export function getAccountInitials(user: AuthenticatedUser | null): string {
   const source = getAccountName(user).trim();
   const [first = "G", second = ""] = source.split(WHITESPACE_PATTERN);
 

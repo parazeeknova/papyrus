@@ -1,4 +1,4 @@
-import type { User } from "firebase/auth";
+import type { AuthenticatedUser } from "@/web/platform/auth/auth-client";
 import { env } from "@/web/platform/env/client-env";
 
 export interface PostHogAuthClient {
@@ -23,12 +23,14 @@ export function getPostHogBrowserConfig(): PostHogBrowserConfig | null {
   };
 }
 
-export function getPostHogDistinctId(user: Pick<User, "uid">): string {
+export function getPostHogDistinctId(
+  user: Pick<AuthenticatedUser, "uid">
+): string {
   return `firebase:${user.uid}`;
 }
 
 export function getPostHogPersonProperties(
-  user: Pick<User, "displayName" | "email" | "uid">
+  user: Pick<AuthenticatedUser, "displayName" | "email" | "uid">
 ): Record<string, unknown> {
   return {
     authProvider: "firebase-google",
@@ -40,7 +42,7 @@ export function getPostHogPersonProperties(
 
 export function syncPostHogAuthState(
   client: PostHogAuthClient,
-  nextUser: Pick<User, "displayName" | "email" | "uid"> | null,
+  nextUser: Pick<AuthenticatedUser, "displayName" | "email" | "uid"> | null,
   previousDistinctId: string | null
 ): string | null {
   if (!nextUser) {

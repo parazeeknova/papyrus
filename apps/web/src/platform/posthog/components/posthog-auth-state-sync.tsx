@@ -2,9 +2,8 @@
 
 import { registerLogSink } from "@papyrus/logs";
 import { usePostHog } from "@posthog/react";
-import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useRef } from "react";
-import { firebaseAuth } from "@/web/platform/firebase/client";
+import { onAuthStateChange } from "@/web/platform/auth/auth-client";
 import {
   type PostHogAuthClient,
   syncPostHogAuthState,
@@ -46,7 +45,7 @@ export function PostHogAuthStateSync() {
       forwardLogRecordToPostHog(logClient, record);
     });
 
-    const unsubscribeAuth = onAuthStateChanged(firebaseAuth, (nextUser) => {
+    const unsubscribeAuth = onAuthStateChange((nextUser) => {
       previousDistinctIdRef.current = syncPostHogAuthState(
         client,
         nextUser,

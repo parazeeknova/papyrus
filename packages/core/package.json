@@ -1,10 +1,11 @@
 {
   "name": "@papyrus/core",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "type": "module",
   "scripts": {
-    "check-types": "tsc --noEmit --pretty"
+    "check-types": "tsc --noEmit --pretty",
+    "test": "bun test ./src"
   },
   "dependencies": {
     "y-indexeddb": "^9.0.12",

@@ -9,12 +9,6 @@ import {
   WarningCircleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-  type User,
-} from "firebase/auth";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
@@ -24,9 +18,11 @@ import {
   getAuthErrorMessage,
 } from "@/web/features/auth/lib/auth-presentation";
 import {
-  firebaseAuth,
-  googleAuthProvider,
-} from "@/web/platform/firebase/client";
+  type AuthenticatedUser,
+  onAuthStateChange,
+  signInWithGoogle,
+  signOutUser,
+} from "@/web/platform/auth/auth-client";
 import { cn } from "@/web/shared/lib/utils";
 import { Badge } from "@/web/shared/ui/badge";
 import { Button } from "@/web/shared/ui/button";
@@ -40,7 +36,7 @@ type PendingAction = "idle" | "signing-in" | "signing-out";
 
 interface AvatarProps {
   className?: string;
-  user: User | null;
+  user: AuthenticatedUser | null;
   variant: "dialog" | "trigger";
 }
 
@@ -91,13 +87,15 @@ function AccountAvatar({ className, user, variant }: AvatarProps) {
 
 export function GoogleAuthDialog() {
   const [open, setOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(
+    null
+  );
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
+    const unsubscribe = onAuthStateChange((nextUser) => {
       setCurrentUser(nextUser);
       setIsAuthReady(true);
     });
@@ -110,7 +108,7 @@ export function GoogleAuthDialog() {
     setErrorMessage(null);
 
     try {
-      await signInWithPopup(firebaseAuth, googleAuthProvider);
+      await signInWithGoogle();
     } catch (error) {
       setErrorMessage(getAuthErrorMessage(error));
     } finally {
@@ -123,7 +121,7 @@ export function GoogleAuthDialog() {
     setErrorMessage(null);
 
     try {
-      await signOut(firebaseAuth);
+      await signOutUser();
     } catch {
       setErrorMessage("Sign-out failed. Please try again.");
     } finally {

@@ -21,7 +21,6 @@ import {
   UserCircleIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
-import { onAuthStateChanged, type User } from "firebase/auth";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -29,7 +28,10 @@ import { startTransition, useEffect, useState } from "react";
 import { Doc } from "yjs";
 import { cloudWorkbookStore } from "@/web/features/workbook/cloud-sync/lib/cloud-workbook-store";
 import { useWorkbookStore } from "@/web/features/workbook/store/workbook-store";
-import { firebaseAuth } from "@/web/platform/firebase/client";
+import {
+  type AuthenticatedUser,
+  onAuthStateChange,
+} from "@/web/platform/auth/auth-client";
 import { cn } from "@/web/shared/lib/utils";
 import { Badge } from "@/web/shared/ui/badge";
 import { Button } from "@/web/shared/ui/button";
@@ -187,15 +189,15 @@ function mergeDocuments(
   });
 }
 
-function getAccountName(user: User | null): string {
+function getAccountName(user: AuthenticatedUser | null): string {
   return user?.displayName ?? user?.email ?? "Guest session";
 }
 
-function getAccountEmail(user: User | null): string {
+function getAccountEmail(user: AuthenticatedUser | null): string {
   return user?.email ?? "No Google account connected";
 }
 
-function getAccountInitials(user: User | null): string {
+function getAccountInitials(user: AuthenticatedUser | null): string {
   const [first = "G", second = ""] = getAccountName(user)
     .trim()
     .split(WHITESPACE_PATTERN);
@@ -203,7 +205,7 @@ function getAccountInitials(user: User | null): string {
   return `${first[0] ?? "G"}${second[0] ?? ""}`.toUpperCase();
 }
 
-function AccountAvatar({ user }: { user: User | null }) {
+function AccountAvatar({ user }: { user: AuthenticatedUser | null }) {
   if (user?.photoURL) {
     return (
       <Image
@@ -230,7 +232,9 @@ function AccountAvatar({ user }: { user: User | null }) {
 export function HomeDashboard() {
   const router = useRouter();
   const openWorkbook = useWorkbookStore((state) => state.openWorkbook);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(
+    null
+  );
   const [localDocuments, setLocalDocuments] = useState<WorkbookMeta[]>([]);
   const [remoteDocuments, setRemoteDocuments] = useState<WorkbookMeta[]>([]);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -302,7 +306,7 @@ export function HomeDashboard() {
     let latestRequestId = 0;
 
     const loadRemoteDocuments = async (
-      user: User | null,
+      user: AuthenticatedUser | null,
       requestId: number
     ): Promise<void> => {
       if (!user) {
@@ -339,7 +343,7 @@ export function HomeDashboard() {
       }
     };
 
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
+    const unsubscribe = onAuthStateChange((nextUser) => {
       if (isCancelled) {
         return;
       }

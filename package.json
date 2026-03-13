@@ -8,10 +8,11 @@
     "dev": "turbo run dev",
     "format": "turbo run format",
     "test": "bun test ./scripts/autobump-workspaces.test.ts && turbo run test",
+    "test:e2e": "cd apps/web && bun run test:e2e",
     "check-types": "turbo run check-types",
     "autobump:staged": "bun run ./scripts/autobump-workspaces.ts",
     "check": "ultracite fix",
-    "verify:pr": "bun x ultracite check && turbo run check && turbo run check-types && bun test ./scripts/autobump-workspaces.test.ts && turbo run test",
+    "verify:pr": "bun x ultracite check && turbo run check && turbo run check-types && bun test ./scripts/autobump-workspaces.test.ts && turbo run test && bun run test:e2e",
     "prepare": "lefthook install"
   },
   "devDependencies": {

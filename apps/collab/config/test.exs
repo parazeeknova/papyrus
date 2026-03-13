@@ -3,6 +3,7 @@ import Config
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :papyrus_collab, PapyrusCollabWeb.Endpoint,
+  check_origin: ["http://127.0.0.1:3000", "http://localhost:3000"],
   http: [ip: {127, 0, 0, 1}, port: 4002],
   secret_key_base: "0k11Vxx557zAO3uicW6ixKNPWNaDDkz5QHt/xfB063GG8gyJ4HlMVFP8N88vGwLd",
   server: false

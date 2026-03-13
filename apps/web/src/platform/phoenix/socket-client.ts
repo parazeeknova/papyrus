@@ -1,10 +1,12 @@
 "use client";
 
 import { createLogger } from "@papyrus/logs";
-import { onAuthStateChanged } from "firebase/auth";
 import { Socket } from "phoenix";
+import {
+  getCurrentAuthUser,
+  onAuthStateChange,
+} from "@/web/platform/auth/auth-client";
 import { env } from "@/web/platform/env/client-env";
-import { firebaseAuth } from "@/web/platform/firebase/client";
 
 const DEFAULT_COLLAB_PORT = 4000;
 const DEVICE_ID_STORAGE_KEY = "papyrus-collab-device-id";
@@ -23,7 +25,7 @@ let authListenerRegistered = false;
 let fallbackDeviceId: string | null = null;
 
 function assertSignedInUser(uid: string) {
-  const currentUser = firebaseAuth.currentUser;
+  const currentUser = getCurrentAuthUser();
   if (!currentUser) {
     throw new Error("Google sign-in is required for cloud sync.");
   }
@@ -41,7 +43,7 @@ function registerAuthListener(): void {
   }
 
   authListenerRegistered = true;
-  onAuthStateChanged(firebaseAuth, (nextUser) => {
+  onAuthStateChange((nextUser) => {
     if (nextUser) {
       return;
     }
