@@ -75,8 +75,15 @@ defmodule PapyrusCollab.Collaboration.BackupStore.DetsTest do
 
   defp stop_adapter do
     case Process.whereis(@test_server) do
-      nil -> :ok
-      pid -> GenServer.stop(pid, :normal)
+      nil ->
+        :ok
+
+      pid ->
+        try do
+          GenServer.stop(pid, :normal)
+        catch
+          :exit, _reason -> :ok
+        end
     end
   end
 
