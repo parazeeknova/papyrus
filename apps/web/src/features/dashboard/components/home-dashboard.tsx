@@ -7,6 +7,7 @@ import {
   listWorkbookRegistryEntries,
 } from "@papyrus/core/workbook-registry";
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
+import { createLogger } from "@papyrus/logs";
 import {
   BookOpenIcon,
   ClockClockwiseIcon,
@@ -26,6 +27,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useState } from "react";
 import { Doc } from "yjs";
+import { buildCloudSyncRefreshFallbackMessage } from "@/web/features/workbook/cloud-sync/lib/cloud-workbook-errors";
 import { cloudWorkbookStore } from "@/web/features/workbook/cloud-sync/lib/cloud-workbook-store";
 import { useWorkbookStore } from "@/web/features/workbook/store/workbook-store";
 import {
@@ -69,6 +71,7 @@ const RELATIVE_DATE_FORMATTER = new Intl.RelativeTimeFormat(undefined, {
 
 const LOADING_PLACEHOLDER_IDS = ["first", "second", "third"] as const;
 const WHITESPACE_PATTERN = /\s+/;
+const dashboardLogger = createLogger({ scope: "dashboard" });
 
 function getTimestamp(value: string): number {
   const timestamp = new Date(value).getTime();
@@ -329,15 +332,17 @@ export function HomeDashboard() {
           setRemoteDocuments(nextRemoteDocuments);
           setRemoteLoadErrorMessage(null);
         });
-      } catch {
+      } catch (error) {
         if (isCancelled || requestId !== latestRequestId) {
           return;
         }
 
+        dashboardLogger.error("Failed to refresh synced documents.", error);
+
         startTransition(() => {
           setRemoteDocuments([]);
           setRemoteLoadErrorMessage(
-            "Couldn't refresh synced documents. Showing local data instead."
+            buildCloudSyncRefreshFallbackMessage(error)
           );
         });
       }
@@ -352,15 +357,17 @@ export function HomeDashboard() {
       setIsAuthReady(true);
       latestRequestId += 1;
 
-      loadRemoteDocuments(nextUser, latestRequestId).catch(() => {
+      loadRemoteDocuments(nextUser, latestRequestId).catch((error) => {
         if (isCancelled) {
           return;
         }
 
+        dashboardLogger.error("Failed to refresh synced documents.", error);
+
         startTransition(() => {
           setRemoteDocuments([]);
           setRemoteLoadErrorMessage(
-            "Couldn't refresh synced documents. Showing local data instead."
+            buildCloudSyncRefreshFallbackMessage(error)
           );
         });
       });

@@ -4,6 +4,7 @@ import type { CollaborationAccessRole } from "@papyrus/core/collaboration-types"
 import type { WorkbookMeta } from "@papyrus/core/workbook-types";
 import { createLogger } from "@papyrus/logs";
 import type { Channel } from "phoenix";
+import { buildCloudSyncEventErrorMessage } from "@/web/features/workbook/cloud-sync/lib/cloud-workbook-errors";
 import { ensurePhoenixSocketConnection } from "@/web/platform/phoenix/socket-client";
 import {
   decodeBase64ToBinary,
@@ -56,7 +57,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function normalizeChannelError(eventName: string, response: unknown): Error {
   if (isRecord(response) && typeof response.reason === "string") {
     return new Error(
-      `Cloud sync request "${eventName}" failed: ${response.reason}.`
+      buildCloudSyncEventErrorMessage(eventName, response.reason)
     );
   }
 

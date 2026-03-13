@@ -12,13 +12,14 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannelTest do
     def delete_workbook(_user_id, _workbook_id), do: {:error, {:firestore_http, 503, %{}}}
 
     @impl true
-    def list_workbooks(_user_id), do: {:error, {:firestore_http, 503, %{}}}
+    def list_workbooks(_user_id), do: {:error, :enoent}
 
     @impl true
     def read_workbook(_user_id, _workbook_id), do: {:error, "remote_down"}
 
     @impl true
-    def write_workbook(_user_id, _workbook, _client_id), do: {:error, %{status: "down"}}
+    def write_workbook(_user_id, _workbook, _client_id),
+      do: {:error, {:missing_service_account_field, "private_key"}}
   end
 
   test "list, read, write, and delete stay scoped to the authenticated user" do
@@ -164,13 +165,13 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannelTest do
     assert {:reply, {:error, %{reason: "invalid_workbook_id"}}, ^socket} =
              CloudWorkbookChannel.handle_in("delete", %{"workbookId" => ""}, socket)
 
-    assert {:reply, {:error, %{reason: "firestore_http_503"}}, ^socket} =
+    assert {:reply, {:error, %{reason: "enoent"}}, ^socket} =
              CloudWorkbookChannel.handle_in("list", %{}, socket)
 
     assert {:reply, {:error, %{reason: "remote_down"}}, ^socket} =
              CloudWorkbookChannel.handle_in("read", %{"workbookId" => "workbook-unit"}, socket)
 
-    assert {:reply, {:error, %{reason: "cloud_workbooks_unavailable"}}, ^socket} =
+    assert {:reply, {:error, %{reason: "missing_service_account_field_private_key"}}, ^socket} =
              CloudWorkbookChannel.handle_in(
                "write",
                %{"clientId" => "client-unit", "workbook" => workbook_payload("workbook-unit")},

@@ -3,6 +3,8 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
 
   use PapyrusCollabWeb, :channel
 
+  require Logger
+
   alias PapyrusCollab.CloudWorkbooks
 
   @impl true
@@ -17,7 +19,7 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
         {:reply, {:ok, %{hasLease: has_lease}}, socket}
 
       {:error, reason} ->
-        {:reply, {:error, %{reason: reason_to_string(reason)}}, socket}
+        reply_error("acquire_lease", reason, socket)
     end
   end
 
@@ -27,7 +29,7 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
         {:reply, {:ok, %{deleted: true}}, socket}
 
       {:error, reason} ->
-        {:reply, {:error, %{reason: reason_to_string(reason)}}, socket}
+        reply_error("delete", reason, socket)
     end
   end
 
@@ -37,7 +39,7 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
         {:reply, {:ok, %{workbooks: workbooks}}, socket}
 
       {:error, reason} ->
-        {:reply, {:error, %{reason: reason_to_string(reason)}}, socket}
+        reply_error("list", reason, socket)
     end
   end
 
@@ -47,7 +49,7 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
         {:reply, {:ok, %{workbook: workbook}}, socket}
 
       {:error, reason} ->
-        {:reply, {:error, %{reason: reason_to_string(reason)}}, socket}
+        reply_error("read", reason, socket)
     end
   end
 
@@ -57,7 +59,7 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
         {:reply, {:ok, result}, socket}
 
       {:error, reason} ->
-        {:reply, {:error, %{reason: reason_to_string(reason)}}, socket}
+        reply_error("write", reason, socket)
     end
   end
 
@@ -65,7 +67,25 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannel do
     {:reply, {:error, %{reason: "unsupported_event"}}, socket}
   end
 
+  defp reply_error(event_name, reason, socket) do
+    user_id = socket.assigns.identity.user_id
+    reason_code = reason_to_string(reason)
+
+    Logger.error(
+      "Cloud workbook request #{event_name} failed for #{user_id}: #{inspect(reason)} (code=#{reason_code})"
+    )
+
+    {:reply, {:error, %{reason: reason_code}}, socket}
+  end
+
   defp reason_to_string({:firestore_http, status, _body}), do: "firestore_http_#{status}"
+
+  defp reason_to_string({:missing_service_account_field, field}),
+    do: "missing_service_account_field_#{field}"
+
+  defp reason_to_string({:token_exchange_http, status, _body}),
+    do: "token_exchange_http_#{status}"
+
   defp reason_to_string(reason) when is_atom(reason), do: Atom.to_string(reason)
   defp reason_to_string(reason) when is_binary(reason), do: reason
   defp reason_to_string(_reason), do: "cloud_workbooks_unavailable"
