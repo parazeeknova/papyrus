@@ -1,11 +1,11 @@
 {
   "name": "@papyrus/web",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "scripts": {
-    "dev": "bun run --bun next dev -p 3000",
-    "build": "bun run --bun next build",
-    "start": "bun run --bun next start -p 3000",
+    "dev": "bun --bun next dev -p 3000",
+    "build": "bun --bun next build",
+    "start": "bun --bun next start -p 3000",
     "check-types": "tsc --noEmit --pretty",
     "test": "bun test ./src",
     "test:e2e": "playwright test",
