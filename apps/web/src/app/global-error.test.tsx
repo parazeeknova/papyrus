@@ -9,13 +9,13 @@ mock.module("posthog-js", () => ({
   },
 }));
 
-const { default: GlobalError } = await import("./global-error");
+const { GlobalErrorSurface } = await import("./global-error");
 
 test("captures the error and lets the user retry", () => {
   const reset = mock(() => undefined);
   const error = Object.assign(new Error("boom"), { digest: "digest-1" });
 
-  const view = render(<GlobalError error={error} reset={reset} />);
+  const view = render(<GlobalErrorSurface error={error} reset={reset} />);
 
   expect(captureException).toHaveBeenCalledWith(error, {
     digest: "digest-1",
