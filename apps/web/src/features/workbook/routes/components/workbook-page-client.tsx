@@ -82,6 +82,7 @@ function WorkbookPageContent({
     importFileName,
     importPhase,
     importWorkbookFromExcel,
+    isAuthenticated,
     insertColumnLeft,
     insertColumnRight,
     insertRowAbove,
@@ -337,8 +338,10 @@ function WorkbookPageContent({
         collaborationErrorMessage={collaborationErrorMessage}
         collaborationPeers={collaborationPeers}
         collaborationStatus={collaborationStatus}
+        isAuthenticated={isAuthenticated}
         isFavorite={activeWorkbook?.isFavorite ?? false}
         isGalleryOpen={isGalleryOpen}
+        isSharedSession={isSharedSession}
         italicActive={activeSelectionFormat?.italic ?? false}
         lastSyncErrorMessage={lastSyncErrorMessage}
         lastSyncedLabel={lastSyncedLabel}

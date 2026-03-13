@@ -664,10 +664,8 @@ export function useWorkbookEditor({
 
   useEffect(() => {
     if (workbookId) {
-      if (activeWorkbook?.id === workbookId) {
-        return;
-      }
-
+      // Route-only changes such as `?shared=1&access=viewer` must still
+      // re-activate the session for the same workbook id.
       openWorkbook(
         workbookId,
         undefined,
@@ -679,7 +677,6 @@ export function useWorkbookEditor({
 
     hydrateWorkbookList().catch(() => undefined);
   }, [
-    activeWorkbook?.id,
     hydrateWorkbookList,
     isSharedSession,
     openWorkbook,
@@ -1936,6 +1933,7 @@ export function useWorkbookEditor({
     collaborationErrorMessage,
     collaborationPeers,
     collaborationStatus,
+    isAuthenticated: currentUser !== null,
     canRedo,
     canUndo,
     canEdit,

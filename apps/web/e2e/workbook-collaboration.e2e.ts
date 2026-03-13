@@ -15,6 +15,11 @@ import {
 
 const ENABLE_SHARING_BUTTON_PATTERN = /enable sharing/i;
 const CLOSE_BUTTON_PATTERN = /^close$/i;
+const OWNER_MANAGED_SHARING_TEXT =
+  "You joined through a shared link. Only the owner can change its settings.";
+const OWNER_SHARED_TOGGLE_PATTERN = /sharing on/i;
+const SIGN_IN_SHARING_TEXT =
+  "Sign in with Google to unlock cloud sync and sharing.";
 const VIEWER_ROLE_BUTTON_PATTERN = /^viewer$/i;
 const VIEWER_SHARE_LINK_PATTERN = /access=viewer/;
 const SHARED_WORKBOOK_QUERY_PATTERN = /shared=1/;
@@ -77,9 +82,37 @@ test("viewer share links open in read-only mode for another signed-in user", asy
   await expectCellValue(viewerPage, "viewer locked");
   await openShareDialog(viewerPage);
   await expect(viewerPage.getByText("Viewer access")).toBeVisible();
+  await expect(viewerPage.getByText(OWNER_MANAGED_SHARING_TEXT)).toBeVisible();
+  await expect(viewerPage.getByText(SIGN_IN_SHARING_TEXT)).toHaveCount(0);
 
   await viewerContext.close();
   await page.goto(workbookUrl);
+});
+
+test("opening a shared link for the active workbook reactivates shared mode", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await seedStubSession(page, OWNER_PROFILE);
+
+  await createDocument(page);
+  await openShareDialog(page);
+  await page
+    .getByRole("button", { name: ENABLE_SHARING_BUTTON_PATTERN })
+    .click();
+  await page.getByRole("button", { name: VIEWER_ROLE_BUTTON_PATTERN }).click();
+
+  const shareLink = await readShareLink(page);
+
+  await page.goto(shareLink);
+  await expect(page).toHaveURL(SHARED_WORKBOOK_QUERY_PATTERN);
+
+  await openShareDialog(page);
+  await expect(page.getByText(OWNER_MANAGED_SHARING_TEXT)).toBeVisible();
+  await expect(page.getByText(SIGN_IN_SHARING_TEXT)).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: OWNER_SHARED_TOGGLE_PATTERN })
+  ).toBeDisabled();
 });
 
 test("signed-in sessions reconnect and receive live workbook updates", async ({

@@ -75,8 +75,10 @@ interface SpreadsheetMenuBarProps {
   collaborationErrorMessage: string | null;
   collaborationPeers: CollaboratorPresence[];
   collaborationStatus: "connected" | "connecting" | "disconnected";
+  isAuthenticated: boolean;
   isFavorite: boolean;
   isGalleryOpen: boolean;
+  isSharedSession: boolean;
   italicActive: boolean;
   lastSyncErrorMessage: string | null;
   lastSyncedLabel: string | null;
@@ -440,6 +442,8 @@ export function SpreadsheetMenuBar({
   activeTextColor,
   boldActive,
   canEdit,
+  isAuthenticated,
+  isSharedSession,
   canManualSync,
   canManageSharing,
   canRedo,
@@ -652,6 +656,8 @@ export function SpreadsheetMenuBar({
               canEdit={canEdit}
               canManageSharing={canManageSharing}
               collaborators={collaborationPeers}
+              isAuthenticated={isAuthenticated}
+              isSharedSession={isSharedSession}
               onUpdateSharingAccessRole={onUpdateSharingAccessRole}
               onUpdateSharingEnabled={onUpdateSharingEnabled}
               realtimeErrorMessage={collaborationErrorMessage}
@@ -1002,6 +1008,8 @@ export function SpreadsheetMenuBar({
               canEdit={canEdit}
               canManageSharing={canManageSharing}
               collaborators={collaborationPeers}
+              isAuthenticated={isAuthenticated}
+              isSharedSession={isSharedSession}
               onUpdateSharingAccessRole={onUpdateSharingAccessRole}
               onUpdateSharingEnabled={onUpdateSharingEnabled}
               realtimeErrorMessage={collaborationErrorMessage}

@@ -31,6 +31,8 @@ interface ShareDialogProps {
   canEdit: boolean;
   canManageSharing: boolean;
   collaborators: CollaboratorPresence[];
+  isAuthenticated: boolean;
+  isSharedSession: boolean;
   onUpdateSharingAccessRole: (accessRole: CollaborationAccessRole) => void;
   onUpdateSharingEnabled: (sharingEnabled: boolean) => void;
   realtimeErrorMessage: string | null;
@@ -54,6 +56,8 @@ export function ShareDialog({
   accessRole,
   canManageSharing,
   canEdit,
+  isAuthenticated,
+  isSharedSession,
   collaborators,
   onUpdateSharingAccessRole,
   onUpdateSharingEnabled,
@@ -76,6 +80,33 @@ export function ShareDialog({
   const isRealtimeBackendReady =
     syncServerUrl !== null && SHARING_BACKEND_READY;
   const canConfigureSharing = canManageSharing && isRealtimeBackendReady;
+  const collaborationStatusMessage = realtimeErrorMessage
+    ? realtimeErrorMessage
+    : isAuthenticated
+      ? isRealtimeBackendReady
+        ? realtimeStatus === "connected"
+          ? "Connected to the Phoenix collaboration server."
+          : realtimeStatus === "connecting"
+            ? "Connecting to the Phoenix collaboration server."
+            : "The Phoenix collaboration server is unreachable right now."
+        : "Configure the collaboration websocket URL to unlock sharing."
+      : "Sign in with Google to unlock cloud sync and sharing.";
+  const shareAccessHint = isAuthenticated
+    ? canManageSharing
+      ? isRealtimeBackendReady
+        ? "Turn sharing on before sending a link."
+        : "Sharing controls stay off until the collaboration URL is configured."
+      : isSharedSession
+        ? "You joined through a shared link. Only the owner can change its settings."
+        : "Only the owner can change sharing settings for this workbook."
+    : "Sign in with Google to unlock sharing controls.";
+  const shareLinkPlaceholder = isAuthenticated
+    ? canConfigureSharing
+      ? "Enable sharing to generate a link"
+      : canManageSharing
+        ? "Share links stay disabled until the collaboration URL is ready"
+        : "Only the owner can change or regenerate this link"
+    : "Sign in with Google to unlock sharing";
   const shareLink = useMemo(() => {
     if (!(workbookId && typeof window !== "undefined")) {
       return "";
@@ -138,17 +169,7 @@ export function ShareDialog({
             <div>
               <p className="font-medium text-xs">Cloud collaboration</p>
               <p className="text-muted-foreground text-xs">
-                {realtimeErrorMessage
-                  ? realtimeErrorMessage
-                  : canManageSharing
-                    ? isRealtimeBackendReady
-                      ? realtimeStatus === "connected"
-                        ? "Connected to the Phoenix collaboration server."
-                        : realtimeStatus === "connecting"
-                          ? "Connecting to the Phoenix collaboration server."
-                          : "The Phoenix collaboration server is unreachable right now."
-                      : "Configure the collaboration websocket URL to unlock sharing."
-                    : "Sign in with Google to unlock cloud sync and sharing."}
+                {collaborationStatusMessage}
               </p>
             </div>
             <Badge
@@ -163,11 +184,7 @@ export function ShareDialog({
               <div>
                 <p className="font-medium text-xs">Share access</p>
                 <p className="text-muted-foreground text-xs">
-                  {canManageSharing
-                    ? isRealtimeBackendReady
-                      ? "Turn sharing on before sending a link."
-                      : "Sharing controls stay off until the collaboration URL is configured."
-                    : "Sign in with Google to unlock sharing controls."}
+                  {shareAccessHint}
                 </p>
               </div>
               <Button
@@ -219,13 +236,7 @@ export function ShareDialog({
             <div className="flex gap-2">
               <Input
                 data-testid="share-link-input"
-                placeholder={
-                  canConfigureSharing
-                    ? "Enable sharing to generate a link"
-                    : canManageSharing
-                      ? "Share links stay disabled until the collaboration URL is ready"
-                      : "Sign in with Google to unlock sharing"
-                }
+                placeholder={shareLinkPlaceholder}
                 readOnly
                 value={sharingEnabled ? shareLink : ""}
               />
