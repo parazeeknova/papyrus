@@ -21,6 +21,7 @@ const webTestEnvironment = {
 
 export default defineConfig({
   testDir: "./e2e",
+  testMatch: /.*\.e2e\.ts/,
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   timeout: 90_000,

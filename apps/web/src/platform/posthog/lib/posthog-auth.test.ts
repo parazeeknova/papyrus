@@ -85,6 +85,8 @@ describe("posthog auth helpers", () => {
   });
 
   test("returns null when PostHog browser env vars are not configured", () => {
-    expect(getPostHogBrowserConfig()).toBeNull();
+    expect(
+      getPostHogBrowserConfig({ apiHost: undefined, apiKey: undefined })
+    ).toBeNull();
   });
 });

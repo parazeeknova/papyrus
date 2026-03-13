@@ -12,14 +12,24 @@ export interface PostHogBrowserConfig {
   apiKey: string;
 }
 
-export function getPostHogBrowserConfig(): PostHogBrowserConfig | null {
-  if (!(env.NEXT_PUBLIC_POSTHOG_HOST && env.NEXT_PUBLIC_POSTHOG_KEY)) {
+interface PostHogBrowserEnv {
+  apiHost?: string;
+  apiKey?: string;
+}
+
+export function getPostHogBrowserConfig(
+  browserEnv: PostHogBrowserEnv = {
+    apiHost: env.NEXT_PUBLIC_POSTHOG_HOST,
+    apiKey: env.NEXT_PUBLIC_POSTHOG_KEY,
+  }
+): PostHogBrowserConfig | null {
+  if (!(browserEnv.apiHost && browserEnv.apiKey)) {
     return null;
   }
 
   return {
-    apiHost: env.NEXT_PUBLIC_POSTHOG_HOST,
-    apiKey: env.NEXT_PUBLIC_POSTHOG_KEY,
+    apiHost: browserEnv.apiHost,
+    apiKey: browserEnv.apiKey,
   };
 }
 

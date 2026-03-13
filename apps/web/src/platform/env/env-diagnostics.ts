@@ -14,18 +14,45 @@ interface WebEnvWarning {
 let hasReportedClientWarnings = false;
 let hasReportedServerWarnings = false;
 
-export function collectWebEnvWarnings(options?: {
+interface WebEnvWarningOptions {
   collabWsUrl?: string;
   envName?: string;
   posthogHost?: string;
   posthogKey?: string;
-}): WebEnvWarning[] {
-  const envName = options?.envName ?? process.env.NODE_ENV ?? "development";
-  const collabWsUrl =
-    options?.collabWsUrl ?? process.env.NEXT_PUBLIC_COLLAB_WS_URL;
-  const posthogHost =
-    options?.posthogHost ?? process.env.NEXT_PUBLIC_POSTHOG_HOST;
-  const posthogKey = options?.posthogKey ?? process.env.NEXT_PUBLIC_POSTHOG_KEY;
+}
+
+function readOptionOrEnv(
+  options: WebEnvWarningOptions | undefined,
+  key: keyof WebEnvWarningOptions,
+  envName: string
+): string | undefined {
+  if (options && Object.hasOwn(options, key)) {
+    return options[key];
+  }
+
+  return process.env[envName];
+}
+
+export function collectWebEnvWarnings(
+  options?: WebEnvWarningOptions
+): WebEnvWarning[] {
+  const envName =
+    readOptionOrEnv(options, "envName", "NODE_ENV") ?? "development";
+  const collabWsUrl = readOptionOrEnv(
+    options,
+    "collabWsUrl",
+    "NEXT_PUBLIC_COLLAB_WS_URL"
+  );
+  const posthogHost = readOptionOrEnv(
+    options,
+    "posthogHost",
+    "NEXT_PUBLIC_POSTHOG_HOST"
+  );
+  const posthogKey = readOptionOrEnv(
+    options,
+    "posthogKey",
+    "NEXT_PUBLIC_POSTHOG_KEY"
+  );
 
   const warnings: WebEnvWarning[] = [];
 
