@@ -152,7 +152,10 @@ defmodule PapyrusCollab.SharedWorkbooks.Store.Firestore do
         url: base_url() <> path
       ] ++ options
 
-    case Req.request(request_options) do
+    case requester().(request_options) do
+      :not_found ->
+        :not_found
+
       {:ok, %Req.Response{status: 404}} ->
         :not_found
 
@@ -165,6 +168,10 @@ defmodule PapyrusCollab.SharedWorkbooks.Store.Firestore do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp requester do
+    Application.get_env(:papyrus_collab, __MODULE__, [])[:requester] || (&Req.request/1)
   end
 
   defp shared_workbook_document_path(workbook_id) do

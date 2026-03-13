@@ -93,11 +93,7 @@ defmodule PapyrusCollab.Collaboration do
   defp ensure_room_started(workbook_id) do
     case Registry.lookup(PapyrusCollab.Collaboration.RoomRegistry, workbook_id) do
       [{pid, _value}] ->
-        if Process.alive?(pid) do
-          {:ok, pid}
-        else
-          start_room(workbook_id)
-        end
+        if Process.alive?(pid), do: {:ok, pid}, else: start_room(workbook_id)
 
       [] ->
         start_room(workbook_id)
@@ -108,7 +104,8 @@ defmodule PapyrusCollab.Collaboration do
     case DynamicSupervisor.start_child(RoomSupervisor, {Room, workbook_id}) do
       {:ok, pid} -> {:ok, pid}
       {:error, {:already_started, pid}} -> {:ok, pid}
-      {:error, reason} -> {:error, reason}
     end
+  catch
+    :exit, reason -> {:error, reason}
   end
 end

@@ -1,6 +1,6 @@
 {
   "name": "@papyrus/core",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,10 @@
   "dependencies": {
     "y-indexeddb": "^9.0.12",
     "yjs": "^13.6.29"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.8.4",
+    "fake-indexeddb": "^6.2.5"
   },
   "exports": {
     "./collaboration-types": "./src/collaboration-types.ts",

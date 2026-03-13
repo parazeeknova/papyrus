@@ -25,11 +25,15 @@ defmodule PapyrusCollab.Platform.Google.ServiceAccount do
     }
 
     with {:ok, signing_key} <- build_signing_key(service_account.private_key) do
-      {_, assertion} =
-        JOSE.JWT.sign(signing_key, %{"alg" => "RS256", "typ" => "JWT"}, claims)
-        |> JOSE.JWS.compact()
+      try do
+        {_, assertion} =
+          JOSE.JWT.sign(signing_key, %{"alg" => "RS256", "typ" => "JWT"}, claims)
+          |> JOSE.JWS.compact()
 
-      {:ok, assertion}
+        {:ok, assertion}
+      rescue
+        _error -> {:error, :invalid_service_account_private_key}
+      end
     end
   end
 
@@ -43,8 +47,6 @@ defmodule PapyrusCollab.Platform.Google.ServiceAccount do
 
   defp build_signing_key(private_key) when is_binary(private_key) do
     {:ok, JOSE.JWK.from_pem(private_key)}
-  rescue
-    _error -> {:error, :invalid_service_account_private_key}
   end
 
   defp load_encoded_credentials(options) do

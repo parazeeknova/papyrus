@@ -19,6 +19,9 @@ defmodule PapyrusCollab.Collaboration.AccessPolicy.TestAdapter do
       %{access_role: access_role, owner_id: owner_id, workbook: workbook} ->
         {:ok, %{access_role: access_role, owner_id: owner_id, workbook: workbook}}
 
+      {:error, reason} ->
+        {:error, reason}
+
       _response ->
         {:error, :forbidden}
     end

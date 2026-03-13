@@ -1,6 +1,7 @@
 defmodule PapyrusCollab.Platform.Google.ServiceAccountTokenProviderTest do
   use ExUnit.Case, async: false
 
+  alias PapyrusCollab.Platform.Google.ServiceAccount
   alias PapyrusCollab.Platform.Google.ServiceAccountTokenProvider
 
   @private_key """
@@ -61,6 +62,186 @@ defmodule PapyrusCollab.Platform.Google.ServiceAccountTokenProviderTest do
     assert {:ok, "server-token"} = ServiceAccountTokenProvider.fetch_token()
     assert_received :requested_access_token
     refute_received :requested_access_token
+  end
+
+  test "requests access tokens directly and normalizes http failures" do
+    previous_config = Application.get_env(:papyrus_collab, ServiceAccountTokenProvider, [])
+
+    {:ok, service_account} =
+      ServiceAccount.load(
+        service_account_json:
+          Jason.encode!(%{
+            "client_email" => "papyrus-collab@example.com",
+            "private_key" => @private_key,
+            "project_id" => "papyrus-test",
+            "token_uri" => "https://oauth2.googleapis.com/token"
+          })
+      )
+
+    Application.put_env(
+      :papyrus_collab,
+      ServiceAccountTokenProvider,
+      http_post: fn _url, _options ->
+        {:ok,
+         %Req.Response{
+           status: 200,
+           body: %{"access_token" => "server-token", "expires_in" => 600}
+         }}
+      end
+    )
+
+    assert {:ok, response} = ServiceAccountTokenProvider.request_access_token(service_account)
+
+    assert response["access_token"] == "server-token"
+
+    Application.put_env(
+      :papyrus_collab,
+      ServiceAccountTokenProvider,
+      http_post: fn _url, _options ->
+        {:ok, %Req.Response{status: 500, body: %{}}}
+      end
+    )
+
+    assert {:error, {:token_exchange_http, 500, %{}}} =
+             ServiceAccountTokenProvider.request_access_token(service_account)
+
+    Application.put_env(
+      :papyrus_collab,
+      ServiceAccountTokenProvider,
+      http_post: fn _url, _options ->
+        {:error, :network_down}
+      end
+    )
+
+    assert {:error, :network_down} =
+             ServiceAccountTokenProvider.request_access_token(service_account)
+
+    assert {:error, :invalid_service_account_private_key} =
+             ServiceAccountTokenProvider.request_access_token(
+               %PapyrusCollab.Platform.Google.ServiceAccount{
+                 client_email: "papyrus-collab@example.com",
+                 private_key: "not-a-key",
+                 project_id: "papyrus-test",
+                 token_uri: "https://oauth2.googleapis.com/token"
+               }
+             )
+
+    Application.put_env(:papyrus_collab, ServiceAccountTokenProvider, previous_config)
+  end
+
+  test "returns normalized errors for invalid token responses" do
+    previous_config = Application.get_env(:papyrus_collab, ServiceAccountTokenProvider, [])
+    provider = ServiceAccountTokenProvider
+
+    Application.put_env(
+      :papyrus_collab,
+      provider,
+      service_account_json:
+        Jason.encode!(%{
+          "client_email" => "papyrus-collab@example.com",
+          "private_key" => @private_key,
+          "project_id" => "papyrus-test",
+          "token_uri" => "https://oauth2.googleapis.com/token"
+        }),
+      requester: fn _service_account ->
+        {:ok, %{"access_token" => "server-token", "expires_in" => "600"}}
+      end
+    )
+
+    reset_provider_state(provider)
+    assert {:ok, "server-token"} = provider.fetch_token()
+
+    Application.put_env(
+      :papyrus_collab,
+      provider,
+      service_account_json:
+        Jason.encode!(%{
+          "client_email" => "papyrus-collab@example.com",
+          "private_key" => @private_key,
+          "project_id" => "papyrus-test",
+          "token_uri" => "https://oauth2.googleapis.com/token"
+        }),
+      requester: fn _service_account ->
+        {:ok, %{"access_token" => "server-token", "expires_in" => "invalid"}}
+      end
+    )
+
+    reset_provider_state(provider)
+    assert {:error, :invalid_token_response} = provider.fetch_token()
+
+    Application.put_env(:papyrus_collab, provider, previous_config)
+  end
+
+  test "reuses a loaded service account struct and rejects malformed token shapes" do
+    previous_config = Application.get_env(:papyrus_collab, ServiceAccountTokenProvider, [])
+    provider = ServiceAccountTokenProvider
+
+    service_account = %ServiceAccount{
+      client_email: "papyrus-collab@example.com",
+      private_key: @private_key,
+      project_id: "papyrus-test",
+      token_uri: "https://oauth2.googleapis.com/token"
+    }
+
+    Application.put_env(
+      :papyrus_collab,
+      provider,
+      requester: fn ^service_account ->
+        {:ok, %{"access_token" => "struct-token", "expires_in" => 600}}
+      end
+    )
+
+    reset_provider_state(provider)
+
+    :sys.replace_state(provider, fn _state ->
+      %{expires_at: 0, service_account: service_account, token: nil}
+    end)
+
+    assert {:ok, "struct-token"} = provider.fetch_token()
+
+    Application.put_env(
+      :papyrus_collab,
+      provider,
+      requester: fn ^service_account ->
+        {:ok, %{"access_token" => 123, "expires_in" => 600}}
+      end
+    )
+
+    reset_provider_state(provider)
+
+    :sys.replace_state(provider, fn _state ->
+      %{expires_at: 0, service_account: service_account, token: nil}
+    end)
+
+    assert {:error, :invalid_token_response} = provider.fetch_token()
+
+    Application.put_env(
+      :papyrus_collab,
+      provider,
+      requester: fn ^service_account ->
+        {:ok, %{"access_token" => "struct-token", "expires_in" => 0}}
+      end
+    )
+
+    reset_provider_state(provider)
+
+    :sys.replace_state(provider, fn _state ->
+      %{expires_at: 0, service_account: service_account, token: nil}
+    end)
+
+    assert {:error, :invalid_token_response} = provider.fetch_token()
+
+    Application.put_env(:papyrus_collab, provider, previous_config)
+  end
+
+  test "uses the default req poster when no override is configured" do
+    assert {:error, _reason} =
+             ServiceAccountTokenProvider.request_access_token(%ServiceAccount{
+               client_email: "papyrus-collab@example.com",
+               private_key: @private_key,
+               project_id: "papyrus-test",
+               token_uri: "https://invalid.posthog.test/token"
+             })
   end
 
   defp reset_provider_state(provider) do

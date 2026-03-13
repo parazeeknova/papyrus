@@ -29,8 +29,6 @@ defmodule PapyrusCollab.CloudWorkbooks do
     Store.list_workbooks(user_id)
   end
 
-  def list_workbooks(%Identity{}), do: {:error, :invalid_auth_token}
-
   @spec read_workbook(Identity.t(), String.t()) ::
           {:ok, map() | nil} | {:error, term()}
   def read_workbook(%Identity{user_id: user_id}, workbook_id)

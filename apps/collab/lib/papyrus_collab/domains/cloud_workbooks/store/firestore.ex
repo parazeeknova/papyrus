@@ -166,10 +166,19 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
 
   defp chunk_string(value, chunk_size)
        when is_binary(value) and is_integer(chunk_size) and chunk_size > 0 do
-    for offset <- Stream.iterate(0, &(&1 + chunk_size)),
-        offset < byte_size(value) do
-      binary_part(value, offset, min(chunk_size, byte_size(value) - offset))
-    end
+    Stream.unfold(0, fn offset ->
+      if offset < byte_size(value) do
+        next_offset = offset + chunk_size
+
+        {
+          binary_part(value, offset, min(chunk_size, byte_size(value) - offset)),
+          next_offset
+        }
+      else
+        nil
+      end
+    end)
+    |> Enum.to_list()
   end
 
   defp chunk_value_document(chunk, index, snapshot_id) do
@@ -205,14 +214,15 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
   defp delete_stale_chunk_documents(_token, [], _next_chunk_ids), do: :ok
 
   defp delete_stale_chunk_documents(token, existing_chunk_documents, next_chunk_ids) do
-    existing_chunk_documents
-    |> Enum.reject(fn document ->
-      document
-      |> Map.get("name")
-      |> document_id_from_name()
-      |> MapSet.member?(next_chunk_ids)
-    end)
-    |> delete_documents(token)
+    documents_to_delete =
+      Enum.reject(existing_chunk_documents, fn document ->
+        document
+        |> Map.get("name")
+        |> document_id_from_name()
+        |> then(&MapSet.member?(next_chunk_ids, &1))
+      end)
+
+    delete_documents(token, documents_to_delete)
   end
 
   defp document_id_from_name(name) when is_binary(name) do
@@ -222,8 +232,7 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
   end
 
   defp document_path_from_name(name) when is_binary(name) do
-    "/"
-    |> Kernel.<>(String.replace_prefix(name, base_document_name_prefix(), ""))
+    String.replace_prefix(name, base_document_name_prefix(), "")
   end
 
   defp document_response_fields(%{"fields" => fields}) when is_map(fields), do: {:ok, fields}
@@ -339,8 +348,6 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
     end
   end
 
-  defp normalize_workbook_payload(_workbook), do: {:error, :invalid_workbook_payload}
-
   defp parse_chunk(document) do
     with {:ok, fields} <- document_response_fields(document),
          {:ok, data} <- fetch_string_field(fields, "data"),
@@ -443,7 +450,10 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
         url: base_url() <> path
       ] ++ options
 
-    case Req.request(request_options) do
+    case requester().(request_options) do
+      :not_found ->
+        :not_found
+
       {:ok, %Req.Response{status: 404}} ->
         :not_found
 
@@ -458,7 +468,9 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
     end
   end
 
-  defp write_chunk_documents(_token, _user_id, _workbook_id, [], _snapshot_id), do: :ok
+  defp requester do
+    Application.get_env(:papyrus_collab, __MODULE__, [])[:requester] || (&Req.request/1)
+  end
 
   defp write_chunk_documents(token, user_id, workbook_id, chunk_values, snapshot_id) do
     chunk_values

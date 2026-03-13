@@ -61,4 +61,70 @@ defmodule PapyrusCollab.CollaborationTest do
     assert snapshot.pending_updates == [%{update: "BwgJ", version: 2}]
     assert snapshot.version == 2
   end
+
+  test "joins peers and updates realtime presence and typing through the collaboration boundary" do
+    workbook_id = "workbook-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    identity = %Identity{
+      device_id: "device-primary",
+      email: "owner@example.com",
+      user_id: "user-owner"
+    }
+
+    assert {:ok, [%{access_role: "editor"}]} =
+             Collaboration.join_peer(workbook_id, identity, "editor")
+
+    assert {:ok, [%{active_cell: %{"col" => 1, "row" => 2}, sheet_id: "sheet-1"}]} =
+             Collaboration.update_peer_presence(workbook_id, identity, %{
+               "activeCell" => %{"col" => 1, "row" => 2},
+               "selection" => nil,
+               "sheetId" => "sheet-1"
+             })
+
+    assert {:ok, [%{typing: %{"draft" => "editing"}}]} =
+             Collaboration.update_peer_typing(workbook_id, identity, %{
+               "typing" => %{
+                 "cell" => %{"col" => 1, "row" => 2},
+                 "draft" => "editing",
+                 "sheetId" => "sheet-1"
+               }
+             })
+
+    assert {:ok, []} = Collaboration.leave_peer(workbook_id, identity)
+  end
+
+  test "restarts rooms when the registry points at a dead pid" do
+    workbook_id = "workbook-" <> Integer.to_string(System.unique_integer([:positive]))
+    dead_pid = spawn(fn -> :ok end)
+    ref = Process.monitor(dead_pid)
+
+    assert_receive {:DOWN, ^ref, :process, ^dead_pid, _reason}
+
+    true =
+      :ets.insert(
+        PapyrusCollab.Collaboration.RoomRegistry,
+        {workbook_id, dead_pid, nil}
+      )
+
+    assert {:ok, snapshot} = Collaboration.fetch_snapshot(workbook_id)
+    assert snapshot.workbook_id == workbook_id
+  end
+
+  test "reuses an already started room during concurrent startup races" do
+    workbook_id = "workbook-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    results =
+      1..8
+      |> Task.async_stream(
+        fn _index -> Collaboration.fetch_snapshot(workbook_id) end,
+        ordered: false,
+        timeout: 5_000
+      )
+      |> Enum.to_list()
+
+    assert Enum.all?(results, fn
+             {:ok, {:ok, snapshot}} -> snapshot.workbook_id == workbook_id
+             _result -> false
+           end)
+  end
 end

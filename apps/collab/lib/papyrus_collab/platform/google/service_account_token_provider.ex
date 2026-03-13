@@ -35,7 +35,7 @@ defmodule PapyrusCollab.Platform.Google.ServiceAccountTokenProvider do
 
     with {:ok, assertion} <- ServiceAccount.build_assertion(service_account, now_unix_seconds),
          {:ok, %Req.Response{status: status, body: body}} <-
-           Req.post(
+           http_post().(
              service_account.token_uri,
              form: %{
                assertion: assertion,
@@ -123,5 +123,10 @@ defmodule PapyrusCollab.Platform.Google.ServiceAccountTokenProvider do
 
   defp requester do
     Application.get_env(:papyrus_collab, __MODULE__, [])[:requester] || (&request_access_token/1)
+  end
+
+  defp http_post do
+    Application.get_env(:papyrus_collab, __MODULE__, [])[:http_post] ||
+      fn url, options -> Req.post(url, options) end
   end
 end

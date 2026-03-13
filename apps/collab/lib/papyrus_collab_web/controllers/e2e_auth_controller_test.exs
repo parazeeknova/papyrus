@@ -62,4 +62,35 @@ defmodule PapyrusCollabWeb.E2EAuthControllerTest do
            })
            |> response(404)
   end
+
+  test "rejects invalid e2e session payloads and trims optional strings", %{conn: conn} do
+    Application.put_env(:papyrus_collab, :e2e_auth_enabled, true)
+
+    invalid_response =
+      conn
+      |> put_req_header("content-type", "application/json")
+      |> post(~p"/api/e2e/session", %{
+        "displayName" => "   ",
+        "email" => "",
+        "photoURL" => "   ",
+        "uid" => "owner-user"
+      })
+      |> json_response(422)
+
+    assert invalid_response == %{"error" => "invalid_e2e_session_request"}
+
+    trimmed_response =
+      build_conn()
+      |> put_req_header("content-type", "application/json")
+      |> post(~p"/api/e2e/session", %{
+        "displayName" => "  Papyrus Owner  ",
+        "email" => "owner@example.com",
+        "photoURL" => "  https://example.com/avatar.png  ",
+        "uid" => "owner-user"
+      })
+      |> json_response(200)
+
+    assert trimmed_response["user"]["displayName"] == "Papyrus Owner"
+    assert trimmed_response["user"]["photoURL"] == "https://example.com/avatar.png"
+  end
 end

@@ -375,4 +375,437 @@ describe("connectWorkbookRealtimeChannel", () => {
       'Realtime request "channel_error" failed: forbidden.',
     ]);
   });
+
+  test("rejects invalid join payloads and leaves the channel", async () => {
+    fakeChannel.joinResponse = {
+      payload: {
+        accessRole: "editor",
+        peers: "invalid-peers",
+        pendingUpdates: [],
+        shouldInitializeFromClient: false,
+        update: null,
+        version: 1,
+        workbookId: "workbook-3",
+      },
+      status: "ok",
+    };
+
+    await expect(
+      connectWorkbookRealtimeChannel("user-1", "workbook-3")
+    ).rejects.toThrow("Realtime join returned an invalid payload.");
+    expect(fakeChannel.leaveCalled).toBe(true);
+  });
+
+  test("rejects malformed pending updates during join", async () => {
+    fakeChannel.joinResponse = {
+      payload: {
+        accessRole: "editor",
+        peers: [],
+        pendingUpdates: ["AQI=", 123],
+        shouldInitializeFromClient: false,
+        update: null,
+        version: 1,
+        workbookId: "workbook-3b",
+      },
+      status: "ok",
+    };
+
+    await expect(
+      connectWorkbookRealtimeChannel("user-1", "workbook-3b")
+    ).rejects.toThrow("Realtime join returned an invalid payload.");
+    expect(fakeChannel.leaveCalled).toBe(true);
+  });
+
+  test("rejects join payloads with a non-array pending update field", async () => {
+    fakeChannel.joinResponse = {
+      payload: {
+        accessRole: "editor",
+        peers: [],
+        pendingUpdates: "AQI=",
+        shouldInitializeFromClient: false,
+        update: null,
+        version: 1,
+        workbookId: "workbook-3c",
+      },
+      status: "ok",
+    };
+
+    await expect(
+      connectWorkbookRealtimeChannel("user-1", "workbook-3c")
+    ).rejects.toThrow("Realtime join returned an invalid payload.");
+    expect(fakeChannel.leaveCalled).toBe(true);
+  });
+
+  test("surfaces join errors and timeouts", async () => {
+    fakeChannel.joinResponse = {
+      payload: { reason: "permission_denied" },
+      status: "error",
+    };
+
+    await expect(
+      connectWorkbookRealtimeChannel("user-1", "workbook-4")
+    ).rejects.toThrow('Realtime request "join" failed: permission_denied.');
+
+    fakeChannel.joinResponse = {
+      status: "timeout",
+    };
+
+    await expect(
+      connectWorkbookRealtimeChannel("user-1", "workbook-5")
+    ).rejects.toThrow("Timed out connecting to the workbook channel.");
+
+    fakeChannel.joinResponse = {
+      payload: {},
+      status: "error",
+    };
+
+    await expect(
+      connectWorkbookRealtimeChannel("user-1", "workbook-5b")
+    ).rejects.toThrow('Realtime request "join" failed.');
+  });
+
+  test("ignores invalid incoming presence, sync, and snapshot payloads", async () => {
+    fakeChannel.joinResponse = {
+      payload: {
+        accessRole: "editor",
+        peers: [],
+        pendingUpdates: [],
+        shouldInitializeFromClient: false,
+        update: null,
+        version: 0,
+        workbookId: "workbook-6",
+      },
+      status: "ok",
+    };
+
+    const onPresence = mock((_peers: unknown[]) => undefined);
+    const onSync = mock((_payload: unknown) => undefined);
+    const onSnapshot = mock((_payload: unknown) => undefined);
+    const client = await connectWorkbookRealtimeChannel(
+      "user-1",
+      "workbook-6",
+      null,
+      {
+        onPresence,
+        onSnapshot,
+        onSync,
+      }
+    );
+
+    fakeChannel.emit("presence", {
+      peers: [
+        {
+          accessRole: "viewer",
+          activeCell: { col: "bad", row: 2 },
+          deviceId: "device-remote",
+          email: "viewer@example.com",
+          selection: null,
+          sheetId: "sheet-1",
+          typing: null,
+          updatedAt: 1,
+          userId: "user-2",
+        },
+      ],
+    });
+    fakeChannel.emit("presence", {
+      peers: [
+        {
+          accessRole: "editor",
+          activeCell: { col: "bad", row: 1 },
+          deviceId: "device-weird",
+          email: "viewer@example.com",
+          selection: {
+            end: { col: "bad", row: 2 },
+            mode: "diagonal",
+            start: { col: 1, row: 1 },
+          },
+          sheetId: { bad: true },
+          typing: {
+            cell: { col: "bad", row: 1 },
+            draft: 123,
+            sheetId: 456,
+          },
+          updatedAt: 1,
+          userId: "user-3",
+        },
+        {
+          accessRole: "editor",
+          activeCell: null,
+          deviceId: "device-weird-start",
+          email: "viewer@example.com",
+          selection: {
+            end: { col: 2, row: 2 },
+            mode: "cells",
+            start: { col: "bad", row: 1 },
+          },
+          sheetId: null,
+          typing: null,
+          updatedAt: 1,
+          userId: "user-3b",
+        },
+        {
+          accessRole: "editor",
+          activeCell: null,
+          deviceId: "device-weird-typing",
+          email: "viewer@example.com",
+          selection: null,
+          sheetId: "sheet-1",
+          typing: {
+            cell: { col: "bad", row: 1 },
+            draft: "editing",
+            sheetId: "sheet-1",
+          },
+          updatedAt: 1,
+          userId: "user-3c",
+        },
+        {
+          accessRole: "viewer",
+          activeCell: null,
+          deviceId: "device-weird-2",
+          email: 123,
+          selection: null,
+          sheetId: null,
+          typing: null,
+          updatedAt: 1,
+          userId: "user-4",
+        },
+        {
+          accessRole: "viewer",
+          activeCell: null,
+          deviceId: "device-weird-3",
+          email: "viewer@example.com",
+          selection: null,
+          sheetId: 42,
+          typing: null,
+          updatedAt: 1,
+          userId: "user-5",
+        },
+        {
+          accessRole: "viewer",
+          activeCell: null,
+          email: "viewer@example.com",
+          selection: null,
+          sheetId: null,
+          typing: null,
+          updatedAt: 1,
+          userId: "user-6",
+        },
+      ],
+    });
+    fakeChannel.emit("presence", null);
+    fakeChannel.emit("sync", { update: 123, version: "bad" });
+    fakeChannel.emit("snapshot", {
+      update: createBase64([7, 8]),
+      version: 2,
+    });
+    fakeChannel.emit("snapshot", { update: null, version: 1 });
+
+    expect(onPresence).toHaveBeenCalledTimes(3);
+    expect(onSync).not.toHaveBeenCalled();
+    expect(onSnapshot).toHaveBeenCalledWith({
+      update: new Uint8Array([7, 8]),
+      version: 2,
+    });
+
+    client.disconnect();
+    fakeChannel.emitError({ reason: "ignored-after-disconnect" });
+    fakeChannel.emitClose();
+  });
+
+  test("rejects invalid realtime acknowledgements and supports typing updates", async () => {
+    fakeChannel.joinResponse = {
+      payload: {
+        accessRole: "editor",
+        peers: [],
+        pendingUpdates: [],
+        shouldInitializeFromClient: false,
+        update: null,
+        version: 0,
+        workbookId: "workbook-7",
+      },
+      status: "ok",
+    };
+    fakeChannel.pushResponses.set("presence:push", {
+      payload: { peers: "invalid" },
+      status: "ok",
+    });
+    fakeChannel.pushResponses.set("sync:push", {
+      payload: { version: "invalid" },
+      status: "ok",
+    });
+    fakeChannel.pushResponses.set("snapshot:push", {
+      payload: { lastSyncedAt: 123, version: "invalid" },
+      status: "ok",
+    });
+    fakeChannel.pushResponses.set("typing:push", {
+      payload: {
+        peers: [
+          {
+            accessRole: "viewer",
+            activeCell: null,
+            deviceId: "device-remote",
+            email: null,
+            selection: {
+              end: { col: 2, row: 2 },
+              mode: "cells",
+              start: { col: 1, row: 1 },
+            },
+            sheetId: "sheet-1",
+            typing: {
+              cell: { col: 1, row: 1 },
+              draft: "editing",
+              sheetId: "sheet-1",
+            },
+            updatedAt: 2,
+            userId: "user-2",
+          },
+        ],
+      },
+      status: "ok",
+    });
+
+    const onPresence = mock((_peers: unknown[]) => undefined);
+    const client = await connectWorkbookRealtimeChannel(
+      "user-1",
+      "workbook-7",
+      null,
+      {
+        onPresence,
+      }
+    );
+
+    await expect(
+      client.sendPresence({
+        activeCell: null,
+        selection: null,
+        sheetId: null,
+      })
+    ).rejects.toThrow(
+      'Realtime request "presence:push" returned invalid data.'
+    );
+
+    await expect(client.sendSync(new Uint8Array([1]))).rejects.toThrow(
+      'Realtime request "sync:push" returned invalid data.'
+    );
+
+    fakeChannel.pushResponses.set("sync:push", {
+      payload: {},
+      status: "error",
+    });
+
+    await expect(client.sendSync(new Uint8Array([2]))).rejects.toThrow(
+      'Realtime request "sync:push" failed.'
+    );
+
+    fakeChannel.pushResponses.set("sync:push", {
+      status: "timeout",
+    });
+
+    await expect(client.sendSync(new Uint8Array([3]))).rejects.toThrow(
+      'Realtime request "sync:push" timed out.'
+    );
+
+    await expect(
+      client.sendSnapshot(
+        {
+          activeSheetId: null,
+          collaborationVersion: 1,
+          meta: {
+            createdAt: "2026-03-13T00:00:00.000Z",
+            id: "workbook-7",
+            isFavorite: false,
+            lastOpenedAt: "2026-03-13T00:00:00.000Z",
+            lastSyncedAt: null,
+            name: "Workbook",
+            remoteVersion: 1,
+            sharingAccessRole: "viewer",
+            sharingEnabled: false,
+            updatedAt: "2026-03-13T00:00:00.000Z",
+          },
+          update: new Uint8Array([1, 2, 3]),
+          version: 1,
+        },
+        "client-7"
+      )
+    ).rejects.toThrow(
+      'Realtime request "snapshot:push" returned invalid data.'
+    );
+
+    await expect(
+      client.sendTyping({
+        typing: {
+          cell: { col: 1, row: 1 },
+          draft: "editing",
+          sheetId: "sheet-1",
+        },
+      })
+    ).resolves.toEqual([
+      {
+        accessRole: "viewer",
+        activeCell: null,
+        identity: {
+          clientId: "device-remote",
+          color: "#2563eb",
+          icon: "diamond",
+          isAnonymous: true,
+          name: "Guest User 2",
+          photoURL: null,
+        },
+        selection: {
+          end: { col: 2, row: 2 },
+          mode: "cells",
+          start: { col: 1, row: 1 },
+        },
+        sheetId: "sheet-1",
+        typing: {
+          cell: { col: 1, row: 1 },
+          draft: "editing",
+          sheetId: "sheet-1",
+        },
+        updatedAt: 2,
+      },
+    ]);
+
+    expect(onPresence).toHaveBeenCalledTimes(2);
+    client.disconnect();
+  });
+
+  test("surfaces generic channel errors without callbacks safely", async () => {
+    fakeChannel.joinResponse = {
+      payload: {
+        accessRole: "viewer",
+        peers: [],
+        pendingUpdates: [],
+        shouldInitializeFromClient: true,
+        update: null,
+        version: 0,
+        workbookId: "workbook-8",
+      },
+      status: "ok",
+    };
+
+    const statuses: string[] = [];
+    const errors: string[] = [];
+
+    const client = await connectWorkbookRealtimeChannel(
+      "user-1",
+      "workbook-8",
+      null,
+      {
+        onError: (error) => {
+          errors.push(error.message);
+        },
+        onStatusChange: (status) => {
+          statuses.push(status);
+        },
+      }
+    );
+
+    fakeChannel.emitError({});
+
+    expect(statuses).toEqual(["connecting", "connected", "disconnected"]);
+    expect(errors).toEqual(['Realtime request "channel_error" failed.']);
+
+    client.disconnect();
+  });
 });

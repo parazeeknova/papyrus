@@ -52,6 +52,28 @@ defmodule PapyrusCollab.Collaboration.BackupStore.DetsTest do
     assert Dets.load_snapshot(@test_server, snapshot.workbook_id) == nil
   end
 
+  test "falls back to the default tmp-backed path when none is configured" do
+    previous_config = Application.get_env(:papyrus_collab, Dets, [])
+    default_server = :papyrus_collab_dets_default_test_server
+    default_table = :papyrus_collab_backup_store_default_test
+    snapshot = persisted_snapshot("workbook-dets-default")
+
+    Application.delete_env(:papyrus_collab, Dets)
+
+    on_exit(fn ->
+      case Process.whereis(default_server) do
+        nil -> :ok
+        pid -> GenServer.stop(pid, :normal)
+      end
+
+      Application.put_env(:papyrus_collab, Dets, previous_config)
+    end)
+
+    {:ok, _pid} = Dets.start_link(name: default_server, table: default_table)
+    assert :ok = Dets.save_snapshot(default_server, snapshot)
+    assert %Snapshot{} = Dets.load_snapshot(default_server, snapshot.workbook_id)
+  end
+
   defp persisted_snapshot(workbook_id) do
     identity = %Identity{
       device_id: "device-primary",

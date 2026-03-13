@@ -41,6 +41,12 @@ describe("auth presentation helpers", () => {
   test("maps firebase auth errors to actionable messages", () => {
     expect(
       getAuthErrorMessage(
+        new FirebaseError("auth/popup-blocked", "popup blocked")
+      )
+    ).toBe("Allow pop-ups in this browser to continue with Google.");
+
+    expect(
+      getAuthErrorMessage(
         new FirebaseError(
           "auth/unauthorized-domain",
           "unauthorized domain for sign-in"
@@ -53,6 +59,10 @@ describe("auth presentation helpers", () => {
         new FirebaseError("auth/popup-closed-by-user", "popup closed")
       )
     ).toBeNull();
+
+    expect(
+      getAuthErrorMessage(new FirebaseError("auth/internal-error", "internal"))
+    ).toBe("Google sign-in failed. Verify your Firebase Auth setup.");
 
     expect(getAuthErrorMessage(new Error("boom"))).toBe(
       "Google sign-in failed. Please try again."

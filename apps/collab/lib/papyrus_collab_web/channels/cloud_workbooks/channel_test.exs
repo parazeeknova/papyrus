@@ -1,7 +1,25 @@
 defmodule PapyrusCollabWeb.CloudWorkbookChannelTest do
   use PapyrusCollabWeb.ChannelCase, async: false
 
+  alias PapyrusCollab.Auth.Identity
+  alias PapyrusCollab.CloudWorkbooks.Store
   alias PapyrusCollabWeb.{CloudWorkbookChannel, UserSocket}
+
+  defmodule ErrorStoreStub do
+    @behaviour Store
+
+    @impl true
+    def delete_workbook(_user_id, _workbook_id), do: {:error, {:firestore_http, 503, %{}}}
+
+    @impl true
+    def list_workbooks(_user_id), do: {:error, {:firestore_http, 503, %{}}}
+
+    @impl true
+    def read_workbook(_user_id, _workbook_id), do: {:error, "remote_down"}
+
+    @impl true
+    def write_workbook(_user_id, _workbook, _client_id), do: {:error, %{status: "down"}}
+  end
 
   test "list, read, write, and delete stay scoped to the authenticated user" do
     workbook_id = unique_workbook_id()
@@ -117,6 +135,52 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannelTest do
     assert_reply read_ref, :ok, %{workbook: nil}
   end
 
+  test "normalizes direct error replies and unsupported events" do
+    previous_store_config = Application.get_env(:papyrus_collab, Store)
+
+    Application.put_env(:papyrus_collab, Store, adapter: ErrorStoreStub)
+
+    on_exit(fn ->
+      restore_env(:papyrus_collab, Store, previous_store_config)
+    end)
+
+    socket = %Phoenix.Socket{
+      assigns: %{
+        identity: %Identity{
+          device_id: "device-unit",
+          email: "unit@example.com",
+          user_id: "user-unit"
+        }
+      }
+    }
+
+    assert {:reply, {:error, %{reason: "invalid_lease_request"}}, ^socket} =
+             CloudWorkbookChannel.handle_in(
+               "acquire_lease",
+               %{"clientId" => "", "workbookId" => "workbook-unit"},
+               socket
+             )
+
+    assert {:reply, {:error, %{reason: "invalid_workbook_id"}}, ^socket} =
+             CloudWorkbookChannel.handle_in("delete", %{"workbookId" => ""}, socket)
+
+    assert {:reply, {:error, %{reason: "firestore_http_503"}}, ^socket} =
+             CloudWorkbookChannel.handle_in("list", %{}, socket)
+
+    assert {:reply, {:error, %{reason: "remote_down"}}, ^socket} =
+             CloudWorkbookChannel.handle_in("read", %{"workbookId" => "workbook-unit"}, socket)
+
+    assert {:reply, {:error, %{reason: "cloud_workbooks_unavailable"}}, ^socket} =
+             CloudWorkbookChannel.handle_in(
+               "write",
+               %{"clientId" => "client-unit", "workbook" => workbook_payload("workbook-unit")},
+               socket
+             )
+
+    assert {:reply, {:error, %{reason: "unsupported_event"}}, ^socket} =
+             CloudWorkbookChannel.handle_in("unsupported", %{}, socket)
+  end
+
   defp workbook_payload(workbook_id) do
     %{
       "activeSheetId" => "sheet-1",
@@ -136,4 +200,7 @@ defmodule PapyrusCollabWeb.CloudWorkbookChannelTest do
       "version" => 0
     }
   end
+
+  defp restore_env(app, key, nil), do: Application.delete_env(app, key)
+  defp restore_env(app, key, value), do: Application.put_env(app, key, value)
 end

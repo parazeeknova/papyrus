@@ -1,5 +1,4 @@
 import { describe, expect, mock, test } from "bun:test";
-
 import type { LogRecord } from "@papyrus/logs";
 
 import { forwardLogRecordToPostHog } from "./posthog-log-sink";
@@ -79,5 +78,46 @@ describe("forwardLogRecordToPostHog", () => {
 
     expect(client.capture).not.toHaveBeenCalled();
     expect(client.captureException).not.toHaveBeenCalled();
+  });
+
+  test("serializes nested metadata and falls back to the default app scope", () => {
+    const client = {
+      capture: mock(
+        (_eventName: string, _properties?: Record<string, unknown>) => undefined
+      ),
+      captureException: mock(
+        (_error: Error, _properties?: Record<string, unknown>) => undefined
+      ),
+    };
+    const nestedError = new Error("nested");
+
+    forwardLogRecordToPostHog(client, {
+      level: "WARN",
+      message: "Nested metadata",
+      meta: [
+        {
+          items: [nestedError, { status: "retrying" }],
+        },
+      ],
+    });
+
+    expect(client.capture).toHaveBeenCalledWith("app log", {
+      level: "warn",
+      message: "Nested metadata",
+      meta: [
+        {
+          items: [
+            {
+              message: "nested",
+              name: "Error",
+              stack: expect.any(String),
+            },
+            { status: "retrying" },
+          ],
+        },
+      ],
+      scope: "app",
+      source: "browser",
+    });
   });
 });

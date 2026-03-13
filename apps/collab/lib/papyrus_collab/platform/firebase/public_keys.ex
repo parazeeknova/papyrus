@@ -48,10 +48,10 @@ defmodule PapyrusCollab.Firebase.PublicKeys do
         Agent.update(__MODULE__, fn _current_state -> next_state end)
         {:ok, next_state.keys}
 
-      {:error, _reason} when map_size(previous_state.keys) > 0 ->
+      :error when map_size(previous_state.keys) > 0 ->
         {:ok, previous_state.keys}
 
-      {:error, _reason} ->
+      :error ->
         :error
     end
   end
@@ -74,7 +74,7 @@ defmodule PapyrusCollab.Firebase.PublicKeys do
   defp fetch_certificates do
     request = {@certificates_url |> String.to_charlist(), []}
 
-    case :httpc.request(:get, request, [], body_format: :binary) do
+    case requester().(request) do
       {:ok, {{_http_version, 200, _reason_phrase}, headers, body}} ->
         {:ok, body, headers}
 
@@ -108,5 +108,12 @@ defmodule PapyrusCollab.Firebase.PublicKeys do
       _no_match ->
         @fallback_cache_ttl_seconds
     end
+  end
+
+  defp requester do
+    Application.get_env(:papyrus_collab, __MODULE__, [])[:requester] ||
+      fn request ->
+        :httpc.request(:get, request, [], body_format: :binary)
+      end
   end
 end

@@ -1,0 +1,4 @@
+[test]
+coveragePathIgnorePatterns = ["**/test/setup-dom.ts"]
+coverageSkipTestFiles = true
+preload = ["./test/setup-dom.ts"]

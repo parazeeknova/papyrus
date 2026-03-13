@@ -3,21 +3,52 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
 
   alias PapyrusCollab.Auth.Identity
   alias PapyrusCollab.CloudWorkbooks
+  alias PapyrusCollab.CloudWorkbooks.Store
   alias PapyrusCollab.Collaboration
   alias PapyrusCollab.Collaboration.AccessPolicy
   alias PapyrusCollab.Collaboration.AccessPolicy.TestAdapter
   alias PapyrusCollabWeb.{UserSocket, WorkbookChannel}
 
+  defmodule CloudWorkbookStoreStub do
+    @behaviour Store
+
+    @impl true
+    def delete_workbook(_user_id, _workbook_id), do: :ok
+
+    @impl true
+    def list_workbooks(_user_id), do: {:ok, []}
+
+    @impl true
+    def read_workbook(user_id, workbook_id) do
+      Application.get_env(:papyrus_collab, __MODULE__, [])
+      |> Keyword.get(:responses, %{})
+      |> Map.get({user_id, workbook_id}, {:ok, nil})
+    end
+
+    @impl true
+    def write_workbook(user_id, workbook, client_id) do
+      Application.get_env(:papyrus_collab, __MODULE__, [])
+      |> Keyword.get(:writes, %{})
+      |> Map.get({user_id, get_in(workbook, ["meta", "id"]), client_id}, {:ok, %{version: 1}})
+    end
+
+    def reset, do: :ok
+  end
+
   setup do
     previous_access_policy = Application.get_env(:papyrus_collab, AccessPolicy)
+    previous_store = Application.get_env(:papyrus_collab, Store)
     previous_test_adapter = Application.get_env(:papyrus_collab, TestAdapter)
+    previous_store_stub = Application.get_env(:papyrus_collab, CloudWorkbookStoreStub)
 
     Application.put_env(:papyrus_collab, AccessPolicy, adapter: TestAdapter)
     Application.put_env(:papyrus_collab, TestAdapter, responses: %{})
 
     on_exit(fn ->
       restore_env(:papyrus_collab, AccessPolicy, previous_access_policy)
+      restore_env(:papyrus_collab, Store, previous_store)
       restore_env(:papyrus_collab, TestAdapter, previous_test_adapter)
+      restore_env(:papyrus_collab, CloudWorkbookStoreStub, previous_store_stub)
     end)
 
     :ok
@@ -330,6 +361,288 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
              subscribe_and_join(socket, WorkbookChannel, "workbook:" <> workbook_id)
   end
 
+  test "direct channel error paths fail closed with normalized reasons" do
+    workbook_id = unique_workbook_id()
+    identity = identity("user-error", "device-error", "user-error@example.com")
+
+    socket =
+      %Phoenix.Socket{
+        assigns: %{
+          access_role: "editor",
+          identity: identity,
+          owner_id: "owner-missing",
+          workbook_id: workbook_id
+        }
+      }
+
+    responses =
+      Application.get_env(:papyrus_collab, TestAdapter, [])
+      |> Keyword.get(:responses, %{})
+      |> Map.put({identity.user_id, workbook_id}, {:error, :storage_unavailable})
+
+    Application.put_env(:papyrus_collab, TestAdapter, responses: responses)
+
+    assert {:error, %{reason: "storage_unavailable"}} =
+             WorkbookChannel.join("workbook:" <> workbook_id, %{}, %Phoenix.Socket{
+               assigns: %{identity: identity}
+             })
+
+    assert {:error, %{reason: "invalid_workbook_id"}} =
+             WorkbookChannel.join("workbook:", %{}, %Phoenix.Socket{
+               assigns: %{identity: identity}
+             })
+
+    assert {:reply, {:error, %{reason: "invalid_presence_payload"}}, ^socket} =
+             WorkbookChannel.handle_in("presence:push", nil, socket)
+
+    assert {:reply, {:error, %{reason: "invalid_string"}}, ^socket} =
+             WorkbookChannel.handle_in(
+               "presence:push",
+               %{"activeCell" => nil, "selection" => nil, "sheetId" => 1},
+               socket
+             )
+
+    assert {:reply, {:error, %{reason: "payload_required"}}, ^socket} =
+             WorkbookChannel.handle_in("sync:push", %{"update" => ""}, socket)
+
+    assert {:reply, {:error, %{reason: "payload_required"}}, ^socket} =
+             WorkbookChannel.handle_in("sync:push", %{}, socket)
+
+    assert {:reply, {:error, %{reason: "payload_required"}}, ^socket} =
+             WorkbookChannel.handle_in("snapshot:push", %{}, socket)
+
+    assert {:reply, {:error, %{reason: "invalid_workbook_payload"}}, ^socket} =
+             WorkbookChannel.handle_in(
+               "snapshot:push",
+               %{
+                 "clientId" => "client-error",
+                 "workbook" => %{
+                   "collaborationVersion" => -1,
+                   "meta" => %{"id" => "wrong-id"},
+                   "updateBase64" => ""
+                 }
+               },
+               socket
+             )
+
+    assert {:reply, {:error, %{reason: "invalid_typing_payload"}}, ^socket} =
+             WorkbookChannel.handle_in("typing:push", nil, socket)
+
+    assert {:reply, {:error, %{reason: "invalid_typing_payload"}}, ^socket} =
+             WorkbookChannel.handle_in(
+               "typing:push",
+               %{"typing" => %{"cell" => nil, "draft" => "editing", "sheetId" => nil}},
+               socket
+             )
+
+    assert {:reply, {:error, %{reason: "forbidden"}}, ^socket} =
+             WorkbookChannel.handle_in(
+               "snapshot:push",
+               %{
+                 "clientId" => "client-error",
+                 "workbook" =>
+                   workbook_payload(
+                     workbook_id,
+                     "AQID",
+                     0
+                   )
+                   |> Map.put("collaborationVersion", 0)
+               },
+               socket
+             )
+  end
+
+  test "viewer fallback, requested role parsing, and terminate fail closed" do
+    workbook_id = unique_workbook_id()
+
+    allow_realtime_access(
+      "viewer-raw",
+      workbook_id,
+      "viewer",
+      workbook_payload(workbook_id)
+    )
+
+    identity = identity("viewer-raw", "device-viewer", "viewer-raw@example.com")
+
+    assert {:ok, response, _socket} =
+             WorkbookChannel.join(
+               "workbook:" <> workbook_id,
+               %{"requestedAccessRole" => "owner"},
+               %Phoenix.Socket{assigns: %{identity: identity}}
+             )
+
+    assert response.accessRole == "viewer"
+
+    assert :ok =
+             WorkbookChannel.terminate(:normal, %Phoenix.Socket{
+               assigns: %{identity: identity, workbook_id: nil}
+             })
+  end
+
+  test "accepts non-map join params, broadcasts typing updates, and emits presence on terminate" do
+    workbook_id = unique_workbook_id()
+    allow_realtime_access("user-typing", workbook_id, "editor", workbook_payload(workbook_id))
+
+    assert {:ok, socket} =
+             connect(
+               UserSocket,
+               socket_params("user-typing", "device-typing", "typing@example.com")
+             )
+
+    assert {:ok, response, _raw_socket} =
+             WorkbookChannel.join(
+               "workbook:" <> workbook_id,
+               nil,
+               %Phoenix.Socket{
+                 assigns: %{
+                   identity: identity("user-typing", "device-typing", "typing@example.com")
+                 }
+               }
+             )
+
+    assert {:ok, _joined_payload, joined_socket} =
+             subscribe_and_join(socket, WorkbookChannel, "workbook:" <> workbook_id)
+
+    assert response.accessRole == "editor"
+
+    typing_ref = push(joined_socket, "typing:push", %{"typing" => nil})
+    assert_reply typing_ref, :ok, %{peers: [%{typing: nil}]}
+    assert_broadcast "presence", %{peers: [%{typing: nil}]}
+
+    assert :ok = WorkbookChannel.terminate(:normal, joined_socket)
+    assert_broadcast "presence", %{peers: []}
+  end
+
+  test "normalizes binary and inspectable join reasons" do
+    workbook_id = unique_workbook_id()
+
+    Application.put_env(
+      :papyrus_collab,
+      TestAdapter,
+      responses: %{
+        {"binary-user", workbook_id} => {:error, "custom_binary"},
+        {"tuple-user", workbook_id} => {:error, {:custom, :tuple}}
+      }
+    )
+
+    assert {:ok, binary_socket} =
+             connect(UserSocket, socket_params("binary-user", "device-binary", nil))
+
+    assert {:error, %{reason: "custom_binary"}} =
+             subscribe_and_join(binary_socket, WorkbookChannel, "workbook:" <> workbook_id)
+
+    assert {:ok, tuple_socket} =
+             connect(UserSocket, socket_params("tuple-user", "device-tuple", nil))
+
+    assert {:error, %{reason: "{:custom, :tuple}"}} =
+             subscribe_and_join(tuple_socket, WorkbookChannel, "workbook:" <> workbook_id)
+  end
+
+  test "rejects invalid presence, snapshot, and typing payload shapes for editors" do
+    workbook_id = unique_workbook_id()
+    identity = identity("editor-invalid", "device-invalid", "editor-invalid@example.com")
+
+    socket =
+      %Phoenix.Socket{
+        assigns: %{
+          access_role: "editor",
+          identity: identity,
+          owner_id: identity.user_id,
+          workbook_id: workbook_id
+        }
+      }
+
+    assert {:reply, {:error, %{reason: "invalid_cell"}}, ^socket} =
+             WorkbookChannel.handle_in(
+               "presence:push",
+               %{"activeCell" => "bad", "selection" => nil, "sheetId" => nil},
+               socket
+             )
+
+    assert {:reply, {:error, %{reason: "invalid_selection"}}, ^socket} =
+             WorkbookChannel.handle_in(
+               "presence:push",
+               %{"activeCell" => nil, "selection" => "bad", "sheetId" => nil},
+               socket
+             )
+
+    assert {:reply, {:error, %{reason: "invalid_workbook_payload"}}, ^socket} =
+             WorkbookChannel.handle_in(
+               "snapshot:push",
+               %{"clientId" => "client-invalid", "workbook" => []},
+               socket
+             )
+
+    assert {:reply, {:error, %{reason: "invalid_workbook_payload"}}, ^socket} =
+             WorkbookChannel.handle_in(
+               "snapshot:push",
+               %{
+                 "clientId" => "client-invalid",
+                 "workbook" =>
+                   workbook_payload(workbook_id)
+                   |> Map.put("collaborationVersion", "bad")
+               },
+               socket
+             )
+
+    assert {:reply, {:error, %{reason: "invalid_typing_payload"}}, ^socket} =
+             WorkbookChannel.handle_in("typing:push", %{"typing" => "bad"}, socket)
+  end
+
+  test "fails shared editor snapshot persistence when the owner workbook cannot be sanitized" do
+    workbook_id = unique_workbook_id()
+
+    Application.put_env(:papyrus_collab, Store, adapter: CloudWorkbookStoreStub)
+
+    Application.put_env(
+      :papyrus_collab,
+      CloudWorkbookStoreStub,
+      responses: %{{"owner-broken", workbook_id} => {:ok, %{"broken" => true}}}
+    )
+
+    allow_realtime_access(
+      "shared-editor",
+      workbook_id,
+      "editor",
+      shared_workbook_payload(workbook_id, "editor"),
+      "owner-broken"
+    )
+
+    assert {:ok, socket} =
+             connect(UserSocket, socket_params("shared-editor", "device-shared", nil))
+
+    assert {:ok, _response, joined_socket} =
+             subscribe_and_join(socket, WorkbookChannel, "workbook:" <> workbook_id)
+
+    snapshot_ref =
+      push(joined_socket, "snapshot:push", %{
+        "clientId" => "client-shared",
+        "workbook" =>
+          shared_workbook_payload(workbook_id, "editor")
+          |> Map.put("collaborationVersion", 0)
+      })
+
+    assert_reply snapshot_ref, :error, %{reason: "invalid_workbook_payload"}
+  end
+
+  test "terminates cleanly when the collaboration supervisor is temporarily unavailable" do
+    supervisor_pid = Process.whereis(PapyrusCollab.Collaboration.RoomSupervisor)
+    supervisor_ref = Process.monitor(supervisor_pid)
+
+    Process.exit(supervisor_pid, :kill)
+    assert_receive {:DOWN, ^supervisor_ref, :process, ^supervisor_pid, _reason}
+
+    assert :ok =
+             WorkbookChannel.terminate(:normal, %Phoenix.Socket{
+               assigns: %{
+                 identity: identity("user-crash", "device-crash", nil),
+                 workbook_id: unique_workbook_id()
+               }
+             })
+
+    assert Process.alive?(wait_for_room_supervisor_restart(supervisor_pid, 20))
+  end
+
   defp allow_realtime_access(
          user_id,
          workbook_id,
@@ -360,6 +673,25 @@ defmodule PapyrusCollabWeb.WorkbookChannelTest do
 
   defp restore_env(app, key, nil), do: Application.delete_env(app, key)
   defp restore_env(app, key, value), do: Application.put_env(app, key, value)
+
+  defp wait_for_room_supervisor_restart(previous_pid, attempts_left)
+       when is_integer(attempts_left) and attempts_left > 0 do
+    case Process.whereis(PapyrusCollab.Collaboration.RoomSupervisor) do
+      nil ->
+        Process.sleep(10)
+        wait_for_room_supervisor_restart(previous_pid, attempts_left - 1)
+
+      ^previous_pid ->
+        Process.sleep(10)
+        wait_for_room_supervisor_restart(previous_pid, attempts_left - 1)
+
+      new_pid ->
+        new_pid
+    end
+  end
+
+  defp wait_for_room_supervisor_restart(_previous_pid, 0),
+    do: Process.whereis(PapyrusCollab.Collaboration.RoomSupervisor)
 
   defp workbook_payload(workbook_id, update_base64 \\ "AQID", version \\ 0) do
     %{

@@ -62,4 +62,54 @@ defmodule PapyrusCollab.Platform.Google.ServiceAccountTest do
     assert jwt.fields["iat"] == 1_700_000_000
     assert jwt.fields["exp"] == 1_700_003_600
   end
+
+  test "loads credentials from disk and validates required fields" do
+    service_account_path = Path.join(System.tmp_dir!(), "papyrus-service-account.json")
+
+    File.write!(
+      service_account_path,
+      Jason.encode!(%{
+        "client_email" => "papyrus-collab@example.com",
+        "private_key" => @private_key
+      })
+    )
+
+    assert {:ok, service_account} =
+             ServiceAccount.load(service_account_path: service_account_path)
+
+    assert service_account.token_uri == "https://oauth2.googleapis.com/token"
+
+    assert {:error, {:missing_service_account_field, "private_key"}} =
+             ServiceAccount.load(
+               service_account_json: Jason.encode!(%{"client_email" => "papyrus@example.com"})
+             )
+
+    assert {:error, :missing_service_account_credentials} = ServiceAccount.load([])
+  end
+
+  test "rejects invalid private keys when building assertions" do
+    assert {:ok, service_account} =
+             ServiceAccount.load(
+               service_account_json:
+                 Jason.encode!(%{
+                   "client_email" => "papyrus-collab@example.com",
+                   "private_key" => "not-a-pem",
+                   "project_id" => "papyrus-test"
+                 })
+             )
+
+    assert {:error, :invalid_service_account_private_key} =
+             ServiceAccount.build_assertion(service_account, 1_700_000_000)
+
+    assert {:error, :invalid_service_account_private_key} =
+             ServiceAccount.build_assertion(
+               %ServiceAccount{
+                 client_email: "papyrus-collab@example.com",
+                 private_key: <<255, 254, 253>>,
+                 project_id: "papyrus-test",
+                 token_uri: "https://oauth2.googleapis.com/token"
+               },
+               1_700_000_000
+             )
+  end
 end

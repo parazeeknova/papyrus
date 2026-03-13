@@ -21,11 +21,15 @@ export interface LogRecord {
 type LogMethod = (message: string, ...meta: unknown[]) => void;
 type LogSink = (record: LogRecord) => void;
 
-const nodeEnv =
-  (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env
-    ?.NODE_ENV ?? "production";
-const isDevelopment = nodeEnv === "development";
 const logSinks = new Set<LogSink>();
+
+function isDevelopmentEnv(): boolean {
+  const nodeEnv =
+    (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env
+      ?.NODE_ENV ?? "production";
+
+  return nodeEnv === "development";
+}
 
 function writeLog(
   level: LogLevel,
@@ -40,7 +44,7 @@ function writeLog(
     scope,
   };
 
-  if (!isDevelopment) {
+  if (!isDevelopmentEnv()) {
     for (const sink of logSinks) {
       sink(record);
     }
