@@ -3,6 +3,7 @@ import { Nunito_Sans } from "next/font/google";
 // biome-ignore lint/suspicious/noTsIgnore: vercel build fix for css imports
 // @ts-ignore - this is a css file, but next doesn't know how to handle it
 import "./globals.css";
+import { reportWebServerEnvWarnings } from "@/web/platform/env/env-diagnostics";
 import { AppProviders } from "@/web/platform/providers/app-providers";
 import { cn } from "@/web/shared/lib/utils";
 
@@ -17,6 +18,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  reportWebServerEnvWarnings();
+
   return (
     <html className={cn("font-sans", nunitoSans.variable)} lang="en">
       <body className={`${nunitoSans.variable} antialiased`}>

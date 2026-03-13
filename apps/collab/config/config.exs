@@ -10,6 +10,8 @@ import Config
 config :papyrus_collab,
   generators: [timestamp_type: :utc_datetime]
 
+config :papyrus_collab, :app_env, config_env()
+
 config :papyrus_collab, PapyrusCollab.Auth,
   id_token_verifier: PapyrusCollab.Firebase.IdTokenVerifier
 

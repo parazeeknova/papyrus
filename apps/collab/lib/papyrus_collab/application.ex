@@ -5,10 +5,12 @@ defmodule PapyrusCollab.Application do
 
   use Application
 
-  alias PapyrusCollab.{CloudWorkbooks.Store, SharedWorkbooks}
+  alias PapyrusCollab.{CloudWorkbooks.Store, Platform.RuntimeEnv, SharedWorkbooks}
 
   @impl true
   def start(_type, _args) do
+    :ok = RuntimeEnv.report_warnings()
+
     children =
       [
         PapyrusCollabWeb.Telemetry,

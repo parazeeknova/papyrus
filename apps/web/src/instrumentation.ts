@@ -1,7 +1,8 @@
+import { reportWebServerEnvWarnings } from "@/web/platform/env/env-diagnostics";
 import { getPostHogServer } from "@/web/platform/posthog/lib/posthog-server";
 
 export function register(): void {
-  return;
+  reportWebServerEnvWarnings();
 }
 
 export async function onRequestError(

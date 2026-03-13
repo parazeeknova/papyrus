@@ -3,6 +3,7 @@
 import { PostHogProvider } from "@posthog/react";
 import posthog from "posthog-js";
 import { useEffect } from "react";
+import { reportWebClientEnvWarnings } from "@/web/platform/env/env-diagnostics";
 import { PostHogAuthStateSync } from "@/web/platform/posthog/components/posthog-auth-state-sync";
 import { getPostHogBrowserConfig } from "@/web/platform/posthog/lib/posthog-auth";
 import { TooltipProvider } from "@/web/shared/ui/tooltip";
@@ -15,6 +16,8 @@ function PostHogClientProvider({
   children: React.ReactNode;
 }>) {
   useEffect(() => {
+    reportWebClientEnvWarnings();
+
     const config = getPostHogBrowserConfig();
 
     if (!config || hasInitializedPostHog) {
