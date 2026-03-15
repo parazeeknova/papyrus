@@ -1,0 +1,109 @@
+name: Deploy Collab Service
+
+on:
+  push:
+    branches:
+      - elixi
+    paths:
+      - "apps/collab/**"
+      - ".github/workflows/collab-deploy.yml"
+
+concurrency:
+  group: collab-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/papyrus-collab
+
+jobs:
+  build-and-push:
+    name: Build and Push Collab Image
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: useblacksmith/build-push-action@v2
+        with:
+          context: ./apps/collab
+          file: ./apps/collab/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Trigger Dokploy deployment via API
+        if: success()
+        run: |
+          curl --fail --silent --show-error \
+            -X POST \
+            "${{ secrets.DOKPLOY_API_URL }}/api/application.deploy" \
+            -H 'accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -H "x-api-key: ${{ secrets.DOKPLOY_API_TOKEN }}" \
+            -d "{\"applicationId\":\"${{ secrets.DOKPLOY_APP_ID }}\"}"
+
+      - name: Wait for deployment health check
+        if: success()
+        run: |
+          echo "Waiting 30s for the new release to come up..."
+          sleep 30
+
+          echo "Checking collab health endpoint..."
+          for i in {1..10}; do
+            if curl -fsS "${{ secrets.COLLAB_HEALTH_URL }}/api/health" > /dev/null; then
+              echo "Health check passed."
+              exit 0
+            fi
+
+            echo "Attempt $i/10 failed, retrying in 10s..."
+            sleep 10
+          done
+
+          echo "Collab health check failed after 10 attempts."
+          exit 1
+
+  cleanup-old-images:
+    name: Cleanup Old Images
+    needs: build-and-push
+    if: ${{ needs.build-and-push.result == 'success' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      packages: write
+
+    steps:
+      - name: Delete old package versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: papyrus-collab
+          package-type: container
+          min-versions-to-keep: 3
+          delete-only-untagged-versions: false
