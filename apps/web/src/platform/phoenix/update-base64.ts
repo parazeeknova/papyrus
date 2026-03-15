@@ -4,8 +4,8 @@ export function decodeBase64ToBinary(value: string): Uint8Array {
   const binary = atob(value);
   const result = new Uint8Array(binary.length);
 
-  for (const [index, char] of Array.from(binary).entries()) {
-    result[index] = char.charCodeAt(0);
+  for (let index = 0; index < binary.length; index += 1) {
+    result[index] = binary.charCodeAt(index);
   }
 
   return result;

@@ -9,7 +9,8 @@ config :papyrus_collab, PapyrusCollabWeb.Endpoint,
   server: false
 
 config :papyrus_collab, PapyrusCollab.Auth,
-  id_token_verifier: PapyrusCollab.Auth.TestTokenVerifier
+  id_token_verifier: PapyrusCollab.Auth.TestTokenVerifier,
+  socket_token_signer: PapyrusCollab.Auth.TestTokenVerifier
 
 config :papyrus_collab, PapyrusCollab.CloudWorkbooks.Store,
   adapter: PapyrusCollab.CloudWorkbooks.Store.InMemory

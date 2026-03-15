@@ -11,10 +11,18 @@ export function GlobalErrorSurface({
   reset: () => void;
 }>) {
   useEffect(() => {
-    posthog.captureException(error, {
-      digest: error.digest ?? null,
-      surface: "global-error-boundary",
-    });
+    if (typeof posthog.captureException !== "function") {
+      return;
+    }
+
+    try {
+      posthog.captureException(error, {
+        digest: error.digest ?? null,
+        surface: "global-error-boundary",
+      });
+    } catch {
+      // Telemetry failures must never block the recovery surface.
+    }
   }, [error]);
 
   return (

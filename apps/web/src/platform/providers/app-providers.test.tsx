@@ -57,11 +57,19 @@ mock.module("@/web/platform/env/client-env", () => ({
   env: publicEnv,
 }));
 
-const { AppProviders } = await import(`./app-providers.tsx?${Date.now()}`);
+let appProvidersImportCounter = 0;
 
-test("initializes and wraps PostHog when browser config is present", () => {
+function importAppProviders() {
+  appProvidersImportCounter += 1;
+  return import(`./app-providers.tsx?test=${appProvidersImportCounter}`);
+}
+
+test("initializes and wraps PostHog when browser config is present", async () => {
   publicEnv.NEXT_PUBLIC_POSTHOG_HOST = "https://us.i.posthog.com";
   publicEnv.NEXT_PUBLIC_POSTHOG_KEY = "project-key";
+  init.mockClear();
+
+  const { AppProviders } = await importAppProviders();
 
   const view = render(
     <AppProviders>
@@ -82,9 +90,23 @@ test("initializes and wraps PostHog when browser config is present", () => {
   });
 });
 
-test("does not initialize PostHog a second time after the client is bootstrapped", () => {
+test("does not initialize PostHog a second time after the client is bootstrapped", async () => {
   publicEnv.NEXT_PUBLIC_POSTHOG_HOST = "https://us.i.posthog.com";
   publicEnv.NEXT_PUBLIC_POSTHOG_KEY = "project-key";
+
+  const { AppProviders } = await importAppProviders();
+
+  init.mockClear();
+
+  const firstView = render(
+    <AppProviders>
+      <div>child content</div>
+    </AppProviders>
+  );
+
+  expect(init).toHaveBeenCalledTimes(1);
+
+  firstView.unmount();
   init.mockClear();
 
   render(
@@ -96,10 +118,12 @@ test("does not initialize PostHog a second time after the client is bootstrapped
   expect(init).not.toHaveBeenCalled();
 });
 
-test("falls back to the bare children when browser posthog config is unavailable", () => {
+test("falls back to the bare children when browser posthog config is unavailable", async () => {
   publicEnv.NEXT_PUBLIC_POSTHOG_HOST = undefined;
   publicEnv.NEXT_PUBLIC_POSTHOG_KEY = undefined;
   init.mockClear();
+
+  const { AppProviders } = await importAppProviders();
 
   const view = render(
     <AppProviders>

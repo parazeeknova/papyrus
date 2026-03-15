@@ -1,5 +1,6 @@
 import { expect, mock, test } from "bun:test";
 
+const objectHasOwnProperty = Object.prototype.hasOwnProperty;
 const captureException = mock(
   async (
     _error: Error,
@@ -27,15 +28,15 @@ mock.module("@/web/platform/env/env-diagnostics", () => ({
   }) => {
     const envName = options?.envName ?? process.env.NODE_ENV ?? "development";
     const collabWsUrl =
-      options && Object.hasOwn(options, "collabWsUrl")
+      options && objectHasOwnProperty.call(options, "collabWsUrl")
         ? options.collabWsUrl
         : process.env.NEXT_PUBLIC_COLLAB_WS_URL;
     const posthogHost =
-      options && Object.hasOwn(options, "posthogHost")
+      options && objectHasOwnProperty.call(options, "posthogHost")
         ? options.posthogHost
         : process.env.NEXT_PUBLIC_POSTHOG_HOST;
     const posthogKey =
-      options && Object.hasOwn(options, "posthogKey")
+      options && objectHasOwnProperty.call(options, "posthogKey")
         ? options.posthogKey
         : process.env.NEXT_PUBLIC_POSTHOG_KEY;
     const warnings: Array<{ code: string; message: string }> = [];

@@ -17,10 +17,11 @@ function isStatusCode(reasonCode: string, prefix: string): boolean {
 export function getCloudSyncReasonMessage(reasonCode: string): string {
   if (
     FILESYSTEM_CREDENTIAL_ERROR_CODES.has(reasonCode) ||
+    reasonCode === "missing_firebase_project_id" ||
     reasonCode === "missing_service_account_credentials" ||
     reasonCode.startsWith("missing_service_account_field_")
   ) {
-    return "Phoenix cloud sync cannot read the configured Google service account credentials.";
+    return "Phoenix cloud sync is missing the Firestore project or service account configuration it needs to talk to Google Cloud.";
   }
 
   if (reasonCode === "invalid_service_account_private_key") {

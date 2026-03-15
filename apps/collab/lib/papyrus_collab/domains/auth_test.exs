@@ -18,7 +18,8 @@ defmodule PapyrusCollab.AuthTest do
     Application.put_env(
       :papyrus_collab,
       PapyrusCollab.Auth,
-      id_token_verifier: PapyrusCollab.Auth.TestTokenVerifier
+      id_token_verifier: PapyrusCollab.Auth.TestTokenVerifier,
+      socket_token_signer: PapyrusCollab.Auth.TestTokenVerifier
     )
 
     on_exit(fn ->
@@ -63,11 +64,12 @@ defmodule PapyrusCollab.AuthTest do
              })
   end
 
-  test "raises when the configured verifier cannot sign test socket tokens" do
+  test "raises when no socket token signer is configured" do
     Application.put_env(
       :papyrus_collab,
       PapyrusCollab.Auth,
-      id_token_verifier: VerifyOnlyStub
+      id_token_verifier: VerifyOnlyStub,
+      socket_token_signer: nil
     )
 
     assert_raise ArgumentError, ~r/does not support signing/, fn ->

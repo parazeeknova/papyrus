@@ -129,6 +129,32 @@ defmodule PapyrusCollab.Platform.Google.ServiceAccountTokenProviderTest do
     Application.put_env(:papyrus_collab, ServiceAccountTokenProvider, previous_config)
   end
 
+  test "allows token fetches that exceed the default genserver call timeout" do
+    provider = ServiceAccountTokenProvider
+
+    Application.put_env(
+      :papyrus_collab,
+      provider,
+      service_account_json:
+        Jason.encode!(%{
+          "client_email" => "papyrus-collab@example.com",
+          "private_key" => @private_key,
+          "project_id" => "papyrus-test",
+          "token_uri" => "https://oauth2.googleapis.com/token"
+        }),
+      requester: fn _service_account ->
+        Process.sleep(5_100)
+        {:ok, %{"access_token" => "slow-token", "expires_in" => 600}}
+      end
+    )
+
+    reset_provider_state(provider)
+
+    task = Task.async(fn -> provider.fetch_token() end)
+
+    assert {:ok, "slow-token"} = Task.await(task, 6_500)
+  end
+
   test "returns normalized errors for invalid token responses" do
     previous_config = Application.get_env(:papyrus_collab, ServiceAccountTokenProvider, [])
     provider = ServiceAccountTokenProvider

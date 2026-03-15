@@ -1,6 +1,7 @@
 import { createLogger } from "@papyrus/logs";
 
 const envLogger = createLogger({ scope: "web-env" });
+const objectHasOwnProperty = Object.prototype.hasOwnProperty;
 
 interface WebEnvWarning {
   code:
@@ -26,7 +27,7 @@ function readOptionOrEnv(
   key: keyof WebEnvWarningOptions,
   envName: string
 ): string | undefined {
-  if (options && Object.hasOwn(options, key)) {
+  if (options && objectHasOwnProperty.call(options, key)) {
     return options[key];
   }
 

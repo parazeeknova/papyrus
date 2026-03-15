@@ -4,8 +4,9 @@ defmodule PapyrusCollabWeb.E2EAuthController do
   alias PapyrusCollab.Auth
   alias PapyrusCollab.Auth.Identity
 
-  plug :allow_e2e_cors
   plug :ensure_e2e_auth_enabled
+  plug :ensure_local_e2e_request
+  plug :allow_e2e_cors
 
   @spec options(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def options(conn, _params) do
@@ -40,14 +41,37 @@ defmodule PapyrusCollabWeb.E2EAuthController do
   end
 
   defp allow_e2e_cors(conn, _opts) do
-    conn
-    |> put_resp_header("access-control-allow-origin", "*")
-    |> put_resp_header("access-control-allow-methods", "OPTIONS, POST")
-    |> put_resp_header("access-control-allow-headers", "content-type")
+    case List.first(get_req_header(conn, "origin")) do
+      nil ->
+        conn
+
+      origin when is_binary(origin) ->
+        if allowed_e2e_origin?(origin) do
+          conn
+          |> put_resp_header("access-control-allow-origin", origin)
+          |> put_resp_header("access-control-allow-methods", "OPTIONS, POST")
+          |> put_resp_header("access-control-allow-headers", "content-type")
+          |> put_resp_header("vary", "Origin")
+        else
+          conn
+          |> send_resp(:forbidden, "Forbidden")
+          |> halt()
+        end
+    end
+  end
+
+  defp ensure_local_e2e_request(%Plug.Conn{remote_ip: remote_ip} = conn, _opts) do
+    if loopback_ip?(remote_ip) do
+      conn
+    else
+      conn
+      |> send_resp(:forbidden, "Forbidden")
+      |> halt()
+    end
   end
 
   defp ensure_e2e_auth_enabled(conn, _opts) do
-    if Application.get_env(:papyrus_collab, :e2e_auth_enabled, false) do
+    if e2e_auth_available?() do
       conn
     else
       conn
@@ -55,6 +79,23 @@ defmodule PapyrusCollabWeb.E2EAuthController do
       |> halt()
     end
   end
+
+  defp allowed_e2e_origin?(origin) when is_binary(origin) do
+    case PapyrusCollabWeb.Endpoint.config(:check_origin) do
+      origins when is_list(origins) -> Enum.member?(origins, origin)
+      _origins -> false
+    end
+  end
+
+  defp e2e_auth_available? do
+    Application.get_env(:papyrus_collab, :e2e_auth_enabled, false) and
+      Application.get_env(:papyrus_collab, :app_env) == :test and
+      Auth.supports_socket_token_signing?()
+  end
+
+  defp loopback_ip?({127, _, _, _}), do: true
+  defp loopback_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
+  defp loopback_ip?(_remote_ip), do: false
 
   defp fetch_optional_string(params, key) when is_map(params) and is_binary(key) do
     case Map.get(params, key) do

@@ -261,9 +261,8 @@ defmodule PapyrusCollab.SharedWorkbooks.Store.FirestoreTest do
     Application.delete_env(:papyrus_collab, Firestore)
     Application.delete_env(:papyrus_collab, PapyrusCollab.Firebase.IdTokenVerifier)
 
-    assert_raise ArgumentError, ~r/FIREBASE_PROJECT_ID is required/, fn ->
-      Firestore.read_workbook("workbook-1")
-    end
+    assert {:error, :missing_firebase_project_id} =
+             Firestore.read_workbook("workbook-1")
 
     Application.put_env(:papyrus_collab, Firestore, previous_store_config)
 

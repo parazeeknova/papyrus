@@ -7,7 +7,9 @@ defmodule PapyrusCollab.Platform.Google.ServiceAccountTokenProvider do
 
   alias PapyrusCollab.Platform.Google.ServiceAccount
 
+  @fetch_token_timeout_milliseconds 15_000
   @token_refresh_window_seconds 60
+  @token_exchange_receive_timeout_milliseconds 10_000
 
   @type state :: %{
           expires_at: integer(),
@@ -26,7 +28,7 @@ defmodule PapyrusCollab.Platform.Google.ServiceAccountTokenProvider do
   @impl true
   @spec fetch_token() :: {:ok, String.t()} | {:error, term()}
   def fetch_token do
-    GenServer.call(__MODULE__, :fetch_token)
+    GenServer.call(__MODULE__, :fetch_token, @fetch_token_timeout_milliseconds)
   end
 
   @spec request_access_token(ServiceAccount.t()) :: {:ok, map()} | {:error, term()}
@@ -41,7 +43,7 @@ defmodule PapyrusCollab.Platform.Google.ServiceAccountTokenProvider do
                assertion: assertion,
                grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer"
              },
-             receive_timeout: 10_000
+             receive_timeout: @token_exchange_receive_timeout_milliseconds
            ) do
       if status in 200..299 do
         {:ok, body}

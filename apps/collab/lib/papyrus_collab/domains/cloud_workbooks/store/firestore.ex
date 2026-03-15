@@ -232,7 +232,10 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
   end
 
   defp document_path_from_name(name) when is_binary(name) do
-    String.replace_prefix(name, base_document_name_prefix(), "")
+    case String.split(name, "/documents", parts: 2) do
+      [_prefix, path] when is_binary(path) and byte_size(path) > 0 -> path
+      _parts -> name
+    end
   end
 
   defp document_response_fields(%{"fields" => fields}) when is_map(fields), do: {:ok, fields}
@@ -441,75 +444,54 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
 
   defp request(token, method, path, options)
        when is_binary(token) and is_atom(method) and is_binary(path) and is_list(options) do
-    request_options =
-      [
-        auth: {:bearer, token},
-        headers: [{"content-type", "application/json"}],
-        method: method,
-        receive_timeout: 10_000,
-        url: base_url() <> path
-      ] ++ options
+    with {:ok, firestore_base_url} <- base_url() do
+      request_options =
+        [
+          auth: {:bearer, token},
+          headers: [{"content-type", "application/json"}],
+          method: method,
+          receive_timeout: 10_000,
+          url: firestore_base_url <> path
+        ] ++ options
 
-    case requester().(request_options) do
-      :not_found ->
-        :not_found
+      case requester().(request_options) do
+        :not_found ->
+          :not_found
 
-      {:ok, %Req.Response{status: 404}} ->
-        :not_found
+        {:ok, %Req.Response{status: 404}} ->
+          :not_found
 
-      {:ok, %Req.Response{status: status, body: body}} when status in 200..299 ->
-        {:ok, body}
+        {:ok, %Req.Response{status: status, body: body}} when status in 200..299 ->
+          {:ok, body}
 
-      {:ok, %Req.Response{status: status, body: body}} ->
-        {:error, {:firestore_http, status, body}}
+        {:ok, %Req.Response{status: status, body: body}} ->
+          {:error, {:firestore_http, status, body}}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
-  defp requester do
-    Application.get_env(:papyrus_collab, __MODULE__, [])[:requester] || (&Req.request/1)
-  end
-
-  defp write_chunk_documents(token, user_id, workbook_id, chunk_values, snapshot_id) do
-    chunk_values
-    |> Enum.with_index()
-    |> Enum.reduce_while(:ok, fn {chunk, index}, :ok ->
-      case patch_document(
-             token,
-             chunk_document_path(user_id, workbook_id, index),
-             chunk_value_document(chunk, index, snapshot_id)
-           ) do
-        :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
-  end
-
-  defp workbook_collection_path(user_id) do
-    "/users/#{URI.encode(user_id)}/workbooks?pageSize=#{@page_size}"
-  end
-
-  defp workbook_document_path(user_id, workbook_id) do
-    "/users/#{URI.encode(user_id)}/workbooks/#{URI.encode(workbook_id)}"
-  end
-
-  defp base_document_name_prefix do
-    project_id = fetch_project_id()
-    "projects/#{project_id}/databases/(default)/documents"
-  end
-
   defp base_url do
-    "https://firestore.googleapis.com/v1/projects/#{fetch_project_id()}/databases/(default)/documents"
+    with {:ok, project_id} <- fetch_project_id() do
+      {:ok,
+       "https://firestore.googleapis.com/v1/projects/#{project_id}/databases/(default)/documents"}
+    end
   end
 
   defp fetch_project_id do
-    Application.get_env(:papyrus_collab, __MODULE__, [])[:project_id] ||
-      Application.get_env(:papyrus_collab, PapyrusCollab.Firebase.IdTokenVerifier, [])[
-        :project_id
-      ] ||
-      raise ArgumentError, "FIREBASE_PROJECT_ID is required for Firestore-backed workbook sync"
+    project_id =
+      Application.get_env(:papyrus_collab, __MODULE__, [])[:project_id] ||
+        Application.get_env(:papyrus_collab, PapyrusCollab.Firebase.IdTokenVerifier, [])[
+          :project_id
+        ]
+
+    if is_binary(project_id) and String.trim(project_id) != "" do
+      {:ok, project_id}
+    else
+      {:error, :missing_firebase_project_id}
+    end
   end
 
   defp fetch_boolean(map, key) when is_map(map) and is_binary(key) do
@@ -540,6 +522,33 @@ defmodule PapyrusCollab.CloudWorkbooks.Store.Firestore do
       value when is_binary(value) and byte_size(value) > 0 -> {:ok, value}
       _value -> {:error, {:invalid_string, key}}
     end
+  end
+
+  defp requester do
+    Application.get_env(:papyrus_collab, __MODULE__, [])[:requester] || (&Req.request/1)
+  end
+
+  defp write_chunk_documents(token, user_id, workbook_id, chunk_values, snapshot_id) do
+    chunk_values
+    |> Enum.with_index()
+    |> Enum.reduce_while(:ok, fn {chunk, index}, :ok ->
+      case patch_document(
+             token,
+             chunk_document_path(user_id, workbook_id, index),
+             chunk_value_document(chunk, index, snapshot_id)
+           ) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp workbook_collection_path(user_id) do
+    "/users/#{URI.encode(user_id)}/workbooks?pageSize=#{@page_size}"
+  end
+
+  defp workbook_document_path(user_id, workbook_id) do
+    "/users/#{URI.encode(user_id)}/workbooks/#{URI.encode(workbook_id)}"
   end
 
   defp fetch_optional_value(map, key) when is_map(map) and is_binary(key) do

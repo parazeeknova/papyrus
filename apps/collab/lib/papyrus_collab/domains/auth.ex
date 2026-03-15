@@ -17,13 +17,28 @@ defmodule PapyrusCollab.Auth do
       "user_id" => identity.user_id
     }
 
-    module = verifier()
+    case socket_token_signer() do
+      {:ok, module} ->
+        module.sign(claims)
 
-    if Code.ensure_loaded?(module) and function_exported?(module, :sign, 1) do
-      module.sign(claims)
+      :error ->
+        raise ArgumentError,
+              "the configured auth verifier does not support signing test socket tokens"
+    end
+  end
+
+  @spec supports_socket_token_signing?() :: boolean()
+  def supports_socket_token_signing? do
+    match?({:ok, _module}, socket_token_signer())
+  end
+
+  defp socket_token_signer do
+    module = Application.fetch_env!(:papyrus_collab, __MODULE__)[:socket_token_signer]
+
+    if is_atom(module) and Code.ensure_loaded?(module) and function_exported?(module, :sign, 1) do
+      {:ok, module}
     else
-      raise ArgumentError,
-            "the configured auth verifier does not support signing test socket tokens"
+      :error
     end
   end
 

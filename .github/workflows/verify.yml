@@ -12,15 +12,64 @@ concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+
 jobs:
-  verify:
-    name: Verify Workspace
-    runs-on: ubuntu-24.04
+  fast-checks:
+    name: Fast Checks
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      CI: "true"
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+
+      - name: Set up Erlang and Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19.0"
+          otp-version: "27.0"
+
+      - name: Install JavaScript dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Hex and Rebar
+        working-directory: apps/collab
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Install Elixir dependencies
+        working-directory: apps/collab
+        run: mix deps.get
+
+      - name: Run Ultracite
+        run: bun x ultracite check
+
+      - name: Run workspace checks
+        run: turbo run check
+
+      - name: Run typechecks
+        run: turbo run check-types
+
+      - name: Run autobump script tests
+        run: bun test ./scripts/autobump-workspaces.test.ts
+
+      - name: Run unit tests
+        run: turbo run test
+
+  e2e:
+    name: E2E
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
@@ -53,8 +102,8 @@ jobs:
         working-directory: apps/web
         run: bunx playwright install --with-deps chrome
 
-      - name: Run the full verification gate
-        run: bun run verify:pr
+      - name: Run Playwright E2E tests
+        run: bun run test:e2e
 
       - name: Upload Playwright artifacts
         if: failure()
@@ -65,3 +114,23 @@ jobs:
           path: |
             apps/web/playwright-report
             apps/web/test-results
+
+  verify:
+    name: Verify Workspace
+    if: ${{ always() }}
+    needs:
+      - fast-checks
+      - e2e
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: Check required job results
+        env:
+          FAST_CHECKS_RESULT: ${{ needs.fast-checks.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+        run: |
+          if [ "$FAST_CHECKS_RESULT" != "success" ] || [ "$E2E_RESULT" != "success" ]; then
+            echo "fast-checks result: $FAST_CHECKS_RESULT"
+            echo "e2e result: $E2E_RESULT"
+            exit 1
+          fi

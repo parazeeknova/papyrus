@@ -20,7 +20,9 @@ if System.get_env("PHX_SERVER") do
   config :papyrus_collab, PapyrusCollabWeb.Endpoint, server: true
 end
 
-config :papyrus_collab, :e2e_auth_enabled, System.get_env("E2E_AUTH_ENABLED") == "true"
+config :papyrus_collab,
+       :e2e_auth_enabled,
+       config_env() == :test and System.get_env("E2E_AUTH_ENABLED") == "true"
 
 config :papyrus_collab, PapyrusCollabWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]

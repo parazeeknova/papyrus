@@ -143,30 +143,32 @@ defmodule PapyrusCollab.SharedWorkbooks.Store.Firestore do
 
   defp request(token, method, path, options)
        when is_binary(token) and is_atom(method) and is_binary(path) and is_list(options) do
-    request_options =
-      [
-        auth: {:bearer, token},
-        headers: [{"content-type", "application/json"}],
-        method: method,
-        receive_timeout: 10_000,
-        url: base_url() <> path
-      ] ++ options
+    with {:ok, firestore_base_url} <- base_url() do
+      request_options =
+        [
+          auth: {:bearer, token},
+          headers: [{"content-type", "application/json"}],
+          method: method,
+          receive_timeout: 10_000,
+          url: firestore_base_url <> path
+        ] ++ options
 
-    case requester().(request_options) do
-      :not_found ->
-        :not_found
+      case requester().(request_options) do
+        :not_found ->
+          :not_found
 
-      {:ok, %Req.Response{status: 404}} ->
-        :not_found
+        {:ok, %Req.Response{status: 404}} ->
+          :not_found
 
-      {:ok, %Req.Response{status: status, body: body}} when status in 200..299 ->
-        {:ok, body}
+        {:ok, %Req.Response{status: status, body: body}} when status in 200..299 ->
+          {:ok, body}
 
-      {:ok, %Req.Response{status: status, body: body}} ->
-        {:error, {:firestore_http, status, body}}
+        {:ok, %Req.Response{status: status, body: body}} ->
+          {:error, {:firestore_http, status, body}}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -179,14 +181,23 @@ defmodule PapyrusCollab.SharedWorkbooks.Store.Firestore do
   end
 
   defp base_url do
-    "https://firestore.googleapis.com/v1/projects/#{fetch_project_id()}/databases/(default)/documents"
+    with {:ok, project_id} <- fetch_project_id() do
+      {:ok,
+       "https://firestore.googleapis.com/v1/projects/#{project_id}/databases/(default)/documents"}
+    end
   end
 
   defp fetch_project_id do
-    Application.get_env(:papyrus_collab, __MODULE__, [])[:project_id] ||
-      Application.get_env(:papyrus_collab, PapyrusCollab.Firebase.IdTokenVerifier, [])[
-        :project_id
-      ] ||
-      raise ArgumentError, "FIREBASE_PROJECT_ID is required for shared workbook sync"
+    project_id =
+      Application.get_env(:papyrus_collab, __MODULE__, [])[:project_id] ||
+        Application.get_env(:papyrus_collab, PapyrusCollab.Firebase.IdTokenVerifier, [])[
+          :project_id
+        ]
+
+    if is_binary(project_id) and String.trim(project_id) != "" do
+      {:ok, project_id}
+    else
+      {:error, :missing_firebase_project_id}
+    end
   end
 end

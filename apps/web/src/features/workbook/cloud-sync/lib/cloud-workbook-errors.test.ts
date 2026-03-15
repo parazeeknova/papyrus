@@ -8,11 +8,14 @@ import {
 describe("cloud workbook errors", () => {
   test("maps service account and firestore reason codes to actionable messages", () => {
     expect(getCloudSyncReasonMessage("enoent")).toContain(
-      "configured Google service account credentials"
+      "service account configuration"
+    );
+    expect(getCloudSyncReasonMessage("missing_firebase_project_id")).toContain(
+      "Firestore project"
     );
     expect(
       getCloudSyncReasonMessage("missing_service_account_field_private_key")
-    ).toContain("configured Google service account credentials");
+    ).toContain("service account configuration");
     expect(
       getCloudSyncReasonMessage("invalid_service_account_private_key")
     ).toContain("parse the configured Google service account private key");

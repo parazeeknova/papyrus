@@ -9,7 +9,10 @@ defmodule PapyrusCollabWeb.Router do
     pipe_through :api
 
     get "/health", HealthController, :show
-    options "/e2e/session", E2EAuthController, :options
-    post "/e2e/session", E2EAuthController, :create
+
+    if Application.compile_env(:papyrus_collab, :app_env) == :test do
+      options "/e2e/session", E2EAuthController, :options
+      post "/e2e/session", E2EAuthController, :create
+    end
   end
 end
