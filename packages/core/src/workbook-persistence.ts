@@ -2,6 +2,11 @@ import { IndexeddbPersistence } from "y-indexeddb";
 import type { Doc } from "yjs";
 
 const WORKBOOK_NAMESPACE_PREFIX = "papyrus-workbook";
+const DEFAULT_PERSISTENCE_SYNC_TIMEOUT_MS = 5000;
+
+interface WorkbookPersistenceWaitOptions {
+  timeoutMs?: number;
+}
 
 export function getWorkbookPersistenceName(workbookId: string): string {
   return `${WORKBOOK_NAMESPACE_PREFIX}:${workbookId}`;
@@ -15,20 +20,41 @@ export function attachWorkbookPersistence(
 }
 
 export function waitForWorkbookPersistence(
-  persistence: IndexeddbPersistence
-): Promise<void> {
+  persistence: IndexeddbPersistence,
+  options: WorkbookPersistenceWaitOptions = {}
+): Promise<boolean> {
   return new Promise((resolve) => {
     if (persistence.synced) {
-      resolve();
+      resolve(true);
       return;
     }
 
-    const handleSynced = () => {
+    const timeoutMs = options.timeoutMs ?? DEFAULT_PERSISTENCE_SYNC_TIMEOUT_MS;
+    let hasSettled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const settle = (didSync: boolean) => {
+      if (hasSettled) {
+        return;
+      }
+
+      hasSettled = true;
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
       persistence.off("synced", handleSynced);
-      resolve();
+      resolve(didSync);
+    };
+
+    const handleSynced = () => {
+      settle(true);
     };
 
     persistence.on("synced", handleSynced);
+
+    timeoutId = setTimeout(() => {
+      settle(false);
+    }, timeoutMs);
   });
 }
 

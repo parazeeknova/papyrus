@@ -1,0 +1,123 @@
+"use client";
+
+import type {
+  CollaborationAccessRole,
+  CollaboratorPresence,
+  CollaboratorSelectionRange,
+} from "@papyrus/core/collaboration-types";
+import type {
+  CellFormat,
+  PersistedCellRecord,
+  SheetColumn,
+  SheetMeta,
+  WorkbookMeta,
+} from "@papyrus/core/workbook-types";
+import type { StoreApi } from "zustand";
+
+export type HydrationState = "error" | "idle" | "loading" | "ready";
+export type ImportPhase = "applying" | "error" | "idle" | "parsing" | "reading";
+
+export type RemoteSyncStatus =
+  | "disabled"
+  | "error"
+  | "idle"
+  | "pending"
+  | "syncing"
+  | "synced";
+
+export type SaveState = "error" | "saved" | "saving";
+
+export interface WorkbookStoreState {
+  activeSheetCells: Record<string, PersistedCellRecord>;
+  activeSheetColumns: SheetColumn[];
+  activeSheetFormats: Record<string, CellFormat>;
+  activeSheetId: string | null;
+  activeSheetRowHeights: Record<string, number>;
+  activeWorkbook: WorkbookMeta | null;
+  canRedo: boolean;
+  canUndo: boolean;
+  closeWorkbookRouteSession: (
+    workbookId: string,
+    isSharedSession?: boolean,
+    requestedAccessRole?: CollaborationAccessRole | null,
+    expectedSessionId?: number | null
+  ) => Promise<void>;
+  collaborationAccessRole: CollaborationAccessRole | null;
+  collaborationErrorMessage: string | null;
+  collaborationPeers: CollaboratorPresence[];
+  collaborationStatus: "connected" | "connecting" | "disconnected";
+  createSheet: () => Promise<void>;
+  createWorkbook: () => Promise<void>;
+  deleteColumns: (startColumn: number, columnCount: number) => Promise<void>;
+  deleteRows: (startRow: number, rowCount: number) => Promise<void>;
+  deleteSheet: (sheetId: string) => Promise<boolean>;
+  deleteWorkbook: () => Promise<void>;
+  exportActiveSheetToCsv: () => Promise<void>;
+  exportWorkbookToExcel: () => Promise<void>;
+  hydrateWorkbookList: () => Promise<void>;
+  hydrationState: HydrationState;
+  importActiveSheetFromCsv: (file: File) => Promise<void>;
+  importErrorMessage: string | null;
+  importFileName: string | null;
+  importPhase: ImportPhase;
+  importWorkbookFromExcel: (file: File) => Promise<void>;
+  insertColumns: (startColumn: number, columnCount: number) => Promise<void>;
+  insertRows: (startRow: number, rowCount: number) => Promise<void>;
+  isRemoteSyncAuthenticated: boolean;
+  lastSyncErrorMessage: string | null;
+  lastSyncedAt: number | null;
+  manualSyncCooldownUntil: number;
+  openWorkbook: (
+    workbookId: string,
+    name?: string,
+    isSharedSession?: boolean,
+    requestedAccessRole?: CollaborationAccessRole | null
+  ) => Promise<number | null>;
+  publishCollaborationPresence: (payload: {
+    activeCell: { col: number; row: number } | null;
+    selection: CollaboratorSelectionRange | null;
+    sheetId: string | null;
+  }) => void;
+  publishCollaborationTyping: (payload: {
+    typing: {
+      cell: { col: number; row: number };
+      draft: string;
+      sheetId: string;
+    } | null;
+  }) => void;
+  redo: () => Promise<void>;
+  remoteSyncStatus: RemoteSyncStatus;
+  remoteVersion: number | null;
+  renameColumn: (columnIndex: number, columnName: string) => Promise<boolean>;
+  renameWorkbook: (name: string) => Promise<void>;
+  reorderColumn: (
+    sourceColumnIndex: number,
+    targetColumnIndex: number
+  ) => Promise<void>;
+  reorderRow: (sourceRowIndex: number, targetRowIndex: number) => Promise<void>;
+  resizeColumn: (columnIndex: number, width: number) => Promise<void>;
+  resizeRow: (rowIndex: number, height: number) => Promise<void>;
+  saveState: SaveState;
+  setActiveSheet: (sheetId: string) => Promise<void>;
+  setCellFormats: (values: Record<string, CellFormat | null>) => Promise<void>;
+  setCellValue: (row: number, col: number, raw: string) => Promise<void>;
+  setCellValuesAndFormats: (
+    values: Record<string, string>,
+    formats: Record<string, CellFormat | null>
+  ) => Promise<void>;
+  setCellValuesByKey: (values: Record<string, string>) => Promise<void>;
+  setWorkbookFavorite: (isFavorite: boolean) => Promise<void>;
+  setWorkbookSharingAccessRole: (
+    accessRole: CollaborationAccessRole
+  ) => Promise<boolean>;
+  setWorkbookSharingEnabled: (sharingEnabled: boolean) => Promise<boolean>;
+  sheets: SheetMeta[];
+  syncNow: () => Promise<boolean>;
+  undo: () => Promise<void>;
+  workbooks: WorkbookMeta[];
+  workerResetKey: string;
+}
+
+export type WorkbookStoreGetState = StoreApi<WorkbookStoreState>["getState"];
+
+export type WorkbookStoreSetState = StoreApi<WorkbookStoreState>["setState"];
