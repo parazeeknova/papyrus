@@ -17,6 +17,8 @@ permissions:
 
 env:
   CI: "true"
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
 
 jobs:
   fast-checks:
@@ -51,20 +53,14 @@ jobs:
         working-directory: apps/collab
         run: mix deps.get
 
-      - name: Run Ultracite
-        run: bun x ultracite check
-
       - name: Run workspace checks
-        run: bun x turbo run check
+        run: bun run check
 
       - name: Run typechecks
-        run: bun x turbo run check-types
-
-      - name: Run autobump script tests
-        run: bun test ./scripts/autobump-workspaces.test.ts
+        run: bun run check-types
 
       - name: Run unit tests
-        run: bun x turbo run test
+        run: bun run test
 
   e2e:
     name: E2E

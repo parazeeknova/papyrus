@@ -1,5 +1,6 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
+  "globalDependencies": ["package.json", "bun.lock", "apps/collab/mix.lock"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -11,12 +12,31 @@
       "dependsOn": ["^check"],
       "cache": true
     },
+    "//#check:root": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".github/**",
+        "apps/**",
+        "packages/**",
+        "scripts/**"
+      ],
+      "outputs": [],
+      "cache": true
+    },
     "check-types": {
       "dependsOn": ["^check-types"],
       "cache": true
     },
     "test": {
       "dependsOn": ["^test"],
+      "cache": true
+    },
+    "//#test:root": {
+      "inputs": [
+        "scripts/autobump-workspaces.ts",
+        "scripts/autobump-workspaces.test.ts"
+      ],
+      "outputs": [],
       "cache": true
     },
     "test:e2e": {

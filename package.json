@@ -7,12 +7,14 @@
     "changeset:version": "changeset version",
     "dev": "turbo run dev",
     "format": "turbo run format",
-    "test": "bun test ./scripts/autobump-workspaces.test.ts && turbo run test",
+    "test": "bun x turbo run test test:root",
     "test:e2e": "cd apps/web && bun run test:e2e",
-    "check-types": "turbo run check-types",
+    "check-types": "bun x turbo run check-types",
     "autobump:staged": "bun run ./scripts/autobump-workspaces.ts",
-    "check": "ultracite fix",
-    "verify:pr": "bun x ultracite check && turbo run check && turbo run check-types && bun test ./scripts/autobump-workspaces.test.ts && turbo run test && bun run test:e2e",
+    "check": "bun x turbo run check check:root",
+    "check:root": "bun x ultracite check",
+    "test:root": "bun test ./scripts/autobump-workspaces.test.ts",
+    "verify:pr": "bun run check && bun run check-types && bun run test && bun run test:e2e",
     "prepare": "lefthook install"
   },
   "devDependencies": {
