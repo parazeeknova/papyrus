@@ -1,9 +1,10 @@
 name: Deploy Collab Service
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - elixi
+      - main
     paths:
       - "apps/collab/**"
       - ".github/workflows/collab-deploy.yml"
