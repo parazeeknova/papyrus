@@ -63,14 +63,39 @@ jobs:
 
       - name: Trigger Dokploy deployment via API
         if: success()
+        env:
+          DOKPLOY_API_URL: ${{ secrets.DOKPLOY_API_URL }}
+          DOKPLOY_API_TOKEN: ${{ secrets.DOKPLOY_API_TOKEN }}
+          DOKPLOY_APP_ID: ${{ secrets.DOKPLOY_APP_ID }}
         run: |
-          curl --fail --silent --show-error \
-            -X POST \
-            "${{ secrets.DOKPLOY_API_URL }}/api/application.deploy" \
-            -H 'accept: application/json' \
-            -H 'Content-Type: application/json' \
-            -H "x-api-key: ${{ secrets.DOKPLOY_API_TOKEN }}" \
-            -d "{\"applicationId\":\"${{ secrets.DOKPLOY_APP_ID }}\"}"
+          set -euo pipefail
+
+          response_body="$(mktemp)"
+          response_headers="$(mktemp)"
+
+          http_status="$(
+            curl --silent --show-error \
+              --output "$response_body" \
+              --dump-header "$response_headers" \
+              --write-out '%{http_code}' \
+              -X POST \
+              "${DOKPLOY_API_URL}/api/application.deploy" \
+              -H 'accept: application/json' \
+              -H 'Content-Type: application/json' \
+              -H "x-api-key: ${DOKPLOY_API_TOKEN}" \
+              --data-raw "{\"applicationId\":\"${DOKPLOY_APP_ID}\"}"
+          )"
+
+          if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
+            echo "Dokploy deployment request failed with HTTP ${http_status}."
+            echo "Selected response headers:"
+            grep -Ei '^(HTTP/|content-type:|date:|server:|cf-ray:|cf-cache-status:|x-request-id:)' "$response_headers" || true
+            echo "Response body:"
+            sed -n '1,120p' "$response_body"
+            exit 1
+          fi
+
+          echo "Dokploy deployment triggered successfully (HTTP ${http_status})."
 
       - name: Wait for deployment health check
         if: success()
