@@ -19,6 +19,10 @@ const webTestEnvironment = {
   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: "e2e-firebase-storage-bucket",
 };
 
+const webServerCommand = process.env.CI
+  ? "bun run build && bun run start"
+  : "bun run dev";
+
 export default defineConfig({
   testDir: "./e2e",
   testMatch: /.*\.e2e\.ts/,
@@ -36,11 +40,11 @@ export default defineConfig({
       url: "http://127.0.0.1:4000/api/health",
     },
     {
-      command: "bun run dev",
+      command: webServerCommand,
       cwd: ".",
       env: webTestEnvironment,
       reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
+      timeout: process.env.CI ? 300_000 : 120_000,
       url: "http://127.0.0.1:3000",
     },
   ],

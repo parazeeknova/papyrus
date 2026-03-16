@@ -109,6 +109,7 @@ export function GoogleAuthDialog() {
 
     try {
       await signInWithGoogle();
+      setOpen(false);
     } catch (error) {
       setErrorMessage(getAuthErrorMessage(error));
     } finally {
@@ -122,6 +123,7 @@ export function GoogleAuthDialog() {
 
     try {
       await signOutUser();
+      setOpen(false);
     } catch {
       setErrorMessage("Sign-out failed. Please try again.");
     } finally {

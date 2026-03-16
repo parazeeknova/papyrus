@@ -55,16 +55,16 @@ jobs:
         run: bun x ultracite check
 
       - name: Run workspace checks
-        run: turbo run check
+        run: bun x turbo run check
 
       - name: Run typechecks
-        run: turbo run check-types
+        run: bun x turbo run check-types
 
       - name: Run autobump script tests
         run: bun test ./scripts/autobump-workspaces.test.ts
 
       - name: Run unit tests
-        run: turbo run test
+        run: bun x turbo run test
 
   e2e:
     name: E2E
