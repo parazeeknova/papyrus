@@ -1,5 +1,5 @@
 defmodule PapyrusCollab.Platform.RuntimeEnvTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   import ExUnit.CaptureLog
 
   alias PapyrusCollab.Platform.RuntimeEnv

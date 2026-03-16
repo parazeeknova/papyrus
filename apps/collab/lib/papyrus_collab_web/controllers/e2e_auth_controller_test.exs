@@ -1,5 +1,5 @@
 defmodule PapyrusCollabWeb.E2EAuthControllerTest do
-  use PapyrusCollabWeb.ConnCase, async: true
+  use PapyrusCollabWeb.ConnCase, async: false
 
   defmodule VerifyOnlyStub do
     @behaviour PapyrusCollab.Auth.TokenVerifier
