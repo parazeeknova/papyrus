@@ -8,7 +8,10 @@ config :papyrus_collab, PapyrusCollabWeb.Endpoint,
     rewrite_on: [:x_forwarded_proto],
     exclude: [
       # paths: ["/health"],
-      hosts: ["localhost", "127.0.0.1"]
+      hosts: ["localhost", "127.0.0.1"],
+      # Traefik can forward websocket upgrades with X-Forwarded-Proto=wss.
+      # Plug.RewriteOn only rewrites http/https, so avoid redirect loops here.
+      paths: ["/ws/websocket"]
     ]
   ]
 
