@@ -4,13 +4,13 @@ const collabTestEnvironment = {
   E2E_AUTH_ENABLED: "true",
   MIX_ENV: "test",
   PHX_SERVER: "true",
-  PORT: "4000",
+  PORT: "4001",
 };
 
 const webTestEnvironment = {
-  NEXT_PUBLIC_COLLAB_WS_URL: "ws://127.0.0.1:4000/ws",
+  NEXT_PUBLIC_COLLAB_WS_URL: "ws://127.0.0.1:4001/ws",
   NEXT_PUBLIC_E2E_AUTH_MODE: "stub",
-  NEXT_PUBLIC_E2E_AUTH_URL: "http://127.0.0.1:4000/api/e2e/session",
+  NEXT_PUBLIC_E2E_AUTH_URL: "http://127.0.0.1:4001/api/e2e/session",
   NEXT_PUBLIC_FIREBASE_API_KEY: "e2e-firebase-api-key",
   NEXT_PUBLIC_FIREBASE_APP_ID: "e2e-firebase-app-id",
   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "e2e.firebaseapp.test",
@@ -20,16 +20,15 @@ const webTestEnvironment = {
 };
 
 const webServerCommand = process.env.CI
-  ? "bun run build && bun run start"
-  : "bun run dev";
+  ? "bun run build && bun --bun next start -p 3001"
+  : "bun --bun next dev -p 3001";
 
 export default defineConfig({
   testDir: "./e2e",
   testMatch: /.*\.e2e\.ts/,
-  fullyParallel: false,
+  fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   timeout: 90_000,
-  workers: 1,
   webServer: [
     {
       command: "mix phx.server",
@@ -37,7 +36,7 @@ export default defineConfig({
       env: collabTestEnvironment,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
-      url: "http://127.0.0.1:4000/api/health",
+      url: "http://127.0.0.1:4001/api/health",
     },
     {
       command: webServerCommand,
@@ -45,12 +44,12 @@ export default defineConfig({
       env: webTestEnvironment,
       reuseExistingServer: !process.env.CI,
       timeout: process.env.CI ? 300_000 : 120_000,
-      url: "http://127.0.0.1:3000",
+      url: "http://127.0.0.1:3001",
     },
   ],
   use: {
     ...devices["Desktop Chrome"],
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: "http://127.0.0.1:3001",
     channel: "chrome",
     trace: "retain-on-failure",
   },
