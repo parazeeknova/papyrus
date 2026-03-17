@@ -4,7 +4,7 @@ defmodule PapyrusCollab.MixProject do
   def project do
     [
       app: :papyrus_collab,
-      version: "0.1.13",
+      version: "0.1.14",
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
@@ -20,7 +20,7 @@ defmodule PapyrusCollab.MixProject do
   def application do
     [
       mod: {PapyrusCollab.Application, []},
-      extra_applications: [:logger, :runtime_tools]
+      extra_applications: [:logger, :runtime_tools, :inets, :ssl]
     ]
   end
 

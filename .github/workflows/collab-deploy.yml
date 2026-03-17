@@ -69,7 +69,7 @@ jobs:
           cf_account_id: ${{ secrets.CF_ACCOUNT_ID }}
           cf_zone_id: ${{ secrets.CF_ZONE_ID }}
           cf_api_token: ${{ secrets.CF_API_TOKEN }}
-          disable_bot_fight_mode: "true"
+          disable_bot_fight_mode: "false"
 
       - name: Trigger Dokploy deployment via API
         if: success()

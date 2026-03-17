@@ -29,8 +29,10 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   timeout: 90_000,
+  globalTeardown: "./e2e/global-teardown.ts",
   webServer: [
     {
+      name: "Collab",
       command: "mix phx.server",
       cwd: "../collab",
       env: collabTestEnvironment,
@@ -39,6 +41,7 @@ export default defineConfig({
       url: "http://127.0.0.1:4001/api/health",
     },
     {
+      name: "Web",
       command: webServerCommand,
       cwd: ".",
       env: webTestEnvironment,

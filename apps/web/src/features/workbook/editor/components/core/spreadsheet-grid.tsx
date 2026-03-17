@@ -1471,7 +1471,7 @@ export function SpreadsheetGrid({
             transform: `scale(${zoomScale})`,
           }}
         >
-          {columnReorderIndicator !== null ? (
+          {columnReorderIndicator === null ? null : (
             <div
               aria-hidden="true"
               className="pointer-events-none absolute top-0 z-50 w-0.5 bg-primary"
@@ -1480,8 +1480,8 @@ export function SpreadsheetGrid({
                 left: columnReorderIndicator,
               }}
             />
-          ) : null}
-          {rowReorderIndicator !== null ? (
+          )}
+          {rowReorderIndicator === null ? null : (
             <div
               aria-hidden="true"
               className="pointer-events-none absolute left-0 z-50 h-0.5 bg-primary"
@@ -1490,7 +1490,7 @@ export function SpreadsheetGrid({
                 width: totalGridWidth,
               }}
             />
-          ) : null}
+          )}
 
           <div
             className="sticky top-0 z-30"

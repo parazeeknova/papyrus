@@ -5,6 +5,9 @@
     "ultracite/biome/next",
     "ultracite/biome/react"
   ],
+  "files": {
+    "includes": ["!**/*.d.ts"]
+  },
   "linter": {
     "rules": {
       "complexity": {
