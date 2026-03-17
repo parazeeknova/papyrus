@@ -86,7 +86,7 @@ jobs:
               -H 'Content-Type: application/json' \
               -H "x-api-key: ${DOKPLOY_API_TOKEN}" \
               -H 'User-Agent: Github Actions' \
-              --data-raw "{\"applicationId\":\"${DOKPLOY_APP_ID}}"
+              --data-raw "{\"applicationId\":\"${DOKPLOY_APP_ID}\"}"
           )"
 
           if [ "$http_status" -lt 200 ] || [ "$http_status" -ge 300 ]; then
