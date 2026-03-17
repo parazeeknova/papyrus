@@ -23,6 +23,9 @@ const webServerCommand = process.env.CI
   ? "bun run build && bun --bun next start -p 3001"
   : "bun --bun next dev -p 3001";
 
+// When running via custom test runner script, webServer is managed externally
+const skipWebServer = process.env.SKIP_PLAYWRIGHT_WEBSERVER === "true";
+
 export default defineConfig({
   testDir: "./e2e",
   testMatch: /.*\.e2e\.ts/,
@@ -30,26 +33,28 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   timeout: 90_000,
   globalTeardown: "./e2e/global-teardown.ts",
-  webServer: [
-    {
-      name: "Collab",
-      command: "mix phx.server",
-      cwd: "../collab",
-      env: collabTestEnvironment,
-      reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
-      url: "http://127.0.0.1:4001/api/health",
-    },
-    {
-      name: "Web",
-      command: webServerCommand,
-      cwd: ".",
-      env: webTestEnvironment,
-      reuseExistingServer: !process.env.CI,
-      timeout: process.env.CI ? 300_000 : 120_000,
-      url: "http://127.0.0.1:3001",
-    },
-  ],
+  webServer: skipWebServer
+    ? undefined
+    : [
+        {
+          name: "Collab",
+          command: "mix phx.server",
+          cwd: "../collab",
+          env: collabTestEnvironment,
+          reuseExistingServer: !process.env.CI,
+          timeout: 120_000,
+          url: "http://127.0.0.1:4001/api/health",
+        },
+        {
+          name: "Web",
+          command: webServerCommand,
+          cwd: ".",
+          env: webTestEnvironment,
+          reuseExistingServer: !process.env.CI,
+          timeout: process.env.CI ? 300_000 : 120_000,
+          url: "http://127.0.0.1:3001",
+        },
+      ],
   use: {
     ...devices["Desktop Chrome"],
     baseURL: "http://127.0.0.1:3001",

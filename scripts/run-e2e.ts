@@ -280,6 +280,10 @@ async function runTests(): Promise<number> {
   const proc = spawn({
     cmd: ["bun", "x", "playwright", "test", "--reporter=list"],
     cwd: "./apps/web",
+    env: {
+      ...process.env,
+      SKIP_PLAYWRIGHT_WEBSERVER: "true",
+    },
     stdout: "inherit",
     stderr: "inherit",
   });
