@@ -9,11 +9,28 @@ import type { WorkbookStoreState } from "./workbook-store-types";
 
 export const useWorkbookStore = create<WorkbookStoreState>()(
   (set, get, api) => {
-    const controller = createWorkbookStoreController(set, get);
+    const instrumentedSet: typeof set = (partial, replace) => {
+      const next =
+        typeof partial === "function"
+          ? (
+              partial as (
+                state: WorkbookStoreState
+              ) => Partial<WorkbookStoreState>
+            )(get())
+          : partial;
+      if (next && "collaborationStatus" in next) {
+        console.info(
+          `[INFO][workbook-store] collaborationStatus → ${next.collaborationStatus}`
+        );
+      }
+      return set(partial, replace as never);
+    };
+
+    const controller = createWorkbookStoreController(instrumentedSet, get);
 
     return {
-      ...createRealtimeSlice(controller)(set, get, api),
-      ...createWorkbookSlice(controller)(set, get, api),
+      ...createRealtimeSlice(controller)(instrumentedSet, get, api),
+      ...createWorkbookSlice(controller)(instrumentedSet, get, api),
       ...createEditingSlice(controller)(set, get, api),
     };
   }

@@ -10,7 +10,7 @@ import { env } from "@/web/platform/env/client-env";
 
 const DEFAULT_COLLAB_PORT = 4000;
 const DEVICE_ID_STORAGE_KEY = "papyrus-collab-device-id";
-const PHOENIX_CHANNEL_TIMEOUT_MS = 10_000;
+const PHOENIX_CHANNEL_TIMEOUT_MS = 20_000;
 const phoenixLogger = createLogger({ scope: "phoenix-socket" });
 
 export interface PhoenixSocketConnection {
@@ -21,7 +21,25 @@ export interface PhoenixSocketConnection {
   uid: string | null;
 }
 
-let activeConnection: PhoenixSocketConnection | null = null;
+const GLOBAL_CONNECTION_KEY = "__papyrus_phoenix_connection" as const;
+
+function getActiveConnection(): PhoenixSocketConnection | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return (window as unknown as Record<string, unknown>)[
+    GLOBAL_CONNECTION_KEY
+  ] as PhoenixSocketConnection | null;
+}
+
+function setActiveConnection(connection: PhoenixSocketConnection | null): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  (window as unknown as Record<string, unknown>)[GLOBAL_CONNECTION_KEY] =
+    connection;
+}
+
 let authListenerRegistered = false;
 let fallbackDeviceId: string | null = null;
 
@@ -49,7 +67,7 @@ function registerAuthListener(): void {
       return;
     }
 
-    if (activeConnection?.isGuest) {
+    if (getActiveConnection()?.isGuest) {
       return;
     }
 
@@ -58,12 +76,12 @@ function registerAuthListener(): void {
 }
 
 export function disconnectPhoenixSocket(): void {
-  if (!activeConnection) {
+  const connection = getActiveConnection();
+  if (!connection) {
     return;
   }
 
-  const connection = activeConnection;
-  activeConnection = null;
+  setActiveConnection(null);
   connection.socket.disconnect();
 }
 
@@ -78,6 +96,18 @@ export function getCollabWebSocketUrl(): string | null {
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.hostname}:${DEFAULT_COLLAB_PORT}/ws`;
+}
+
+export function getCollabWebSocketUrlDebug(): {
+  rawEnv: string | undefined;
+  resolvedUrl: string | null;
+  hasWindow: boolean;
+} {
+  return {
+    rawEnv: process.env.NEXT_PUBLIC_COLLAB_WS_URL,
+    resolvedUrl: getCollabWebSocketUrl(),
+    hasWindow: typeof window !== "undefined",
+  };
 }
 
 export function getOrCreateSocketDeviceId(): string {
@@ -111,6 +141,13 @@ export async function ensurePhoenixSocketConnection(
   const deviceId = getOrCreateSocketDeviceId();
   const isGuest = uid === null;
 
+  phoenixLogger.info("Ensuring Phoenix socket connection...", {
+    collabUrl,
+    deviceId,
+    isGuest,
+    uid,
+  });
+
   if (!collabUrl) {
     throw new Error("The collaboration websocket URL is not configured.");
   }
@@ -125,25 +162,41 @@ export async function ensurePhoenixSocketConnection(
       ...params,
       guest: true,
     };
+    phoenixLogger.info("Connecting as guest", { deviceId });
   } else {
-    const currentUser = assertSignedInUser(uid);
-    token = await currentUser.getIdToken();
-    params = {
-      ...params,
-      token,
-    };
+    try {
+      const currentUser = assertSignedInUser(uid);
+      token = await currentUser.getIdToken();
+      params = {
+        ...params,
+        token,
+      };
+      phoenixLogger.info("Connecting as authenticated user", {
+        uid,
+        hasToken: !!token,
+        tokenLength: token?.length,
+      });
+    } catch (error) {
+      phoenixLogger.error("Failed to get auth token", { error });
+      throw error;
+    }
   }
 
+  const existingConnection = getActiveConnection();
   if (
-    activeConnection &&
-    activeConnection.isGuest === isGuest &&
-    activeConnection.uid === uid &&
-    activeConnection.token === token
+    existingConnection &&
+    existingConnection.isGuest === isGuest &&
+    existingConnection.uid === uid &&
+    existingConnection.token === token
   ) {
-    return activeConnection;
+    phoenixLogger.info("Reusing existing socket connection");
+    return existingConnection;
   }
 
+  phoenixLogger.info("Creating new socket connection...", { collabUrl });
   disconnectPhoenixSocket();
+
+  const wsTransport = typeof WebSocket === "undefined" ? undefined : WebSocket;
 
   const nextConnection: PhoenixSocketConnection = {
     deviceId,
@@ -151,22 +204,28 @@ export async function ensurePhoenixSocketConnection(
     socket: new Socket(collabUrl, {
       params,
       timeout: PHOENIX_CHANNEL_TIMEOUT_MS,
+      ...(wsTransport ? { transport: wsTransport } : {}),
     }),
     token,
     uid,
   };
 
+  phoenixLogger.info("Connecting socket...");
   nextConnection.socket.connect();
+
   nextConnection.socket.onClose(() => {
-    if (activeConnection?.socket === nextConnection.socket) {
-      activeConnection = null;
+    phoenixLogger.info("Phoenix socket closed");
+    const current = getActiveConnection();
+    if (current?.socket === nextConnection.socket) {
+      setActiveConnection(null);
     }
   });
+
   nextConnection.socket.onError((error: unknown) => {
-    phoenixLogger.warn("Phoenix socket error.", error);
+    phoenixLogger.error("Phoenix socket error.", error);
   });
 
-  activeConnection = nextConnection;
+  setActiveConnection(nextConnection);
   return nextConnection;
 }
 

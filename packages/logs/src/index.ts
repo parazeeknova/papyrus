@@ -24,6 +24,10 @@ type LogSink = (record: LogRecord) => void;
 const logSinks = new Set<LogSink>();
 
 function isDevelopmentEnv(): boolean {
+  if (typeof window !== "undefined") {
+    return true;
+  }
+
   const nodeEnv =
     (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env
       ?.NODE_ENV ?? "production";

@@ -373,6 +373,9 @@ function notifyStatus(
   callbacks: WorkbookRealtimeCallbacks | undefined,
   status: CollaborationStatus
 ): void {
+  console.info(
+    `[workbook-realtime] notifyStatus(${status}), hasCallback=${!!callbacks?.onStatusChange}`
+  );
   callbacks?.onStatusChange?.(status);
 }
 
@@ -418,17 +421,29 @@ export async function connectWorkbookRealtimeChannel(
   requestedAccessRole: CollaborationAccessRole | null = null,
   callbacks?: WorkbookRealtimeCallbacks
 ): Promise<WorkbookRealtimeChannelConnection> {
-  const socketConnection = await ensurePhoenixSocketConnection(uid);
-  const { deviceId, socket } = socketConnection;
-  realtimeLogger.debug("Joining the workbook realtime channel.", {
-    isGuest: uid === null,
-    requestedAccessRole,
+  realtimeLogger.info("Starting realtime channel connection...", {
     uid,
     workbookId,
+    requestedAccessRole,
+    isGuest: uid === null,
   });
+
+  const socketConnection = await ensurePhoenixSocketConnection(uid);
+  const { deviceId, socket } = socketConnection;
+
+  realtimeLogger.info("Socket connection established, creating channel...", {
+    deviceId,
+    workbookId,
+  });
+
   const channel = socket.channel(`workbook:${workbookId}`, {
     requestedAccessRole,
   });
+
+  realtimeLogger.info("Channel created, setting up handlers...", {
+    workbookId,
+  });
+
   let isClosedByClient = false;
 
   channel.on("presence", (payload: unknown) => {
@@ -468,6 +483,9 @@ export async function connectWorkbookRealtimeChannel(
   });
 
   channel.onError((reason: unknown) => {
+    console.info(
+      `[workbook-realtime] channel.onError fired: ${JSON.stringify(reason).substring(0, 200)}, isClosedByClient=${isClosedByClient}`
+    );
     if (isClosedByClient) {
       return;
     }
@@ -477,6 +495,9 @@ export async function connectWorkbookRealtimeChannel(
   });
 
   channel.onClose(() => {
+    console.info(
+      `[workbook-realtime] channel.onClose fired, isClosedByClient=${isClosedByClient}`
+    );
     if (isClosedByClient) {
       return;
     }
@@ -485,12 +506,14 @@ export async function connectWorkbookRealtimeChannel(
   });
 
   notifyStatus(callbacks, "connecting");
+  realtimeLogger.info("Joining channel...", { workbookId });
 
   const initialState = await new Promise<WorkbookRealtimeJoinResponse>(
     (resolve, reject) => {
       channel
         .join(PHOENIX_CHANNEL_TIMEOUT_MS)
         .receive("ok", (response: unknown) => {
+          realtimeLogger.info("Channel join successful", { workbookId });
           const parsedResponse = parseJoinResponse(response, deviceId);
           if (!parsedResponse) {
             reject(new Error("Realtime join returned an invalid payload."));
@@ -500,19 +523,22 @@ export async function connectWorkbookRealtimeChannel(
           resolve(parsedResponse);
         })
         .receive("error", (response: unknown) => {
+          realtimeLogger.error("Channel join error", { response, workbookId });
           reject(normalizeChannelError("join", response));
         })
         .receive("timeout", () => {
+          realtimeLogger.error("Channel join timeout", { workbookId });
           reject(new Error("Timed out connecting to the workbook channel."));
         });
     }
   ).catch((error) => {
+    realtimeLogger.error("Channel join failed", { error, workbookId });
     isClosedByClient = true;
     channel.leave();
     throw error;
   });
 
-  realtimeLogger.debug("Joined the workbook realtime channel.", {
+  realtimeLogger.info("Joined the workbook realtime channel.", {
     grantedAccessRole: initialState.accessRole,
     isGuest: uid === null,
     requestedAccessRole,
@@ -521,12 +547,16 @@ export async function connectWorkbookRealtimeChannel(
   });
 
   notifyStatus(callbacks, "connected");
+  console.info(
+    `[workbook-realtime] notifyStatus called with: connected for ${workbookId}`
+  );
   callbacks?.onPresence?.(initialState.peers);
 
   return {
     accessRole: initialState.accessRole,
     deviceId,
     disconnect: () => {
+      console.info(`[workbook-realtime] disconnect called for ${workbookId}`);
       isClosedByClient = true;
       notifyStatus(callbacks, "disconnected");
       channel.leave();
@@ -544,6 +574,9 @@ export async function connectWorkbookRealtimeChannel(
       return peers;
     },
     sendSnapshot: async (payload, clientId) => {
+      console.info(
+        `[workbook-realtime] sendSnapshot called for ${workbookId}, client=${clientId}, version=${payload.version}`
+      );
       return await pushRealtimeEvent(
         channel,
         "snapshot:push",
