@@ -31,6 +31,13 @@ function readOptionOrEnv(
     return options[key];
   }
 
+  // Use direct property access for NEXT_PUBLIC_* vars so Turbopack can
+  // statically inline them. Computed access via process.env[envName] is
+  // not inlined and returns undefined in the browser bundle.
+  if (envName === "NEXT_PUBLIC_COLLAB_WS_URL") {
+    return process.env.NEXT_PUBLIC_COLLAB_WS_URL;
+  }
+
   return process.env[envName];
 }
 

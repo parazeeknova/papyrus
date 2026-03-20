@@ -23,7 +23,7 @@ export interface PhoenixSocketConnection {
 
 const GLOBAL_CONNECTION_KEY = "__papyrus_phoenix_connection" as const;
 
-function getActiveConnection(): PhoenixSocketConnection | null {
+export function getActiveConnection(): PhoenixSocketConnection | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -88,6 +88,14 @@ export function disconnectPhoenixSocket(): void {
 export function getCollabWebSocketUrl(): string | null {
   if (env.NEXT_PUBLIC_COLLAB_WS_URL) {
     return env.NEXT_PUBLIC_COLLAB_WS_URL;
+  }
+
+  // Turbopack may not inline env vars accessed via runtimeEnv object literals
+  // in @t3-oss/env-nextjs. Fall back to a direct process.env check which
+  // Turbopack CAN inline as a static property access.
+  const directEnvValue = process.env.NEXT_PUBLIC_COLLAB_WS_URL;
+  if (directEnvValue) {
+    return directEnvValue;
   }
 
   if (typeof window === "undefined" || process.env.NODE_ENV === "production") {

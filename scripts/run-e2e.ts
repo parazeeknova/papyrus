@@ -312,7 +312,7 @@ async function runTests(): Promise<number> {
   console.log();
 
   const proc = spawn({
-    cmd: ["bun", "x", "playwright", "test", "--reporter=list"],
+    cmd: ["bun", "x", "playwright", "test", "--reporter=list", "--workers=1"],
     cwd: "./apps/web",
     env: {
       ...process.env,

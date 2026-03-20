@@ -32,7 +32,7 @@ test.describe("editor-sync", () => {
         t.includes("[phoenix-") ||
         t.includes("[auth-")
       ) {
-        logs.push(t.substring(0, 200));
+        logs.push(t.slice(0, 200));
       }
     });
 
