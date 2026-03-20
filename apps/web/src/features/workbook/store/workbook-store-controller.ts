@@ -968,6 +968,7 @@ export const createWorkbookStoreController = (
         resolveConnect();
       } catch (error) {
         rejectConnect(error);
+        throw error;
       }
     };
 

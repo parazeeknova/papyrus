@@ -21,23 +21,38 @@ export interface PhoenixSocketConnection {
   uid: string | null;
 }
 
+interface StoredConnection {
+  deviceId: string;
+  isGuest: boolean;
+  socket: Socket;
+  uid: string | null;
+}
+
 const GLOBAL_CONNECTION_KEY = "__papyrus_phoenix_connection" as const;
 
-export function getActiveConnection(): PhoenixSocketConnection | null {
+function getStoredConnection(): StoredConnection | null {
   if (typeof window === "undefined") {
     return null;
   }
   return (window as unknown as Record<string, unknown>)[
     GLOBAL_CONNECTION_KEY
-  ] as PhoenixSocketConnection | null;
+  ] as StoredConnection | null;
 }
 
-function setActiveConnection(connection: PhoenixSocketConnection | null): void {
+function setStoredConnection(connection: StoredConnection | null): void {
   if (typeof window === "undefined") {
     return;
   }
   (window as unknown as Record<string, unknown>)[GLOBAL_CONNECTION_KEY] =
     connection;
+}
+
+export function getActiveConnection(): PhoenixSocketConnection | null {
+  const stored = getStoredConnection();
+  if (!stored) {
+    return null;
+  }
+  return stored as PhoenixSocketConnection;
 }
 
 let authListenerRegistered = false;
@@ -76,12 +91,12 @@ function registerAuthListener(): void {
 }
 
 export function disconnectPhoenixSocket(): void {
-  const connection = getActiveConnection();
+  const connection = getStoredConnection();
   if (!connection) {
     return;
   }
 
-  setActiveConnection(null);
+  setStoredConnection(null);
   connection.socket.disconnect();
 }
 
@@ -190,15 +205,16 @@ export async function ensurePhoenixSocketConnection(
     }
   }
 
-  const existingConnection = getActiveConnection();
+  const existingConnection = getStoredConnection();
   if (
     existingConnection &&
     existingConnection.isGuest === isGuest &&
-    existingConnection.uid === uid &&
-    existingConnection.token === token
+    existingConnection.uid === uid
   ) {
     phoenixLogger.info("Reusing existing socket connection");
-    return existingConnection;
+    // Return the stored connection augmented with the current token
+    // (token is not stored on window to avoid credential exposure).
+    return { ...existingConnection, token } as PhoenixSocketConnection;
   }
 
   phoenixLogger.info("Creating new socket connection...", { collabUrl });
@@ -206,16 +222,24 @@ export async function ensurePhoenixSocketConnection(
 
   const wsTransport = typeof WebSocket === "undefined" ? undefined : WebSocket;
 
-  const nextConnection: PhoenixSocketConnection = {
+  const socket = new Socket(collabUrl, {
+    params,
+    timeout: PHOENIX_CHANNEL_TIMEOUT_MS,
+    ...(wsTransport ? { transport: wsTransport } : {}),
+  });
+
+  // Store non-sensitive fields on window for HMR persistence.
+  // Token stays in the closure scope only.
+  const storedConnection: StoredConnection = {
     deviceId,
     isGuest,
-    socket: new Socket(collabUrl, {
-      params,
-      timeout: PHOENIX_CHANNEL_TIMEOUT_MS,
-      ...(wsTransport ? { transport: wsTransport } : {}),
-    }),
-    token,
+    socket,
     uid,
+  };
+
+  const nextConnection: PhoenixSocketConnection = {
+    ...storedConnection,
+    token,
   };
 
   phoenixLogger.info("Connecting socket...");
@@ -223,9 +247,9 @@ export async function ensurePhoenixSocketConnection(
 
   nextConnection.socket.onClose(() => {
     phoenixLogger.info("Phoenix socket closed");
-    const current = getActiveConnection();
+    const current = getStoredConnection();
     if (current?.socket === nextConnection.socket) {
-      setActiveConnection(null);
+      setStoredConnection(null);
     }
   });
 
@@ -233,7 +257,7 @@ export async function ensurePhoenixSocketConnection(
     phoenixLogger.error("Phoenix socket error.", error);
   });
 
-  setActiveConnection(nextConnection);
+  setStoredConnection(storedConnection);
   return nextConnection;
 }
 

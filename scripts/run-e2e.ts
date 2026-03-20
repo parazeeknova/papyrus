@@ -11,7 +11,7 @@
  * 5. Cleans up servers after tests complete
  */
 
-import { existsSync, unlinkSync } from "node:fs";
+import { copyFileSync, existsSync, unlinkSync } from "node:fs";
 import { write as bunWrite, type Subprocess, spawn } from "bun";
 
 const colors = {
@@ -225,8 +225,17 @@ async function startCollabServer(): Promise<Subprocess> {
 }
 
 const ENV_LOCAL_PATH = "./apps/web/.env.local";
+const ENV_LOCAL_BACKUP_PATH = "./apps/web/.env.local.e2e-backup";
 
-function writeE2EEnvLocal(): void {
+let hadExistingEnvLocal = false;
+
+async function writeE2EEnvLocal(): Promise<void> {
+  if (existsSync(ENV_LOCAL_PATH)) {
+    copyFileSync(ENV_LOCAL_PATH, ENV_LOCAL_BACKUP_PATH);
+    hadExistingEnvLocal = true;
+    log(`${colors.dim}Backed up existing .env.local${colors.reset}`);
+  }
+
   const envContent = [
     `NEXT_PUBLIC_COLLAB_WS_URL=ws://127.0.0.1:${COLLAB_PORT}/ws`,
     "NEXT_PUBLIC_E2E_AUTH_MODE=stub",
@@ -240,13 +249,17 @@ function writeE2EEnvLocal(): void {
     "",
   ].join("\n");
 
-  bunWrite(ENV_LOCAL_PATH, envContent);
+  await bunWrite(ENV_LOCAL_PATH, envContent);
   log(`${colors.dim}Wrote E2E env overrides to .env.local${colors.reset}`);
 }
 
-function removeE2EEnvLocal(): void {
+function restoreEnvLocal(): void {
   try {
-    if (existsSync(ENV_LOCAL_PATH)) {
+    if (hadExistingEnvLocal && existsSync(ENV_LOCAL_BACKUP_PATH)) {
+      copyFileSync(ENV_LOCAL_BACKUP_PATH, ENV_LOCAL_PATH);
+      unlinkSync(ENV_LOCAL_BACKUP_PATH);
+      log(`${colors.dim}Restored original .env.local${colors.reset}`);
+    } else if (!hadExistingEnvLocal && existsSync(ENV_LOCAL_PATH)) {
       unlinkSync(ENV_LOCAL_PATH);
     }
   } catch {
@@ -261,7 +274,7 @@ async function startWebServer(): Promise<Subprocess> {
   log(`${colors.dim}Port: ${WEB_PORT}${colors.reset}`);
   console.log();
 
-  writeE2EEnvLocal();
+  await writeE2EEnvLocal();
 
   const webServer = spawn({
     cmd: ["bun", "--bun", "next", "dev", "-p", String(WEB_PORT)],
@@ -337,7 +350,7 @@ async function cleanupServers(
 
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  removeE2EEnvLocal();
+  restoreEnvLocal();
 
   const collabHealth = await checkServerHealth(
     `http://127.0.0.1:${COLLAB_PORT}/api/health`,

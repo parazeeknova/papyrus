@@ -25,7 +25,9 @@ const logSinks = new Set<LogSink>();
 
 function isDevelopmentEnv(): boolean {
   if (typeof window !== "undefined") {
-    return true;
+    // In browser bundles, bundlers like Turbopack and Webpack inline
+    // process.env.NODE_ENV at build time, so this check is reliable.
+    return process.env.NODE_ENV === "development";
   }
 
   const nodeEnv =

@@ -10,19 +10,6 @@ import type { WorkbookStoreState } from "./workbook-store-types";
 export const useWorkbookStore = create<WorkbookStoreState>()(
   (set, get, api) => {
     const instrumentedSet: typeof set = (partial, replace) => {
-      const next =
-        typeof partial === "function"
-          ? (
-              partial as (
-                state: WorkbookStoreState
-              ) => Partial<WorkbookStoreState>
-            )(get())
-          : partial;
-      if (next && "collaborationStatus" in next) {
-        console.info(
-          `[INFO][workbook-store] collaborationStatus → ${next.collaborationStatus}`
-        );
-      }
       return set(partial, replace as never);
     };
 

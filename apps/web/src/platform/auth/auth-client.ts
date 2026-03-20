@@ -170,19 +170,13 @@ function readStoredStubUser(): AuthenticatedUser | null {
   );
 
   if (!storedSession) {
-    console.info(
-      `[auth-client] readStoredStubUser: no session found for key "${E2E_AUTH_SESSION_STORAGE_KEY}"`
-    );
     return null;
   }
 
   try {
     const parsedSession = JSON.parse(storedSession) as E2EAuthSessionPayload;
-    const user = buildStubUser(parsedSession);
-    console.info(`[auth-client] readStoredStubUser: found user ${user.uid}`);
-    return user;
-  } catch (error) {
-    console.info(`[auth-client] readStoredStubUser: parse error ${error}`);
+    return buildStubUser(parsedSession);
+  } catch {
     return null;
   }
 }
@@ -205,9 +199,6 @@ export function getCurrentAuthUser(): AuthenticatedUser | null {
 
   if (stubCurrentUser === undefined) {
     stubCurrentUser = readStoredStubUser();
-    console.info(
-      `[auth-client] getCurrentAuthUser: read from localStorage, result: ${stubCurrentUser ? stubCurrentUser.uid : "null"}`
-    );
   }
 
   return stubCurrentUser ?? null;
