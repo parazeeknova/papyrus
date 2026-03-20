@@ -9,11 +9,15 @@ import type { WorkbookStoreState } from "./workbook-store-types";
 
 export const useWorkbookStore = create<WorkbookStoreState>()(
   (set, get, api) => {
-    const controller = createWorkbookStoreController(set, get);
+    const instrumentedSet: typeof set = (partial, replace) => {
+      return set(partial, replace as never);
+    };
+
+    const controller = createWorkbookStoreController(instrumentedSet, get);
 
     return {
-      ...createRealtimeSlice(controller)(set, get, api),
-      ...createWorkbookSlice(controller)(set, get, api),
+      ...createRealtimeSlice(controller)(instrumentedSet, get, api),
+      ...createWorkbookSlice(controller)(instrumentedSet, get, api),
       ...createEditingSlice(controller)(set, get, api),
     };
   }

@@ -29,7 +29,8 @@ const skipWebServer = process.env.SKIP_PLAYWRIGHT_WEBSERVER === "true";
 export default defineConfig({
   testDir: "./e2e",
   testMatch: /.*\.e2e\.ts/,
-  fullyParallel: true,
+  fullyParallel: false,
+  workers: process.env.CI ? 1 : 4,
   retries: process.env.CI ? 1 : 0,
   timeout: 90_000,
   globalTeardown: "./e2e/global-teardown.ts",

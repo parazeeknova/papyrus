@@ -1,6 +1,6 @@
 {
   "name": "@papyrus/core",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "y-indexeddb": "^9.0.12",
-    "yjs": "^13.6.29"
+    "yjs": "^13.6.30"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.8.4",

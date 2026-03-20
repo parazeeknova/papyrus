@@ -418,17 +418,29 @@ export async function connectWorkbookRealtimeChannel(
   requestedAccessRole: CollaborationAccessRole | null = null,
   callbacks?: WorkbookRealtimeCallbacks
 ): Promise<WorkbookRealtimeChannelConnection> {
-  const socketConnection = await ensurePhoenixSocketConnection(uid);
-  const { deviceId, socket } = socketConnection;
-  realtimeLogger.debug("Joining the workbook realtime channel.", {
-    isGuest: uid === null,
-    requestedAccessRole,
+  realtimeLogger.info("Starting realtime channel connection...", {
     uid,
     workbookId,
+    requestedAccessRole,
+    isGuest: uid === null,
   });
+
+  const socketConnection = await ensurePhoenixSocketConnection(uid);
+  const { deviceId, socket } = socketConnection;
+
+  realtimeLogger.info("Socket connection established, creating channel...", {
+    deviceId,
+    workbookId,
+  });
+
   const channel = socket.channel(`workbook:${workbookId}`, {
     requestedAccessRole,
   });
+
+  realtimeLogger.info("Channel created, setting up handlers...", {
+    workbookId,
+  });
+
   let isClosedByClient = false;
 
   channel.on("presence", (payload: unknown) => {
@@ -485,12 +497,14 @@ export async function connectWorkbookRealtimeChannel(
   });
 
   notifyStatus(callbacks, "connecting");
+  realtimeLogger.info("Joining channel...", { workbookId });
 
   const initialState = await new Promise<WorkbookRealtimeJoinResponse>(
     (resolve, reject) => {
       channel
         .join(PHOENIX_CHANNEL_TIMEOUT_MS)
         .receive("ok", (response: unknown) => {
+          realtimeLogger.info("Channel join successful", { workbookId });
           const parsedResponse = parseJoinResponse(response, deviceId);
           if (!parsedResponse) {
             reject(new Error("Realtime join returned an invalid payload."));
@@ -500,19 +514,22 @@ export async function connectWorkbookRealtimeChannel(
           resolve(parsedResponse);
         })
         .receive("error", (response: unknown) => {
+          realtimeLogger.error("Channel join error", { response, workbookId });
           reject(normalizeChannelError("join", response));
         })
         .receive("timeout", () => {
+          realtimeLogger.error("Channel join timeout", { workbookId });
           reject(new Error("Timed out connecting to the workbook channel."));
         });
     }
   ).catch((error) => {
+    realtimeLogger.error("Channel join failed", { error, workbookId });
     isClosedByClient = true;
     channel.leave();
     throw error;
   });
 
-  realtimeLogger.debug("Joined the workbook realtime channel.", {
+  realtimeLogger.info("Joined the workbook realtime channel.", {
     grantedAccessRole: initialState.accessRole,
     isGuest: uid === null,
     requestedAccessRole,

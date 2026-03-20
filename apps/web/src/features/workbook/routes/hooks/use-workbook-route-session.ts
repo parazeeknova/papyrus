@@ -26,12 +26,11 @@ export function useWorkbookRouteSession({
   const openWorkbook = useWorkbookStore((state) => state.openWorkbook);
 
   useEffect(() => {
-    let didDispose = false;
     let didCloseSession = false;
-    let openedSessionId: number | null = null;
+    let activeSessionId: number | null = null;
 
-    const closeOpenedSession = (): void => {
-      if (didCloseSession || openedSessionId === null) {
+    const closeOpenedSession = (sessionId: number): void => {
+      if (didCloseSession) {
         return;
       }
 
@@ -40,7 +39,7 @@ export function useWorkbookRouteSession({
         workbookId,
         isSharedSession,
         requestedAccessRole,
-        openedSessionId
+        sessionId
       ).catch((error) => {
         workbookRouteSessionLogger.error(
           "Failed to close the workbook route session.",
@@ -51,11 +50,7 @@ export function useWorkbookRouteSession({
 
     openWorkbook(workbookId, undefined, isSharedSession, requestedAccessRole)
       .then((sessionId) => {
-        openedSessionId = sessionId;
-
-        if (didDispose) {
-          closeOpenedSession();
-        }
+        activeSessionId = sessionId;
       })
       .catch((error) => {
         workbookRouteSessionLogger.error(
@@ -65,8 +60,9 @@ export function useWorkbookRouteSession({
       });
 
     return () => {
-      didDispose = true;
-      closeOpenedSession();
+      if (activeSessionId !== null) {
+        closeOpenedSession(activeSessionId);
+      }
     };
   }, [
     closeWorkbookRouteSession,

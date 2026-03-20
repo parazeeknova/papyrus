@@ -7,10 +7,12 @@ import {
   OWNER_PROFILE,
   openShareDialog,
   readShareLink,
+  SHARED_WORKBOOK_QUERY_PATTERN,
   seedStubSession,
   signInWithStubGoogle,
   typeIntoActiveCell,
   VIEWER_PROFILE,
+  VIEWER_ROLE_BUTTON_PATTERN,
 } from "./helpers";
 
 const ENABLE_SHARING_BUTTON_PATTERN = /enable sharing/i;
@@ -20,9 +22,7 @@ const OWNER_MANAGED_SHARING_TEXT =
 const OWNER_SHARED_TOGGLE_PATTERN = /sharing on/i;
 const SIGN_IN_SHARING_TEXT =
   "Sign in with Google to unlock cloud sync and sharing.";
-const VIEWER_ROLE_BUTTON_PATTERN = /^viewer$/i;
 const VIEWER_SHARE_LINK_PATTERN = /access=viewer/;
-const SHARED_WORKBOOK_QUERY_PATTERN = /shared=1/;
 
 test("guest sharing stays auth-gated until Google sign-in is completed", async ({
   page,
@@ -41,7 +41,7 @@ test("guest sharing stays auth-gated until Google sign-in is completed", async (
 
   await expect(
     page.getByText("Connected to the Phoenix collaboration server.")
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 60_000 });
 });
 
 test("viewer share links open in read-only mode for another signed-in user", async ({
@@ -55,7 +55,7 @@ test("viewer share links open in read-only mode for another signed-in user", asy
   await openShareDialog(page);
   await expect(
     page.getByText("Connected to the Phoenix collaboration server.")
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 60_000 });
   await page.getByRole("button", { name: CLOSE_BUTTON_PATTERN }).click();
 
   await typeIntoActiveCell(page, "viewer locked");

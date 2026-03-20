@@ -24,6 +24,12 @@ type LogSink = (record: LogRecord) => void;
 const logSinks = new Set<LogSink>();
 
 function isDevelopmentEnv(): boolean {
+  if (typeof window !== "undefined") {
+    // In browser bundles, bundlers like Turbopack and Webpack inline
+    // process.env.NODE_ENV at build time, so this check is reliable.
+    return process.env.NODE_ENV === "development";
+  }
+
   const nodeEnv =
     (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env
       ?.NODE_ENV ?? "production";

@@ -168,6 +168,7 @@ function readStoredStubUser(): AuthenticatedUser | null {
   const storedSession = window.localStorage.getItem(
     E2E_AUTH_SESSION_STORAGE_KEY
   );
+
   if (!storedSession) {
     return null;
   }

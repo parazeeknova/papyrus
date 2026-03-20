@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 /**
  * E2E test runner with proper port cleanup and logging
  *
@@ -10,7 +11,8 @@
  * 5. Cleans up servers after tests complete
  */
 
-import { type Subprocess, spawn } from "bun";
+import { copyFileSync, existsSync, unlinkSync } from "node:fs";
+import { write as bunWrite, type Subprocess, spawn } from "bun";
 
 const colors = {
   reset: "\x1b[0m",
@@ -222,12 +224,57 @@ async function startCollabServer(): Promise<Subprocess> {
   return collabServer;
 }
 
+const ENV_LOCAL_PATH = "./apps/web/.env.local";
+const ENV_LOCAL_BACKUP_PATH = "./apps/web/.env.local.e2e-backup";
+
+let hadExistingEnvLocal = false;
+
+async function writeE2EEnvLocal(): Promise<void> {
+  if (existsSync(ENV_LOCAL_PATH)) {
+    copyFileSync(ENV_LOCAL_PATH, ENV_LOCAL_BACKUP_PATH);
+    hadExistingEnvLocal = true;
+    log(`${colors.dim}Backed up existing .env.local${colors.reset}`);
+  }
+
+  const envContent = [
+    `NEXT_PUBLIC_COLLAB_WS_URL=ws://127.0.0.1:${COLLAB_PORT}/ws`,
+    "NEXT_PUBLIC_E2E_AUTH_MODE=stub",
+    `NEXT_PUBLIC_E2E_AUTH_URL=http://127.0.0.1:${COLLAB_PORT}/api/e2e/session`,
+    "NEXT_PUBLIC_FIREBASE_API_KEY=e2e-firebase-api-key",
+    "NEXT_PUBLIC_FIREBASE_APP_ID=e2e-firebase-app-id",
+    "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=e2e.firebaseapp.test",
+    "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=e2e-firebase-sender-id",
+    "NEXT_PUBLIC_FIREBASE_PROJECT_ID=e2e-firebase-project-id",
+    "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=e2e-firebase-storage-bucket",
+    "",
+  ].join("\n");
+
+  await bunWrite(ENV_LOCAL_PATH, envContent);
+  log(`${colors.dim}Wrote E2E env overrides to .env.local${colors.reset}`);
+}
+
+function restoreEnvLocal(): void {
+  try {
+    if (hadExistingEnvLocal && existsSync(ENV_LOCAL_BACKUP_PATH)) {
+      copyFileSync(ENV_LOCAL_BACKUP_PATH, ENV_LOCAL_PATH);
+      unlinkSync(ENV_LOCAL_BACKUP_PATH);
+      log(`${colors.dim}Restored original .env.local${colors.reset}`);
+    } else if (!hadExistingEnvLocal && existsSync(ENV_LOCAL_PATH)) {
+      unlinkSync(ENV_LOCAL_PATH);
+    }
+  } catch {
+    // ignore cleanup errors
+  }
+}
+
 async function startWebServer(): Promise<Subprocess> {
   console.log();
   logStep("Starting Web Server", "bun --bun next dev");
   log(`${colors.dim}Working directory: apps/web${colors.reset}`);
   log(`${colors.dim}Port: ${WEB_PORT}${colors.reset}`);
   console.log();
+
+  await writeE2EEnvLocal();
 
   const webServer = spawn({
     cmd: ["bun", "--bun", "next", "dev", "-p", String(WEB_PORT)],
@@ -278,7 +325,7 @@ async function runTests(): Promise<number> {
   console.log();
 
   const proc = spawn({
-    cmd: ["bun", "x", "playwright", "test", "--reporter=list"],
+    cmd: ["bun", "x", "playwright", "test", "--reporter=list", "--workers=1"],
     cwd: "./apps/web",
     env: {
       ...process.env,
@@ -302,6 +349,8 @@ async function cleanupServers(
   webServer.kill();
 
   await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  restoreEnvLocal();
 
   const collabHealth = await checkServerHealth(
     `http://127.0.0.1:${COLLAB_PORT}/api/health`,

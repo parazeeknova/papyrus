@@ -1,13 +1,15 @@
 import { type BrowserContext, expect, type Page } from "@playwright/test";
 
 const E2E_AUTH_PROFILE_STORAGE_KEY = "papyrus-e2e-auth-profile";
-const CREATE_DOCUMENT_BUTTON_PATTERN = /new document/i;
-const GOOGLE_SIGN_IN_BUTTON_PATTERN = /continue with google/i;
 const E2E_AUTH_SESSION_STORAGE_KEY = "papyrus-e2e-auth-session";
 const E2E_AUTH_URL = "http://127.0.0.1:4001/api/e2e/session";
-const CLOSE_BUTTON_PATTERN = /^close$/i;
+const CREATE_DOCUMENT_BUTTON_PATTERN = /new document/i;
 const EDITOR_ROLE_BUTTON_PATTERN = /^editor$/i;
 const ENABLE_SHARING_BUTTON_PATTERN = /enable sharing/i;
+const GOOGLE_SIGN_IN_BUTTON_PATTERN = /continue with google/i;
+const LOGGED_IN_PATTERN = /logged\s*in/i;
+export const SHARED_WORKBOOK_QUERY_PATTERN = /shared=1/;
+export const VIEWER_ROLE_BUTTON_PATTERN = /^viewer$/i;
 const WORKBOOK_URL_PATTERN = /\/workbook\/.+$/;
 
 export interface E2EAuthProfile {
@@ -35,10 +37,33 @@ export const VIEWER_PROFILE: E2EAuthProfile = {
 };
 
 export async function createDocument(page: Page): Promise<string> {
-  await page
-    .getByRole("button", { name: CREATE_DOCUMENT_BUTTON_PATTERN })
-    .click();
-  await expect(page).toHaveURL(WORKBOOK_URL_PATTERN);
+  const pageErrors: string[] = [];
+  const errorHandler = (error: Error) => {
+    pageErrors.push(error.message);
+  };
+
+  page.on("pageerror", errorHandler);
+
+  try {
+    const button = page.getByRole("button", {
+      name: CREATE_DOCUMENT_BUTTON_PATTERN,
+    });
+    await expect(button).toBeVisible({ timeout: 10_000 });
+    await button.click();
+    await expect(page).toHaveURL(WORKBOOK_URL_PATTERN, { timeout: 15_000 });
+    await page.waitForLoadState("domcontentloaded");
+  } catch (error) {
+    if (pageErrors.length > 0) {
+      const details = pageErrors.join("\n");
+      throw new Error(
+        `createDocument failed (url=${page.url()}). Browser errors:\n${details}\n\nOriginal: ${error instanceof Error ? error.message : error}`
+      );
+    }
+    throw error;
+  } finally {
+    page.off("pageerror", errorHandler);
+  }
+
   return page.url();
 }
 
@@ -60,11 +85,16 @@ export async function goOnline(context: BrowserContext): Promise<void> {
 }
 
 export async function openShareDialog(page: Page): Promise<void> {
-  await page
-    .locator('[data-testid="share-workbook-trigger"]:visible')
-    .first()
-    .click();
-  await expect(page.getByText("Share spreadsheet")).toBeVisible();
+  const shareButton = page.locator(
+    '[data-testid="share-workbook-trigger"]:visible'
+  );
+  await shareButton.first().click();
+
+  // Wait for the popover content to fully render
+  await page.waitForTimeout(500);
+  await expect(page.getByText("Share spreadsheet")).toBeVisible({
+    timeout: 10_000,
+  });
 }
 
 export async function readShareLink(page: Page): Promise<string> {
@@ -104,6 +134,7 @@ export async function seedStubSession(
   }
 
   const session = await response.json();
+
   await page.evaluate(
     ([sessionStorageKey, nextSession]) => {
       window.localStorage.setItem(
@@ -115,6 +146,14 @@ export async function seedStubSession(
   );
 
   await page.reload();
+  await page.waitForLoadState("domcontentloaded");
+
+  await expect(
+    page
+      .locator('[data-testid="user-badge"]')
+      .or(page.getByText("Guest"))
+      .or(page.getByText(LOGGED_IN_PATTERN))
+  ).toBeVisible({ timeout: 5000 });
 }
 
 export async function signInWithStubGoogle(
@@ -169,22 +208,35 @@ export async function typeIntoCellAt(
 }
 
 export async function waitForCollabConnection(page: Page): Promise<void> {
+  await expect(page.locator('[data-testid="formula-input"]')).toBeVisible({
+    timeout: 15_000,
+  });
+
+  // Give the WebSocket time to connect after workbook page load
+  await page.waitForTimeout(3000);
+
   await openShareDialog(page);
+
+  // The "Connected" status text appears inside the share dialog popover
   await expect(
     page.getByText("Connected to the Phoenix collaboration server.")
-  ).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: CLOSE_BUTTON_PATTERN }).click();
+  ).toBeVisible({ timeout: 90_000 });
+
+  // Close the popover and wait for animation to complete
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(1000);
 }
 
 export async function enableEditorSharing(page: Page): Promise<string> {
   await waitForCollabConnection(page);
+  await page.waitForTimeout(500);
   await openShareDialog(page);
   await page
     .getByRole("button", { name: ENABLE_SHARING_BUTTON_PATTERN })
     .click();
   await page.getByRole("button", { name: EDITOR_ROLE_BUTTON_PATTERN }).click();
   const shareLink = await readShareLink(page);
-  await page.getByRole("button", { name: CLOSE_BUTTON_PATTERN }).click();
+  await page.keyboard.press("Escape");
   return shareLink;
 }
 

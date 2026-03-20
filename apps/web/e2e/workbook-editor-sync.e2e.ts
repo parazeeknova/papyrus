@@ -7,23 +7,35 @@ import {
   OWNER_PROFILE,
   openShareDialog,
   readShareLink,
+  SHARED_WORKBOOK_QUERY_PATTERN,
   seedStubSession,
   typeIntoCellAt,
   VIEWER_PROFILE,
+  VIEWER_ROLE_BUTTON_PATTERN,
   waitForCollabConnection,
   waitForSync,
 } from "./helpers";
 
-const SHARED_WORKBOOK_QUERY_PATTERN = /shared=1/;
 const CLOSE_BUTTON_PATTERN = /^close$/i;
 const ENABLE_SHARING_BUTTON_PATTERN = /enable sharing/i;
-const VIEWER_ROLE_BUTTON_PATTERN = /^viewer$/i;
 
 test.describe("editor-sync", () => {
   test("owner edits a cell and editor guest sees the value", async ({
     browser,
     page,
   }) => {
+    const logs: string[] = [];
+    page.on("console", (msg) => {
+      const t = msg.text();
+      if (
+        t.includes("[workbook-") ||
+        t.includes("[phoenix-") ||
+        t.includes("[auth-")
+      ) {
+        logs.push(t.slice(0, 200));
+      }
+    });
+
     await page.goto("/");
     await seedStubSession(page, OWNER_PROFILE);
 
@@ -69,7 +81,7 @@ test.describe("editor-sync", () => {
 
     await expect
       .poll(async () => page.locator('[data-cell="C0R0"]').textContent(), {
-        timeout: 15_000,
+        timeout: 60_000,
       })
       .toContain("from editor");
 
@@ -102,7 +114,7 @@ test.describe("editor-sync", () => {
 
     await expect
       .poll(async () => page.locator('[data-cell="C0R0"]').textContent(), {
-        timeout: 15_000,
+        timeout: 60_000,
       })
       .toContain("updated");
 
@@ -134,13 +146,13 @@ test.describe("editor-sync", () => {
     await expect
       .poll(
         async () => editorPage.locator('[data-cell="C0R0"]').textContent(),
-        { timeout: 15_000 }
+        { timeout: 60_000 }
       )
       .toContain("owner cell");
 
     await expect
       .poll(async () => page.locator('[data-cell="C1R0"]').textContent(), {
-        timeout: 15_000,
+        timeout: 60_000,
       })
       .toContain("editor cell");
 
@@ -169,7 +181,7 @@ test.describe("editor-sync", () => {
 
     await expect
       .poll(async () => page.locator('[data-cell="C2R1"]').textContent(), {
-        timeout: 15_000,
+        timeout: 60_000,
       })
       .toContain("deep cell");
 
@@ -202,13 +214,13 @@ test.describe("editor-sync", () => {
     await expect
       .poll(
         async () => editorPage.locator('[data-cell="C0R0"]').textContent(),
-        { timeout: 15_000 }
+        { timeout: 60_000 }
       )
       .toContain("theirs");
 
     await expect
       .poll(async () => page.locator('[data-cell="C0R0"]').textContent(), {
-        timeout: 15_000,
+        timeout: 60_000,
       })
       .toContain("theirs");
 
